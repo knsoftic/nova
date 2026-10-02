@@ -23,11 +23,23 @@ export const AGENTS: AgentInfo[] = [
   { name: "System Agent", description: "System maloomat, apps kholna, windows, screen parhna", phase: null },
   { name: "Browser Agent", description: "Websites kholna, parhna, click/type aur downloads (ijazat se)", phase: null },
   { name: "Research Agent", description: "Web search (Brave/Wikipedia), jawab aur reports", phase: null },
-  { name: "File Agent", description: "Files aur folders", phase: "8B" },
-  { name: "Coding Agent", description: "VS Code, projects, errors", phase: "8B" },
+  { name: "File Agent", description: "Files dhoondna, banana, move/copy, Recycle Bin, organize, undo", phase: null },
+  { name: "Coding Agent", description: "VS Code, projects, tests, errors dhoondna aur theek karna", phase: null },
   { name: "Design Agent", description: "Design tools", phase: "8C" },
   { name: "Communication Agent", description: "Messages (permission ke sath)", phase: "8C" },
 ];
+
+/** Splits a reply into prose and ``` code blocks (file contents, command output). */
+export function messageBlocks(text: string): { code: boolean; text: string }[] {
+  const blocks: { code: boolean; text: string }[] = [];
+  const parts = text.split(/```[a-z]*\n?/i);
+  parts.forEach((part, i) => {
+    const code = i % 2 === 1; // odd parts sit between an opening and a closing fence
+    const value = code ? part.replace(/\n$/, "") : part;
+    if (value.trim()) blocks.push({ code, text: code ? value : value.replace(/^\n+|\n+$/g, "") });
+  });
+  return blocks;
+}
 
 /** Splits text into plain parts and https links, so web sources can be opened from a reply. */
 export function linkParts(text: string): { text: string; href?: string }[] {

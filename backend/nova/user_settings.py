@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import tempfile
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
@@ -10,6 +14,8 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from .db import Database
 
 SETTINGS_KEY = "user_settings"
+FORBIDDEN_PROJECT_ROOTS = tuple(os.path.normcase(p) for p in (
+    r"C:\Windows", r"C:\Program Files", r"C:\Program Files (x86)", r"C:\ProgramData"))
 
 
 class UserSettings(BaseModel):
@@ -24,6 +30,33 @@ class UserSettings(BaseModel):
     speak_responses: Literal["voice_only", "always", "never"] = "voice_only"
     search_engine: Literal["google", "bing", "duckduckgo"] = "google"  # for visible searches in NOVA's browser
     browser_channel: Literal["chrome", "msedge"] = "chrome"  # installed browser NOVA drives (own profile)
+    # Code project folders the File/Coding agents may use (besides Desktop, Documents, Downloads, ...).
+    project_folders: list[str] = Field(default_factory=lambda: [r"C:\xampp\htdocs"], max_length=10)
+
+    @field_validator("project_folders")
+    @classmethod
+    def _check_project_folders(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        # realpath: Windows may report short 8.3 names ("QADRIL~1") for the same folder.
+        home = os.path.normcase(os.path.realpath(Path.home()))
+        temp = os.path.normcase(os.path.realpath(tempfile.gettempdir()))
+        for raw in value:
+            path = os.path.normpath(raw.strip().strip("\"'"))
+            low = os.path.normcase(os.path.realpath(path)) if re.match(r"^[a-zA-Z]:\\", path + "\\") else path.lower()
+            if not re.match(r"^[a-z]:\\", low + "\\"):
+                raise ValueError("Poora folder path dein, maslan C:\\xampp\\htdocs")
+            if len(low.rstrip("\\")) <= 2:
+                raise ValueError("Poori drive project folder nahi ho sakti")
+            # AppData holds app data and browser logins; only its Temp folder (scratch space) is acceptable.
+            in_temp = low == temp or low.startswith(temp + "\\")
+            if any(low == f or low.startswith(f + "\\") for f in FORBIDDEN_PROJECT_ROOTS) or (
+                    "\\appdata" in low and not in_temp):
+                raise ValueError("Windows, Program Files ya AppData project folder nahi ho sakte")
+            if low in (home, os.path.normcase(os.path.dirname(home))):
+                raise ValueError("Poora user folder nahi — sirf projects wala folder dein")
+            if low not in (os.path.normcase(c) for c in cleaned):
+                cleaned.append(path)
+        return cleaned
 
     @field_validator("assistant_name", "wake_word")
     @classmethod
@@ -47,6 +80,7 @@ class UserSettingsUpdate(BaseModel):
     speak_responses: Literal["voice_only", "always", "never"] | None = None
     search_engine: Literal["google", "bing", "duckduckgo"] | None = None
     browser_channel: Literal["chrome", "msedge"] | None = None
+    project_folders: list[str] | None = None
 
 
 def load_user_settings(db: Database, default_name: str = "NOVA") -> UserSettings:

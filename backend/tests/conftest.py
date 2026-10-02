@@ -406,17 +406,99 @@ class FakeWeb:
         return httpx.MockTransport(self.handler)
 
 
+class FakeTrash:
+    """Recycle Bin stand-in: moves the item aside so it no longer exists where it was."""
+
+    def __init__(self, root):
+        self.root = root
+        self.items = []
+
+    def __call__(self, path):
+        import shutil
+
+        self.root.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(path), str(self.root / f"{len(self.items)}_{path.name}"))
+        self.items.append(path)
+
+
+def files_root(tmp_path):
+    """User folders and projects for a test. Beside (not inside) tmp_path, which is NOVA's private data folder."""
+    root = tmp_path.parent / f"{tmp_path.name}-files"
+    root.mkdir(exist_ok=True)
+    return root
+
+
+def make_known(tmp_path):
+    """Desktop/Documents/... in a test folder: tests never touch the real user folders."""
+    from nova.files.scope import KNOWN_FOLDERS
+
+    folders = {k: files_root(tmp_path) / "home" / k.capitalize() for k in KNOWN_FOLDERS}
+    for path in folders.values():
+        path.mkdir(parents=True, exist_ok=True)
+    return lambda name: folders[name]
+
+
+class FakeRunner:
+    """Dev commands never run in tests: each label returns scripted (exit code, output) results in order."""
+
+    def __init__(self):
+        self.calls = []
+        self.results: dict[str, list[tuple[int, str]]] = {}
+
+    def __call__(self, spec, on_progress=None):
+        from nova.coding.runner import RunResult
+
+        self.calls.append(spec)
+        queue = self.results.get(spec.label) or [(0, "ok")]
+        code, out = queue.pop(0) if len(queue) > 1 else queue[0]
+        return RunResult(code, out, 0.1)
+
+
+class FakeCoding:
+    def __init__(self, desktop: FakeDesktop):
+        from nova.coding.runner import Tools
+
+        self.tools = Tools(npm="npm.cmd", node=None, python="python.exe", php=None, git=None, code="Code.exe")
+        self.runner = FakeRunner()
+        self.servers = []
+        self.launched = []
+        self.desktop = desktop
+
+    def start_server(self, spec):
+        self.servers.append(spec)
+        return True, 4321
+
+    def launch_code(self, exe, path):
+        self.launched.append((exe, path))
+        self.desktop.windows.append(WindowInfo(hwnd=900 + len(self.launched), title=f"{path.name} - Visual Studio Code",
+                                               pid=77, process="Code.exe", class_name="Chrome_WidgetWin_1",
+                                               minimized=False, maximized=False))
+
+    def overrides(self):
+        return {"tools": self.tools, "runner": self.runner, "server_starter": self.start_server,
+                "code_launcher": self.launch_code, "open_wait_s": 1.0}
+
+
 def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDesktop | None = None,
-                 permission_timeout_s: float = 0.5, browser: FakeBrowser | None = None, web: FakeWeb | None = None):
+                 permission_timeout_s: float = 0.5, browser: FakeBrowser | None = None, web: FakeWeb | None = None,
+                 trash: FakeTrash | None = None, coding: FakeCoding | None = None, opened: list | None = None):
     ollama = ollama or FakeOllama(models=[])  # reachable but no model: rules only, deterministic
     browser = browser or FakeBrowser()
     browser.downloads_dir = tmp_path / "Downloads" / "NOVA"
+    desktop = desktop or FakeDesktop()
+    coding = coding or FakeCoding(desktop)
+    opened = opened if opened is not None else []
     # Short permission timeout: an unanswered question resolves to "no" quickly in tests.
     app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False, permission_timeout_s=permission_timeout_s,
                               reports_dir=tmp_path / "Research"),
                      scanner=make_profile, stats=fake_stats, ollama_transport=ollama.transport,
-                     desktop=desktop or FakeDesktop(), browser_controller=browser,
-                     web_transport=(web or FakeWeb()).transport, web_resolver=fake_resolver)
+                     desktop=desktop, browser_controller=browser,
+                     web_transport=(web or FakeWeb()).transport, web_resolver=fake_resolver,
+                     known_folders=make_known(tmp_path),
+                     file_overrides={"trash": trash or FakeTrash(files_root(tmp_path) / "_trash"),
+                                     "can_trash": lambda p: True,
+                                     "opener": lambda path, editor: opened.append(path), "open_wait_s": 0.5},
+                     coding_overrides=coding.overrides())
     return TestClient(app)
 
 

@@ -43,6 +43,7 @@ class ControlOutcome:
     executed: bool
     verification: Verification
     detail: str | None = None
+    test_status: str | None = None  # passed | failed, when the action ran a project's tests
 
 
 class Desktop:

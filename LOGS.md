@@ -406,3 +406,79 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 8A commit `d2abafa`, `main` mein merge `9279be9`.
+
+---
+
+### Task: Phase 8B — File Agent + Coding Agent
+
+Status: Complete (branch `phase-8b-file-coding`, approval ke baad `main` mein merge)
+
+Kaam:
+- **Kaam ki hadood (admin ka faisla "Common + projects"):** Desktop, Documents, Downloads, Pictures, Music, Videos (registry se asli jagah, OneDrive par bhi) aur Settings ke project folders (default `C:\xampp\htdocs`). Har path pehle poora resolve hota hai, is liye `..` ya shortcut/link se bahar nahi ja sakte. In folders ke andar bhi NOVA:
+  - `.env`, private keys, credential files na kholta hai na badalta hai (search mein bhi nahi dikhti);
+  - `.git` ke andar kuch nahi badalta; NOVA ka apna program folder sirf parh sakta hai, aur NOVA ka data folder (database, browser profile, models) parhta bhi nahi;
+  - bunyadi folders (Desktop, Documents...) ko delete/rename/move nahi karta.
+- **File Agent:**
+  - Dhoondna (naam ya qism: "pdf files", "tasveerein"), folder ki list, banana (file/folder; "... banao aur us mein ... likho"), kholna (documents apne program mein, text/code VS Code mein; .exe/.bat/.ps1/.js jaise programs **kabhi nahi chalata**), parhna (text/code, Word, PDF, Excel) aur khulasa (local AI), copy (purani file kabhi overwrite nahi — "name - Copy.txt"), folder report (Documents\NOVA\Reports mein).
+  - **Ijazat se:** naam badalna, move, edit (aakhir mein likhna / text badalna), organize, undo.
+  - **Delete hamesha Recycle Bin mein** (Windows ka SHFileOperation, "permanent delete" se pehle Windows khud warning deta hai) — har dafa poocha jata hai, kabhi "yaad" nahi rakha jata; 100+ files ya 1 GB+ wala delete **high risk**. Jis drive par Recycle Bin nahi wahan NOVA delete nahi karta.
+  - Edit se pehle purani file ka **backup**; "pichla file kaam undo karo" aakhri rename/move/organize/edit/naya-banaya wapas karta hai (agar baad mein file badli gayi ho to undo inkaar karta hai taa ke naya kaam na mite).
+  - Organize: files qism ke folders mein (Images, Documents, Videos, Archives, Installers, Code...) — shortcuts, adhoori downloads aur abhi badli hui files nahi hilti; project folders kabhi organize nahi hote.
+  - Naam se dhoondna: ek se zyada mile to list dikha kar poochta hai ("pehli wali", "2 number wali"); "isko/is file" pichli file ko kehte hain.
+- **Coding Agent:**
+  - Projects ki list, project ka jaiza (Node/PHP/Python, frameworks, npm scripts, git branch/changes, tests), VS Code mein kholna (verify: VS Code window mein project ka naam).
+  - Tests chalana (npm test / pytest project ke .venv se / PHPUnit), errors check (project ke typecheck/lint scripts; built-in python compileall, php -l, node --check), project commands (npm scripts jaise build, dev server alag terminal window mein, install, git status/diff/log).
+  - **Sirf tay shuda commands** — project ke apne npm scripts (naam package.json se), tests, install, sirf-parhne-wali git commands aur syntax checks. Koi shell nahi, timeout ke sath; zyada der chale to poora process tree band. System Python mein packages kabhi install nahi (sirf project ka .venv).
+  - Project ka apna code chalne wale kaam (tests, npm scripts) ijazat se; sirf syntax check aur git status bina pooche. Install (internet se packages) har dafa poocha jata hai.
+  - Error samjhana (local AI, Roman Urdu) aur **error theek karna / code badalna:** local AI chhoti find/replace tabdeeli tajweez karta hai → file se exact match check → syntax check (Python, JSON, PHP, JS) — syntax kharab karne wali tajweez user tak pohnchti hi nahi → **dialog mein diff (laal/hari lines)** → Haan ke baad backup ke sath likhna → wahi check dobara chala kar verify ke error khatam hua. Agar tajweez ke baad file badal gayi ho to purani tajweez apply nahi hoti.
+- **Permission Engine:** dialog mein ab "preview" — diff, organize ka plan, ya exact command. File/code kaamon ke liye "yaad rakhna" usi folder/project/command tak mehdood; delete/edit/code ki tabdeeli kabhi yaad nahi rakhi jati. Tests ka nateeja activity log ke `test_status` mein.
+- **AI brain:** 20 naye intents (rules + LLM). "nova project kholo" mein "nova" ab wake word samajh kar hataya nahi jata. "notes.txt mein ... likho" jaisa text "aur" par do commands mein nahi toot'ta.
+- **UI:** Settings mein "Files aur code projects" (allowed folders, project folders add/hatao); permission dialog mein diff/plan; jawab mein code/output monospace block mein; File/Coding Agent active.
+
+Test:
+- Backend automated tests: 419/419 pass (82 naye) — scope (bahar, `..`, secrets, .git, NOVA ki files, bunyadi folders), search, Word/Excel/PDF, CRLF/UTF-8, har file kaam ki verification, Recycle Bin (fake), backup + undo, organize plan + undo, projects ko organize na karna, poore API flows ijazat ke sath, ambiguous naam, context ("isko", "pehli wali"), bara delete high risk, settings validation, projects/tests/commands (fake runner), error fix diff + verify + undo, syntax-kharab tajweez rad, badli hui file par tajweez rad, asli subprocess runner (exit code, timeout par process tree band, per-file check), error parsers, rules/LLM parsing. Tests asli folders, Recycle Bin ya commands ko haath nahi lagate.
+- Frontend: 14/14 tests, typecheck aur build successful.
+- AI brain eval (60 commands, 13 naye file/coding): sirf rules 55/60 (baqi 5 aam sawal), **hybrid 60/60**, sirf LLM 59/60 (median 14.9s). Note: test ke waqt PC par ek anjaan `cmd.exe` process (subah 08:13 se, 24 threads) CPU ~100% le raha tha, is liye AI ke waqt Phase 8A se zyada aaye (pehle ~8s) aur ek dafa 45s timeout hua.
+- Naye intents ki wajah se LLM ne kuch cheezein ghalat samjhi thin ("VS Code chala do" → project command, "notes.txt mein likho" → type_text, mausam → web_search) — prompt mein fark wazeh kiya aur misaalen di, "nova project" ka naam saaf kiya.
+- **Is PC par asli test (sirf apne banaye test folder `Documents\NOVA-Test-8B` aur 2 demo projects mein; file names mein "nova8btest" taa ke search aap ki files na dikhaye):**
+  - "nova8btest files dhoondo" → 5 files (1.5s); folder ki list; Word (.docx) parhna.
+  - "NOVA-Test-8B folder mein ... banao aur us mein doodh aur chai likho" → file + text (fix ke baad rules se, 1.5s).
+  - Likhna → dialog mein preview `+ kal meeting 5 baje` → Haan → verify. Naam badalna → dialog mein dono naam → verify. Copy → "- Copy.txt".
+  - Organize → dialog mein plan (Archives/, Documents/, Images/) → Haan → 3 files verify → "pichla file kaam undo karo" → sab wapas.
+  - Delete → **asli Recycle Bin** → verify (wahan se Restore ho sakti hai). `.env parho` → inkaar. Folder report bani.
+  - Python demo project: errors check (compileall) → `app.py:5 SyntaxError: '(' was never closed` → "error theek karo" → **asli local AI ne 18s mein sahi fix diya** (`print(greet("NOVA"))`), dialog mein diff → Haan → dobara compile → "wo error ab nahi hai".
+  - Node demo project: `npm test` aur `npm run build` asli npm se (ijazat ke baad), output dikha, `test_status = passed`.
+  - "nova project mein git status chalao" → bina pooche, output dikha.
+  - "nova-demo-8b project kholo" → VS Code khula aur verify (4.1s); test ke baad sirf wahi window band ki.
+  - UI: permission dialog mein laal/hari diff; Esc ("Nahi") par file nahi badli; file ka content monospace block mein; Settings mein Files section.
+  - Test ke baad saari test files aur demo projects Recycle Bin mein, test report aur backups hata diye, undo journal saaf.
+- Electron app: production build launch hui, "NOVA Command Center" window, backend errors: 0.
+
+Bugs jo test ke dauran mile aur fix kiye gaye:
+- **Asli test mein pakra gaya:** "NOVA-Test-8B" mein se "NOVA-" wake word samajh kar hat jata tha ("Test-8B" bach jata). Phir "Test-8B" folder ka naam htdocs ke ek project "test web" se *milta julta* samjha gaya aur test file us project mein ban gayi (bina pooche, kyunke banana low risk hai). Test ki file foran Recycle Bin mein gayi aur us project mein kuch nahi bacha; galat folder ki report bhi hata di. **Fix:** naam se juda "NOVA-" ab wake word nahi; folder ka naam **sirf poora (exact)** match hota hai — milta julta ho to NOVA list dikha kar poochta hai; project sirf "... project" kehne par dhoondha jata hai. Regression tests add.
+- Kamyab command (maslan git status) ka output nahi dikhta tha — ab dikhta hai.
+- Windows ka Temp folder 8.3 chhote naam (QADRIL~1) se aata hai — project folder validation `realpath` se.
+- Code edit mein local AI indentation chhor deta hai — line-wise asli indentation wapas.
+- `.env` jaisa naam "nahi mila" ki jagah ab saaf inkaar.
+- **Asli test mein:** lamba jumla ("... banao aur us mein doodh aur chai likho") LLM ko ja raha tha aur model ne text chhor diya — text wali commands ab rules hi samajhte hain (lambai text ki wajah se hai, ulajhan ki wajah se nahi).
+- **Asli test mein:** error ki wazahat English mein aayi; Roman Urdu misaal di to model ne misaal hi copy kar di — ab copy hui misaal hata di jati hai.
+
+Maloom hadood (limitations):
+- Ek hi jumle mein "X banao aur isko move karo" — "isko" abhi pehle hisse ki nayi file ko nahi pehchanta (sab steps pehle tayyar hote hain); alag alag kahein.
+- Local AI (CPU) code ki tabdeeli/wazahat mein 20-90 second leta hai aur 160 lines se bari file ek sath nahi badalta (error wali jagah ke aas paas hi). Chhota model ghalat tajweez de sakta hai — is liye diff dikhaya jata hai, syntax check hota hai aur undo maujood hai.
+- Error ki wazahat kabhi English mein aati hai (chhota model technical baat English mein karta hai) — maana sahi hota hai.
+- Recycle Bin se wapas lana NOVA khud nahi karta (Recycle Bin → Restore).
+- Dev server alag terminal window mein chalta hai; NOVA usay band nahi karta (window band kar dein).
+- Search ek waqt mein ~4 second / 80,000 cheezon tak; bohat bare folders mein folder ka naam bata kar dhoondein.
+
+Verification:
+- Har file kaam ke baad asli halat check (file bani/hili/gayi, text dobara parha, copy ka size/count, organize mein har file). Code fix: wahi check dobara. Tests: `test_status`. Activity log mein permission/verification.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

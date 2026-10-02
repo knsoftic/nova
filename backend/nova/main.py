@@ -6,8 +6,10 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Callable
 
 import httpx
@@ -19,7 +21,10 @@ from pydantic import BaseModel, Field, ValidationError
 from . import __version__
 from .ai.manager import ProviderManager
 from .ai.ollama import OllamaProvider
-from .config import Settings, load_settings
+from .agents.file_agent import FileAgent
+from .coding import CodingAgent, Tools, find_tools
+from .config import PROJECT_ROOT, Settings, load_settings
+from .files import FileOps, FileScope
 from .db import Database
 from .discovery import DiscoveryService, LiveStats, SystemProfile, find_app
 from .events import EventBus, EventType, NovaEvent
@@ -108,8 +113,13 @@ def create_app(
     browser_controller: BrowserController | None = None,
     web_transport: httpx.AsyncBaseTransport | None = None,
     web_resolver: Callable[..., Any] | None = None,
+    known_folders: Callable[[str], Path] | None = None,
+    file_overrides: dict[str, Any] | None = None,
+    coding_overrides: dict[str, Any] | None = None,
 ) -> FastAPI:
-    """`scanner`/`stats`/`ollama_transport`/`stt`/`tts` replace real collectors, Ollama and voice models (tests)."""
+    """`scanner`/`stats`/`ollama_transport`/`stt`/`tts` replace real collectors, Ollama and voice models (tests).
+    `known_folders`/`file_overrides`/`coding_overrides` keep tests away from real folders, the Recycle Bin
+    and real commands."""
     settings = settings or load_settings()
 
     @asynccontextmanager
@@ -150,10 +160,36 @@ def create_app(
             resolver=web_resolver,
         )
         app.state.research = research
+        known = known_folders or known_folder
+        scope = FileScope(known, project_folders=lambda: app.state.user_settings.project_folders,
+                          protected=[PROJECT_ROOT], private=[settings.data_dir])
+        app.state.file_scope = scope
+        tools_cache: list[Tools] = []
+
+        def tools() -> Tools:
+            if not tools_cache:
+                tools_cache.append((coding_overrides or {}).get("tools") or find_tools())
+            return tools_cache[0]
+
+        def window_titles() -> list[str]:
+            return [w.title for w in computer.desktop.list_windows()]
+
+        file_kwargs: dict[str, Any] = {"editor": lambda: tools().code, "window_titles": window_titles}
+        file_kwargs.update(file_overrides or {})
+        ops = FileOps(scope, db, settings.data_dir / "file-backups",
+                      reports_dir=lambda: (settings.reports_dir.parent if settings.reports_dir
+                                           else known("documents") / "NOVA") / "Reports",
+                      **file_kwargs)
+        coding_kwargs: dict[str, Any] = {"window_titles": window_titles}
+        coding_kwargs.update({k: v for k, v in (coding_overrides or {}).items() if k != "tools"})
+        coding = CodingAgent(scope, ops, providers.ollama.complete_json, providers.ollama.is_available, tools,
+                             **coding_kwargs)
         app.state.orchestrator = Orchestrator(
             bus, db, providers, assistant_name, discovery, computer, permissions,
             browser=BrowserAgent(browser, engine=lambda: app.state.user_settings.search_engine),
             research=research,
+            files=FileAgent(ops, scope, projects=coding.find),
+            coding=coding,
         )
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
@@ -234,6 +270,12 @@ def create_app(
         except ValidationError as exc:
             # Re-raise as a request validation error so the client gets a 422 with field details.
             raise RequestValidationError(exc.errors()) from exc
+        known_before = {os.path.normcase(p) for p in app.state.user_settings.project_folders}
+        for folder in new.project_folders:
+            # Checked only when added: a folder that disappears later must not break loading settings.
+            if os.path.normcase(folder) not in known_before and not Path(folder).is_dir():
+                raise RequestValidationError([{"loc": ("body", "project_folders"), "msg": f"Folder nahi mila: {folder}",
+                                               "type": "value_error"}])
         save_user_settings(app.state.db, new)
         app.state.user_settings = new
         orchestrator().apply_settings(new.assistant_name, new.wake_word)
@@ -286,6 +328,11 @@ def create_app(
     @app.get("/api/permissions/history")
     async def permission_history(limit: int = 100) -> list[dict[str, Any]]:
         return app.state.db.list_permission_requests(max(1, min(limit, 500)))
+
+    @app.get("/api/files/roots")
+    async def file_roots() -> list[dict[str, Any]]:
+        """Folders the File/Coding agents may use (shown in Settings)."""
+        return [{"name": r.name, "path": str(r.path), "kind": r.kind} for r in app.state.file_scope.roots()]
 
     @app.get("/api/web/status")
     async def web_status() -> dict[str, Any]:

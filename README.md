@@ -2,13 +2,16 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 8A (Browser + Research agents)**. NOVA listens (push-to-talk or wake word), understands
+Current status: **Phase 8B (File + Coding agents)**. NOVA listens (push-to-talk or wake word), understands
 Urdu / Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in
 an offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
 afterwards). Risky actions — typing, clicking, pasting, closing apps — run only after the user says yes
 (dialog or voice), with context-aware risk levels, remembered approvals for medium risk, and a full audit
 trail. It drives its own browser (open, read, summarise, click, type, download) and answers live questions
-or writes research reports from web sources. See [LOGS.md](LOGS.md) for development history and approval status.
+or writes research reports from web sources. It manages files in the user's folders (search, create, read,
+rename, move, copy, delete to the Recycle Bin, edit, organize, report, undo) and works on code projects (VS Code,
+tests, error checks, explaining and fixing errors with a diff shown first). See [LOGS.md](LOGS.md) for
+development history and approval status.
 
 ## Voice (offline)
 
@@ -64,6 +67,22 @@ Measure the brain against real commands:
 - Pages are fetched only from the public internet (local/private addresses are blocked, every redirect is
   re-checked). Web text is untrusted: the local model only summarises it, never acts on it.
 
+## Files and code
+
+- **Scope:** Desktop, Documents, Downloads, Pictures, Music, Videos (their real, possibly redirected locations)
+  and the project folders from ⚙ Settings → Files (default `C:\xampp\htdocs`). Paths are fully resolved first,
+  so `..` or links cannot escape. Never touched: secret files (`.env`, private keys, credential stores), anything
+  inside `.git`, NOVA's own program folder (read-only) and its data folder (not even read).
+- **File Agent:** search, create, open, read (text/code, Word, PDF, Excel), copy and folder reports run
+  directly; rename, move, edit, organize and undo ask first. **Delete always goes to the Recycle Bin** and is
+  asked every time (big deletes are high risk). Edits keep a backup; `pichla file kaam undo karo` reverses the
+  last rename/move/organize/edit/create.
+- **Coding Agent:** opens projects in VS Code, describes them, runs tests and checks, explains errors and fixes
+  them. Commands come only from a fixed list (the project's own npm scripts, tests, installs, read-only git,
+  built-in syntax checks) and run without a shell, with a timeout. Code changes are proposed by the local model,
+  syntax-checked, shown as a diff in the permission dialog, written with a backup and verified by re-running
+  the same check.
+
 ## Layout
 
 ```
@@ -74,9 +93,11 @@ nova/
 │   │   ├── orchestrator.py command → understand → plan → agents → response
 │   │   ├── planner.py      intents → ordered steps with agent, risk and availability
 │   │   ├── discovery/      system scan: probe.ps1, Windows collectors, app catalog, self-configuration
-│   │   ├── agents/         System Agent: system info + computer control (computer.py)
+│   │   ├── agents/         System Agent (system info, computer control), File Agent, prepared actions
 │   │   ├── control/        Win32 windows, app launcher with verification, SendInput, screen capture/OCR/UIA
 │   │   ├── permissions/    risk classification, asking the user, remembered approvals, audit
+│   │   ├── files/          allowed folders, search, documents, Recycle Bin, verified file operations + undo
+│   │   ├── coding/         Coding Agent: projects, allowed commands, error parsing, checked code edits
 │   │   ├── browser/        Browser Agent + Playwright controller (NOVA's own Chrome profile)
 │   │   ├── research/       Research Agent, Brave/Wikipedia search, safe fetching, text extraction
 │   │   ├── secret_store.py DPAPI-encrypted secrets (Brave key)
@@ -164,6 +185,36 @@ Environment variables (backend):
 | `NOVA_ASSISTANT_NAME` | `NOVA` | Assistant name |
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
+
+## Admin manual test (Phase 8B, approved)
+
+Test ke liye ek alag folder banayein (maslan `Documents\Test-NOVA`) aur us mein kuch files rakhein (ek .txt, ek
+.pdf, ek .jpg) — apni zaroori files par test na karein.
+
+1. `desktop/` mein `npm start`. ⚙ Settings → **Files aur code projects**: Desktop/Documents/... ki list aur project
+   folder `C:\xampp\htdocs` nazar aaye.
+2. **Dhoondna/parhna:** `Test-NOVA folder mein kya hai`, `<naam> files dhoondo`, `<file>.txt parho`,
+   `<file>.docx parho` (Word), `<file>.pdf ka khulasa batao`.
+3. **Banana:** `Test-NOVA folder mein todo.txt banao aur us mein doodh aur chai likho` — file bane (Verify).
+4. **Likhna + undo:** `todo.txt mein likho: kal meeting` → dialog mein `+ kal meeting` (preview) → Haan.
+   Phir `pichla file kaam undo karo` → Haan → file pehle jaisi.
+5. **Naam/jagah:** `todo.txt ka naam final.txt rakh do` → dialog mein dono naam → Haan. `isko Documents mein move
+   karo`, `final.txt ki copy banao`.
+6. **Organize:** `Test-NOVA folder organize karo` → dialog mein plan (Images/, Documents/...) → Haan → files
+   folders mein. `pichla file kaam undo karo` → wapas.
+7. **Delete:** `final.txt delete karo` → dialog (har dafa, "yaad rakhna" nahi) → Haan → file Recycle Bin mein
+   (Recycle Bin kholkar check karein; Restore bhi kar sakte hain).
+8. **Inkaar:** `.env parho` ya kisi `secrets.json` ka naam lein — NOVA mana kare. `C:\Windows\win.ini parho` —
+   "bahar hai".
+9. **Projects:** `mere projects dikhao`, `<project> project ka jaiza lo`, `<project> project kholo` (VS Code khule).
+10. **Errors:** kisi Python/PHP test project mein jaan bujh kar ek ghalti karein (maslan bracket band na karein),
+    phir `<project> project mein errors check karo` → error ki jagah. `error samjhao` → wazahat.
+    `error theek karo` → dialog mein **diff** (laal/hari lines) → Haan → "wo error ab nahi hai".
+    `pichla file kaam undo karo` se purana code wapas.
+11. **Commands:** `<node project> ke tests chalao` / `... mein npm run build chalao` → dialog mein exact command →
+    Haan → nateeja. `nova project mein git status chalao` — bina pooche (sirf parhna).
+12. **Activity Log** mein har kaam, ijazat, verification aur tests ka status.
+13. Sab theek ho to approve karein, warna problem batayein.
 
 ## Admin manual test (Phase 8A, approved)
 

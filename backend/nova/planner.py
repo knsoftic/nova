@@ -58,7 +58,31 @@ CAPABILITIES: dict[str, Capability] = {
     # Research Agent: reads public web sources through official search APIs; saves reports in Documents\NOVA.
     "research": Capability("Research Agent", "research_report", "low", None, "Research report banana"),
     "web_answer": Capability("Research Agent", "web_answer", "low", None, "Web se taza jawab dhoondna"),
-    "create_folder": Capability("File Agent", "create_folder", "medium", 8, "Folder banana"),
+    # File Agent (inside the allowed folders only). Creating/reading/copying loses nothing; changing or
+    # removing existing files needs permission. Delete always goes to the Recycle Bin.
+    "search_files": Capability("File Agent", "search_files", "low", None, "Files dhoondna"),
+    "create_folder": Capability("File Agent", "create_folder", "low", None, "Folder banana"),
+    "create_file": Capability("File Agent", "create_file", "low", None, "File banana"),
+    "open_file": Capability("File Agent", "open_file", "low", None, "File/folder kholna"),
+    "read_file": Capability("File Agent", "read_file", "low", None, "File parhna"),
+    "copy_file": Capability("File Agent", "copy_file", "low", None, "File copy karna"),
+    "folder_report": Capability("File Agent", "folder_report", "low", None, "Folder ki report banana"),
+    "rename_file": Capability("File Agent", "rename_file", "medium", None, "File ka naam badalna"),
+    "move_file": Capability("File Agent", "move_file", "medium", None, "File move karna"),
+    "delete_file": Capability("File Agent", "delete_file", "medium", None, "File Recycle Bin mein bhejna"),
+    "edit_file": Capability("File Agent", "edit_file", "medium", None, "File mein likhna/badalna"),
+    "organize_folder": Capability("File Agent", "organize_folder", "medium", None, "Folder organize karna"),
+    "undo_file_op": Capability("File Agent", "undo_file_op", "medium", None, "Pichla file kaam wapas karna"),
+    # Coding Agent. Checks/commands that run the project's own code are raised to medium by the Permission
+    # Engine when prepared (built-in syntax checks and git status stay low).
+    "open_project": Capability("Coding Agent", "open_project", "low", None, "Project VS Code mein kholna"),
+    "inspect_project": Capability("Coding Agent", "inspect_project", "low", None, "Project ka jaiza lena"),
+    "check_errors": Capability("Coding Agent", "check_errors", "low", None, "Project mein errors check karna"),
+    "run_command": Capability("Coding Agent", "run_command", "low", None, "Project command chalana"),
+    "run_tests": Capability("Coding Agent", "run_tests", "medium", None, "Project ke tests chalana"),
+    "explain_error": Capability("Coding Agent", "explain_error", "low", None, "Error samjhana"),
+    "fix_error": Capability("Coding Agent", "fix_error", "medium", None, "Error theek karna (code badalna)"),
+    "modify_code": Capability("Coding Agent", "modify_code", "medium", None, "Code badalna"),
     "change_setting": Capability("System Agent", "change_setting", "medium", 8, "Setting badalna"),
     "run_workflow": Capability("Orchestrator", "run_workflow", "low", 9, "Workflow chalana"),
 }
@@ -79,6 +103,8 @@ class PlanStep(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     # For web-page clicks: the exact element text the user approved (re-checked before clicking).
     element_text: str | None = None
+    # File/Coding steps: what exactly will happen, worked out before asking (agents.prepared.Prepared).
+    prepared: Any = Field(default=None, exclude=True)
 
 
 class Plan(BaseModel):

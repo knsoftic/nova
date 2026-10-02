@@ -82,7 +82,7 @@ export function ActivityPanel({ events, agentFilter, onClearAgent, onClear }: Pr
               </div>
               <p className="whitespace-pre-line text-xs text-slate-300">
                 {e.agent && <span className="text-slate-500">{e.agent} → </span>}
-                {e.message ?? ""}
+                {(e.message ?? "").replace(/```[a-z]*\n?/gi, "")}
               </p>
             </li>
           ))}

@@ -113,6 +113,21 @@ LEXICON: dict[str, str] = {
     "khulasa": "خلاصہ", "lagega": "لگے گا", "layak": "لائق", "likhta": "لکھتا", "mojood": "موجود", "pichla": "پچھلا",
     "agla": "اگلا", "pohncha": "پہنچا", "poori": "پوری", "taza": "تازہ", "wahi": "وہی", "wazeh": "واضح",
     "kami": "کمی", "ikhtilaf": "اختلاف",
+    # Phase 8B: files and code
+    "aakhri": "آخری", "adhoora": "ادھورا", "adhoori": "ادھوری", "aise": "ایسے", "badalne": "بدلنے", "badalni": "بدلنی",
+    "badalta": "بدلتا", "badli": "بدلی", "banata": "بناتا", "banaya": "بنایا", "baqi": "باقی", "bheja": "بھیجا",
+    "bhejna": "بھیجنا", "bina": "بنا", "bunyadi": "بنیادی", "chala": "چلا", "chalata": "چلاتا", "chalenge": "چلیں گے",
+    "chalta": "چلتا", "chalti": "چلتی", "chuki": "چکی", "chunein": "چنیں", "dabayein": "دبائیں", "dene": "دینے",
+    "dhoondein": "ڈھونڈیں", "dikhai": "دکھائی", "dikhao": "دکھاؤ", "foran": "فوراً", "gayin": "گئیں", "hal": "حل",
+    "hata": "ہٹا", "hataya": "ہٹایا", "hil": "ہل", "hilane": "ہلانے", "hilengi": "ہلیں گی", "hisaab": "حساب",
+    "hongi": "ہوں گی", "isay": "اسے", "istemal": "استعمال", "jaiza": "جائزہ", "jana": "جانا", "jayengi": "جائیں گی",
+    "karke": "کر کے", "kharab": "خراب", "kholne": "کھولنے", "kholta": "کھولتا", "laane": "لانے", "laata": "لاتا",
+    "likhi": "لکھی", "milegi": "ملے گی", "milte": "ملتے", "milti": "ملتی", "mit": "مٹ", "nishan": "نشان",
+    "parhi": "پڑھی", "parhta": "پڑھتا", "parta": "پڑتا", "pehchana": "پہچانا", "pichli": "پچھلی", "poora": "پورا",
+    "purani": "پرانی", "qism": "قسم", "rakh": "رکھ", "rok": "روک", "samjhana": "سمجھانا", "samjhao": "سمجھاؤ",
+    "soch": "سوچ", "tajweez": "تجویز", "tarteeb": "ترتیب", "tasveer": "تصویر", "toot": "ٹوٹ", "un": "ان",
+    "uska": "اس کا", "uske": "اس کے", "cheezein": "چیزیں", "batata": "بتاتا", "bhejta": "بھیجتا", "deta": "دیتا",
+    "dhoondta": "ڈھونڈتا", "khatre": "خطرے", "leta": "لیتا", "julte": "جلتے",
 }
 # "ki" appears twice above (possessive and "did"); both are written the same in Urdu.
 

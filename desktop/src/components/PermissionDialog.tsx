@@ -8,6 +8,27 @@ const RISK_STYLE: Record<Risk, { label: string; badge: string; border: string }>
   high: { label: "Zyada khatra", badge: "bg-red-500/20 text-red-200", border: "border-red-500/70" },
 };
 
+/** The exact change NOVA will make: a code diff, an organize plan or the command it will run. */
+function Preview({ text }: { text: string }) {
+  const tone = (line: string) =>
+    line.startsWith("+") && !line.startsWith("+++")
+      ? "text-emerald-300"
+      : line.startsWith("-") && !line.startsWith("---")
+        ? "text-red-300"
+        : line.startsWith("@@")
+          ? "text-sky-300"
+          : "text-slate-300";
+  return (
+    <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-white/10 bg-black/40 p-2.5 font-mono text-[11px] leading-relaxed">
+      {text.split("\n").map((line, i) => (
+        <div key={i} className={tone(line)}>
+          {line || " "}
+        </div>
+      ))}
+    </pre>
+  );
+}
+
 function useCountdown(request: PermissionRequest): number {
   const deadline = (request.received_at ?? Date.now()) + request.timeout_s * 1000;
   const [left, setLeft] = useState(() => Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
@@ -60,7 +81,9 @@ export function PermissionDialog({ request }: { request: PermissionRequest }) {
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="perm-title"
-        className={`flex w-full max-w-lg flex-col gap-4 rounded-2xl border-2 bg-slate-950 p-6 shadow-2xl ${style.border}`}
+        className={`flex max-h-full w-full flex-col gap-4 overflow-y-auto rounded-2xl border-2 bg-slate-950 p-6 shadow-2xl ${
+          request.items.some((i) => i.preview) ? "max-w-2xl" : "max-w-lg"
+        } ${style.border}`}
       >
         <div className="flex items-center justify-between gap-3">
           <h2 id="perm-title" className="text-lg font-semibold text-slate-100">
@@ -82,6 +105,7 @@ export function PermissionDialog({ request }: { request: PermissionRequest }) {
                   ))}
                 </ul>
               )}
+              {item.preview && <Preview text={item.preview} />}
             </li>
           ))}
         </ul>
@@ -89,10 +113,14 @@ export function PermissionDialog({ request }: { request: PermissionRequest }) {
         {request.rememberable ? (
           <label className="flex items-center gap-2 text-sm text-slate-300">
             <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-            Aage se isi app mein ye kaam bina pooche kar dena
+            Aage se yahi kaam (isi app/folder/project mein) bina pooche kar dena
           </label>
         ) : (
-          <p className="text-xs text-slate-500">Ye khatarnak kaam hai — NOVA har dafa poochega.</p>
+          <p className="text-xs text-slate-500">
+            {request.max_risk === "high"
+              ? "Ye khatarnak kaam hai — NOVA har dafa poochega."
+              : "Is qism ke kaam (delete, edit, code ki tabdeeli) ke liye NOVA har dafa poochta hai."}
+          </p>
         )}
 
         {error && <p className="text-xs text-red-300">{error}</p>}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 from ..language import detect_language
 from .base import (
     BROWSER_NAV_ACTIONS,
+    EDIT_ACTIONS,
     KNOWN_INTENTS,
     SHORTCUT_NAMES,
     SYSTEM_TOPICS,
@@ -44,10 +46,11 @@ Intent names:
 - greeting: hello / salam / only the assistant's name.
 - help: asks what NOVA can do.
 - chat: a general question, knowledge, advice, small talk, or anything answerable with words only.
-- open_app: open/launch/start an application. Field "app".
+- open_app: open/launch/start an application. Field "app". A code project ("X project") is open_project,
+  even when VS Code is named.
 - app_check: asks whether an application is installed. Field "app".
-- web_search: search or look something up in the browser, e.g. on Google/Bing ("google pe dekho ...",
-  "... search karo"). Field "query" (what to search, without the browser or engine name).
+- web_search: ONLY when the user asks to search, or names Google/Bing ("google pe dekho ...", "... search karo").
+  Field "query" (what to search, without the browser or engine name).
 - create_folder: create a folder. Field "folder_name" ("" if not given).
 - system_info: asks about this PC. Field "topic", one of: summary, cpu, ram, gpu, storage, windows, devices, displays, network, admin, browsers, apps, running.
 - rescan_system: asks to scan / rescan the system.
@@ -63,6 +66,7 @@ Intent names:
   press enter/escape. Field "keys" (copy | paste | cut | undo | redo | select_all | save | new_tab |
   close_tab | find | refresh | enter | escape).
 - type_text: type/write given text into the current window. Field "text" with the exact text to type.
+  Text for a named file ("notes.txt mein likho ...") is edit_file, not type_text.
 - mouse_click: click a named button on screen. Field "target" (its label).
 - open_website: open a website/URL in the browser. Field "url" (domain or site name, e.g. "youtube.com").
 - read_page: read or summarise the web page currently open in NOVA's browser.
@@ -74,6 +78,24 @@ Intent names:
 - web_answer: a question that needs current/live information (weather, news, prices/rates, scores,
   "who is the current ...") and names no search engine. Field "query" (the question). Facts that
   do not change - capitals, history, definitions, how-to - are "chat".
+Files (fields "target" = the file/folder name the user said, "" for "isko"/"is file"; "location" = the folder it is
+in, e.g. "Desktop", "Downloads", "nova project", "" if not said):
+- search_files: find files/folders. Fields "query" (name or type, e.g. "pdf", "report") and "location".
+- create_folder (also uses "location"); create_file: Fields "file_name", "location", "text" (initial content or "").
+- open_file: open a file or folder in its program. read_file: show/read/summarise a file, or list a folder.
+- rename_file: Field "new_name" too. move_file / copy_file: Field "destination" (folder) too.
+- delete_file: delete a file/folder (it goes to the Recycle Bin).
+- edit_file: add text to, or replace text in, a document. Fields "edit_action" (append | replace),
+  "text" (for append), "old_text" and "new_text" (for replace).
+- organize_folder: sort a folder's files into folders by type. folder_report: a report of a folder's contents.
+- undo_file_op: undo NOVA's last file change.
+Code projects (field "project" = the project's name, "" for the current one):
+- open_project: open a project in VS Code. inspect_project: describe a project ("" project = list projects).
+- run_tests: run a project's tests. check_errors: check a project's code for errors.
+- run_command: run a development command inside a named code project. Field "command" (e.g. "build",
+  "dev server", "npm run lint", "install", "git status"). Starting an app ("VS Code chala do") is open_app.
+- explain_error: explain the last error, or the error text given in field "text". fix_error: fix that error in the code.
+- modify_code: change code in a file. Fields "target" (file name), "project", "instruction" (the change, in the user's words).
 - unknown: unclear or not covered.
 
 Rules:
@@ -95,6 +117,11 @@ Examples:
 "chai aur coffee mein kya farq hai" -> {"intents":[{"name":"chat"}],"answer":"Coffee mein caffeine zyada hoti hai aur chai mein kam. Dono patton/beejon se bante hain lekin zaiqa alag hota hai."}
 "Quaid-e-Azam kab paida huay" -> {"intents":[{"name":"chat"}],"answer":"Quaid-e-Azam Muhammad Ali Jinnah 25 December 1876 ko Karachi mein paida huay."}
 "google pe dekho kal ka match kis ne jeeta" -> {"intents":[{"name":"web_search","query":"kal ka match kis ne jeeta"}],"answer":""}
+"Karachi mein abhi temperature kitna hai" -> {"intents":[{"name":"web_answer","query":"Karachi mein abhi temperature kitna hai"}],"answer":""}
+"desktop wali notes.txt ka naam todo.txt rakh do" -> {"intents":[{"name":"rename_file","target":"notes.txt","location":"Desktop","new_name":"todo.txt"}],"answer":""}
+"mere shop app project ke tests chala do" -> {"intents":[{"name":"run_tests","project":"shop app"}],"answer":""}
+"todo.md mein likho: kal bank jana hai" -> {"intents":[{"name":"edit_file","target":"todo.md","edit_action":"append","text":"kal bank jana hai"}],"answer":""}
+"kn app project ko VS Code mein khol do" -> {"intents":[{"name":"open_project","project":"kn app"}],"answer":""}
 """
 
 
@@ -124,6 +151,16 @@ def _schema() -> dict[str, Any]:
                         "url": text,
                         "field": text,
                         "nav_action": {"type": "string", "enum": ["", *BROWSER_NAV_ACTIONS]},
+                        "location": text,
+                        "file_name": text,
+                        "new_name": text,
+                        "destination": text,
+                        "edit_action": {"type": "string", "enum": ["", *EDIT_ACTIONS]},
+                        "old_text": text,
+                        "new_text": text,
+                        "project": text,
+                        "command": text,
+                        "instruction": text,
                     },
                     "required": ["name"],
                 },
@@ -134,24 +171,51 @@ def _schema() -> dict[str, Any]:
     }
 
 
-# Which model field becomes which entity, per intent.
-ENTITY_FIELDS: dict[str, tuple[str, str]] = {
-    "open_app": ("app", "app"),
-    "app_check": ("app", "app"),
-    "web_search": ("query", "query"),
-    "create_folder": ("folder_name", "folder_name"),
-    "change_setting": ("setting_request", "request"),
-    "run_workflow": ("workflow", "workflow"),
-    "close_app": ("app", "app"),
-    "focus_app": ("app", "app"),
-    "read_screen": ("app", "app"),
-    "type_text": ("text", "text"),
-    "mouse_click": ("target", "target"),
-    "open_website": ("url", "url"),
-    "browser_click": ("target", "target"),
-    "download": ("target", "target"),
-    "research": ("query", "query"),
-    "web_answer": ("query", "query"),
+# Which model fields become which entities, per intent (whitespace-normalised, length-limited).
+_FILE = (("target", "target"), ("location", "location"))
+ENTITY_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
+    "open_app": (("app", "app"),),
+    "app_check": (("app", "app"),),
+    "web_search": (("query", "query"),),
+    "create_folder": (("folder_name", "folder_name"), ("location", "location")),
+    "change_setting": (("setting_request", "request"),),
+    "run_workflow": (("workflow", "workflow"),),
+    "close_app": (("app", "app"),),
+    "focus_app": (("app", "app"),),
+    "read_screen": (("app", "app"),),
+    "mouse_click": (("target", "target"),),
+    "open_website": (("url", "url"),),
+    "browser_click": (("target", "target"),),
+    "browser_type": (("field", "field"),),
+    "download": (("target", "target"),),
+    "research": (("query", "query"),),
+    "web_answer": (("query", "query"),),
+    "search_files": (("query", "query"), ("location", "location")),
+    "create_file": (("file_name", "file_name"), ("location", "location")),
+    "open_file": _FILE,
+    "read_file": _FILE,
+    "rename_file": (*_FILE, ("new_name", "new_name")),
+    "move_file": (*_FILE, ("destination", "destination")),
+    "copy_file": (*_FILE, ("destination", "destination")),
+    "delete_file": _FILE,
+    "edit_file": _FILE,
+    "organize_folder": (("location", "location"),),
+    "folder_report": (("location", "location"),),
+    "open_project": (("project", "project"),),
+    "inspect_project": (("project", "project"),),
+    "run_tests": (("project", "project"),),
+    "check_errors": (("project", "project"),),
+    "run_command": (("project", "project"), ("command", "command")),
+    "modify_code": (("target", "target"), ("project", "project")),
+}
+# Text the user dictated is kept exactly as given (whitespace kept), only length-limited.
+VERBATIM_FIELDS: dict[str, tuple[str, ...]] = {
+    "type_text": ("text",),
+    "browser_type": ("text",),
+    "create_file": ("text",),
+    "edit_file": ("text", "old_text", "new_text"),
+    "explain_error": ("text",),
+    "modify_code": ("instruction",),
 }
 
 # Enum-valued fields: anything outside the allowed set is dropped.
@@ -159,7 +223,9 @@ ENUM_FIELDS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "window_control": ("window_action", "action", WINDOW_ACTIONS),
     "keyboard_shortcut": ("keys", "keys", SHORTCUT_NAMES),
     "browser_nav": ("nav_action", "action", BROWSER_NAV_ACTIONS),
+    "edit_file": ("edit_action", "edit_action", EDIT_ACTIONS),
 }
+ENUM_DEFAULTS = {"window_control": "minimize", "browser_nav": "scroll_down", "edit_file": "append"}
 
 
 class OllamaStatus(BaseModel):
@@ -187,15 +253,13 @@ def parse_model_output(raw: str, language: str, provider: str) -> tuple[list[Int
             continue
         name = item["name"]
         entities: dict[str, Any] = {}
-        if name in ("type_text", "browser_type"):
-            # Dictated text is typed exactly as given (whitespace kept), only length-limited.
-            if isinstance(item.get("text"), str) and item["text"].strip():
-                entities["text"] = item["text"].strip()[:2000]
-            if name == "browser_type" and (field := _clip(item.get("field"))):
-                entities["field"] = field
-        elif name in ENTITY_FIELDS:
-            field, key = ENTITY_FIELDS[name]
+        for field in VERBATIM_FIELDS.get(name, ()):
+            if isinstance(item.get(field), str) and item[field].strip():
+                entities[field] = item[field].strip()[:2000]
+        for field, key in ENTITY_FIELDS.get(name, ()):
             if value := _clip(item.get(field)):
+                if key == "project":  # "nova project" -> "nova"
+                    value = re.sub(r"\s+projects?$", "", value, flags=re.IGNORECASE) or value
                 entities[key] = value
         if name in ENUM_FIELDS:
             field, key, allowed = ENUM_FIELDS[name]
@@ -203,8 +267,10 @@ def parse_model_output(raw: str, language: str, provider: str) -> tuple[list[Int
                 entities[key] = item[field]
             elif name == "keyboard_shortcut":
                 continue  # a shortcut without a known key combination is not actionable
+            elif name == "edit_file":
+                entities[key] = "replace" if entities.get("old_text") else "append"
             else:
-                entities[key] = "minimize" if name == "window_control" else "scroll_down"
+                entities[key] = ENUM_DEFAULTS[name]
             if name == "window_control" and (app := _clip(item.get("app"))):
                 entities["app"] = app
         if name == "system_info":

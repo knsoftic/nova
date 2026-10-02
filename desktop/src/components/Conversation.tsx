@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ChatMessage, PlanStepSummary } from "../lib/types";
-import { formatTime, linkParts, providerLabel } from "../lib/ui";
+import { formatTime, linkParts, messageBlocks, providerLabel } from "../lib/ui";
 
 const STEP_BADGE: Record<PlanStepSummary["status"], { icon: string; tone: string }> = {
   done: { icon: "✓", tone: "text-emerald-300" },
@@ -93,19 +93,32 @@ export function Conversation({ messages, assistantName }: { messages: ChatMessag
                 <span>{formatTime(m.timestamp)}</span>
                 {provider && <span title="Kis ne samjha">· {provider}</span>}
               </div>
-              {linkParts(m.text).map((p, i) =>
-                p.href ? (
-                  <a
-                    key={i}
-                    href={p.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="break-all text-sky-300 underline decoration-sky-300/40 hover:text-sky-200"
+              {messageBlocks(m.text).map((block, b) =>
+                block.code ? (
+                  <pre
+                    key={b}
+                    className="my-1.5 max-h-72 overflow-auto whitespace-pre rounded-lg border border-white/10 bg-black/40 p-2.5 font-mono text-[11px] leading-relaxed text-slate-200"
                   >
-                    {p.text}
-                  </a>
+                    {block.text}
+                  </pre>
                 ) : (
-                  p.text
+                  <span key={b}>
+                    {linkParts(block.text).map((p, i) =>
+                      p.href ? (
+                        <a
+                          key={i}
+                          href={p.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="break-all text-sky-300 underline decoration-sky-300/40 hover:text-sky-200"
+                        >
+                          {p.text}
+                        </a>
+                      ) : (
+                        p.text
+                      ),
+                    )}
+                  </span>
                 ),
               )}
               {isModelAnswer(m) && (

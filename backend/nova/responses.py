@@ -25,10 +25,11 @@ def build_response(intent: Intent, assistant_name: str, answer: str | None = Non
             return f"Assalam-o-Alaikum! {assistant_name} online hai. Main aapki kya madad kar sakta hoon?"
         case "help":
             return (
-                f"Main {assistant_name} hoon. Abhi main aapke sawalon ke jawab de sakta hoon, aapke system ki "
-                "maloomat (CPU, RAM, GPU, storage, Windows, mic/speaker/camera, browsers, installed apps) bata "
-                "sakta hoon, aur ek sath kai kaam samajh kar unka plan bana sakta hoon. Application kholna, "
-                "search aur files agle phases mein add honge."
+                f"Main {assistant_name} hoon. Main sawalon ke jawab deta hoon, system ki maloomat batata hoon, apps "
+                "kholta hoon aur windows control karta hoon, screen parhta hoon, websites kholta aur parhta hoon, web "
+                "research karta hoon, files dhoondta, banata, move/copy/rename aur Recycle Bin mein bhejta hoon, folders "
+                "organize karta hoon, aur code projects mein tests chala kar errors dhoondta aur theek karta hoon. "
+                "Khatre wale kaam se pehle hamesha ijazat leta hoon."
             )
         case "chat":
             if answer:

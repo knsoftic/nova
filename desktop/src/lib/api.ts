@@ -1,6 +1,7 @@
 import type {
   ActivityRecord,
   AiStatus,
+  FileRoot,
   LiveStats,
   PermissionRequest,
   PermissionRule,
@@ -54,6 +55,7 @@ export const api = {
   speechUrl: (id: string) => `${API_BASE}/api/voice/speech/${encodeURIComponent(id)}`,
   aiStatus: (refresh = false) => request<AiStatus>(`/api/ai/status${refresh ? "?refresh=true" : ""}`),
   webStatus: () => request<WebStatus>("/api/web/status"),
+  fileRoots: () => request<FileRoot[]>("/api/files/roots"),
   /** Write-only: the backend encrypts the value and only ever returns a masked hint. */
   setSecret: (name: string, value: string) =>
     request<{ ok: boolean; masked: string }>(`/api/secrets/${encodeURIComponent(name)}`, json("PUT", { value })),

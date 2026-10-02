@@ -1,6 +1,15 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, fieldErrors } from "../lib/api";
-import type { AiMode, AiStatus, NovaState, PermissionRule, UserSettings, VoiceStatus, WebStatus } from "../lib/types";
+import type {
+  AiMode,
+  AiStatus,
+  FileRoot,
+  NovaState,
+  PermissionRule,
+  UserSettings,
+  VoiceStatus,
+  WebStatus,
+} from "../lib/types";
 import { STATE_META } from "../lib/ui";
 
 interface Props {
@@ -346,6 +355,103 @@ function WebSettings({
   );
 }
 
+/** Where the File and Coding agents may work. Project folders are saved with the rest of the form. */
+function FileSettings({
+  draft,
+  set,
+  errors,
+  open,
+}: {
+  draft: UserSettings;
+  set: <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => void;
+  errors: Record<string, string>;
+  open: boolean;
+}) {
+  const [roots, setRoots] = useState<FileRoot[] | null>(null);
+  const [adding, setAdding] = useState("");
+
+  useEffect(() => {
+    if (open) api.fileRoots().then(setRoots).catch(() => setRoots(null));
+  }, [open]);
+
+  const add = () => {
+    const path = adding.trim().replace(/^"|"$/g, "");
+    if (!path) return;
+    if (!draft.project_folders.some((p) => p.toLowerCase() === path.toLowerCase())) {
+      set("project_folders", [...draft.project_folders, path]);
+    }
+    setAdding("");
+  };
+
+  const userFolders = roots?.filter((r) => r.kind === "folder") ?? [];
+  return (
+    <fieldset className="flex flex-col gap-3 border-t border-white/10 pt-4">
+      <legend className="mb-1 text-xs font-medium text-slate-300">Files aur code projects</legend>
+      <span className="text-xs text-slate-500">
+        NOVA sirf in folders mein kaam karta hai. Delete hamesha Recycle Bin mein jata hai; .env, keys aur NOVA ki
+        apni files kabhi nahi chhui jatin.
+      </span>
+      {userFolders.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {userFolders.map((r) => (
+            <span key={r.path} title={r.path} className="rounded-md bg-white/[0.05] px-2 py-0.5 text-[11px] text-slate-300">
+              {r.name}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-slate-300">Project folders</span>
+        <ul className="flex flex-col gap-1">
+          {draft.project_folders.map((p) => (
+            <li key={p} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.03] px-3 py-1.5">
+              <span className="truncate font-mono text-xs text-slate-200" title={p}>
+                {p}
+              </span>
+              <button
+                type="button"
+                onClick={() => set("project_folders", draft.project_folders.filter((x) => x !== p))}
+                className="shrink-0 text-xs text-red-300 hover:text-red-200"
+              >
+                Hatao
+              </button>
+            </li>
+          ))}
+          {draft.project_folders.length === 0 && <li className="text-xs text-slate-500">Koi project folder nahi.</li>}
+        </ul>
+        <div className="flex gap-2">
+          <input
+            className={`${inputClass} min-w-0 flex-1 font-mono text-xs`}
+            value={adding}
+            placeholder="C:\Users\...\Projects"
+            spellCheck={false}
+            onChange={(e) => setAdding(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault(); // not the settings form's submit
+                add();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={add}
+            disabled={!adding.trim()}
+            className="shrink-0 rounded-lg border border-sky-500/40 px-3 text-xs text-sky-200 hover:bg-sky-500/10 disabled:opacity-40"
+          >
+            Add
+          </button>
+        </div>
+        {errors.project_folders ? (
+          <span className="text-xs text-red-300">{errors.project_folders}</span>
+        ) : (
+          <span className="text-xs text-slate-500">In ke andar har folder ek project hai (maslan C:\xampp\htdocs\nova). Save karein.</span>
+        )}
+      </div>
+    </fieldset>
+  );
+}
+
 const inputClass =
   "rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/60";
 
@@ -487,6 +593,8 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
             <VoiceSettings draft={draft} set={set} errors={errors} open={open} />
 
             <WebSettings draft={draft} set={set} errors={errors} open={open} />
+
+            <FileSettings draft={draft} set={set} errors={errors} open={open} />
 
             <fieldset className="flex flex-col gap-2 border-t border-white/10 pt-4">
               <legend className="mb-1 text-xs font-medium text-slate-300">AI brain (local, PC se bahar kuch nahi jata)</legend>

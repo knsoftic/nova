@@ -47,7 +47,7 @@ def test_rules_compound(text, expected):
     "text,intent_name,entities",
     [
         ("please launch whatsapp for me", "open_app", {"app": "whatsapp"}),
-        ("desktop par Projects naam ka folder bana do", "create_folder", {"folder_name": "Projects"}),
+        ("desktop par Projects naam ka folder bana do", "create_folder", {"folder_name": "Projects", "location": "desktop"}),
         ("zindagi kaisi chal rahi hai dost", "unknown", {}),  # not "running apps"
         ("kaun si apps chal rahi hain", "system_info", {"topic": "running"}),
     ],
@@ -185,12 +185,12 @@ def intent(name, **entities):
 
 def test_plan_statuses_and_risk():
     plan = build_plan(Understanding(intents=[intent("system_info", topic="ram"), intent("change_setting"),
-                                             intent("create_folder"), intent("open_app", app="Chrome")],
+                                             intent("delete_file"), intent("open_app", app="Chrome")],
                                     provider="test"))
     by_intent = {s.intent.name: s for s in plan.steps}
     assert by_intent["system_info"].status == "ready" and by_intent["system_info"].risk == "low"
     assert by_intent["change_setting"].status == "unavailable" and by_intent["change_setting"].available_from_phase == 8
-    assert by_intent["create_folder"].risk == "medium" and by_intent["create_folder"].status != "ready"
+    assert by_intent["delete_file"].risk == "medium" and by_intent["delete_file"].status == "needs_permission"
     assert by_intent["open_app"].status == "ready" and by_intent["open_app"].risk == "low"
     assert [s.id for s in plan.steps] == [1, 2, 3, 4]
 

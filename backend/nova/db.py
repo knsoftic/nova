@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from datetime import datetime
@@ -73,6 +74,16 @@ CREATE TABLE IF NOT EXISTS permission_requests (
     decided_by TEXT,
     decided_at TEXT,
     remembered INTEGER NOT NULL DEFAULT 0
+);
+
+-- File changes NOVA made, so the last one can be undone (moves reversed, backups restored).
+CREATE TABLE IF NOT EXISTS file_ops (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    op TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    data_json TEXT NOT NULL,
+    undone INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_activity_task ON activity_log(task_id);
@@ -222,6 +233,25 @@ class Database:
 
     def list_permission_requests(self, limit: int = 100) -> list[dict[str, Any]]:
         return self._query("SELECT * FROM permission_requests ORDER BY created_at DESC LIMIT ?", (limit,))
+
+    # file operations journal (undo)
+    def add_file_op(self, op: str, summary: str, data: dict[str, Any]) -> int:
+        cur = self._execute(
+            "INSERT INTO file_ops(created_at, op, summary, data_json) VALUES (?, ?, ?, ?)",
+            (datetime.now().isoformat(timespec="seconds"), op, summary, json.dumps(data, ensure_ascii=False)),
+        )
+        return int(cur.lastrowid or 0)
+
+    def last_file_op(self) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM file_ops WHERE undone = 0 ORDER BY id DESC LIMIT 1")
+        if not rows:
+            return None
+        row = rows[0]
+        row["data"] = json.loads(row.pop("data_json"))
+        return row
+
+    def mark_file_op_undone(self, op_id: int) -> None:
+        self._execute("UPDATE file_ops SET undone = 1 WHERE id = ?", (op_id,))
 
     # system profile (latest few kept for comparison)
     def save_system_profile(self, profile_json: str, keep: int = 5) -> None:

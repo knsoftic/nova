@@ -1,0 +1,91 @@
+import { describe, expect, it } from "vitest";
+import { matchesActivity } from "./activityFilter";
+import { computeLevel, smoothLevel } from "./audio";
+import { emptyHistory, navigateHistory, pushHistory } from "./commandHistory";
+import type { EventType, NovaEvent } from "./types";
+import { formatBytes, formatDuration } from "./ui";
+
+const ev = (type: EventType, agent: string | null = "Orchestrator"): NovaEvent => ({
+  type,
+  agent,
+  timestamp: "2026-10-02T00:00:00Z",
+  task_id: null,
+  message: null,
+  data: {},
+});
+
+describe("command history", () => {
+  it("walks back and forward and restores the draft", () => {
+    let h = pushHistory(pushHistory(emptyHistory, "chrome open karo"), "ram check karo");
+    let r = navigateHistory(h, "up", "half typed");
+    expect(r.value).toBe("ram check karo");
+    r = navigateHistory(r.history, "up", r.value);
+    expect(r.value).toBe("chrome open karo");
+    r = navigateHistory(r.history, "up", r.value); // stays at oldest
+    expect(r.value).toBe("chrome open karo");
+    r = navigateHistory(r.history, "down", r.value);
+    expect(r.value).toBe("ram check karo");
+    r = navigateHistory(r.history, "down", r.value);
+    expect(r.value).toBe("half typed");
+    h = r.history;
+    expect(h.index).toBeNull();
+  });
+
+  it("skips blanks and consecutive duplicates and caps length", () => {
+    let h = pushHistory(emptyHistory, "  ");
+    expect(h.items).toEqual([]);
+    h = pushHistory(pushHistory(h, "a"), "a");
+    expect(h.items).toEqual(["a"]);
+    for (let i = 0; i < 10; i++) h = pushHistory(h, `c${i}`, 5);
+    expect(h.items).toEqual(["c5", "c6", "c7", "c8", "c9"]);
+  });
+
+  it("does nothing with an empty history", () => {
+    expect(navigateHistory(emptyHistory, "up", "x").value).toBe("x");
+    expect(navigateHistory(emptyHistory, "down", "x").value).toBe("x");
+  });
+});
+
+describe("activity filter", () => {
+  it("filters by category", () => {
+    expect(matchesActivity(ev("TASK_STARTED"), "tasks")).toBe(true);
+    expect(matchesActivity(ev("TASK_STARTED"), "system")).toBe(false);
+    expect(matchesActivity(ev("DISCOVERY_COMPLETED", "System Agent"), "system")).toBe(true);
+    expect(matchesActivity(ev("TASK_FAILED"), "errors")).toBe(true);
+    expect(matchesActivity(ev("ACTION_EXECUTED", "System Agent"), "agents")).toBe(true);
+    expect(matchesActivity(ev("NOVA_RESPONSE"), "all")).toBe(true);
+  });
+
+  it("filters by agent", () => {
+    expect(matchesActivity(ev("ACTION_EXECUTED", "System Agent"), "all", "System Agent")).toBe(true);
+    expect(matchesActivity(ev("TASK_STARTED", "Orchestrator"), "all", "System Agent")).toBe(false);
+  });
+});
+
+describe("audio level", () => {
+  it("is 0 for silence and grows with amplitude, capped at 1", () => {
+    expect(computeLevel(new Float32Array(512))).toBe(0);
+    const quiet = computeLevel(Array.from({ length: 512 }, (_, i) => 0.02 * Math.sin(i / 5)));
+    const loud = computeLevel(Array.from({ length: 512 }, (_, i) => 0.3 * Math.sin(i / 5)));
+    expect(quiet).toBeGreaterThan(0);
+    expect(loud).toBeGreaterThan(quiet);
+    expect(computeLevel(new Float32Array(512).fill(1))).toBe(1);
+    expect(computeLevel([])).toBe(0);
+  });
+
+  it("rises fast and falls slowly", () => {
+    expect(smoothLevel(0, 1)).toBeCloseTo(0.6);
+    expect(smoothLevel(1, 0)).toBeCloseTo(0.85);
+  });
+});
+
+describe("formatting", () => {
+  it("formats bytes and durations", () => {
+    expect(formatBytes(16 * 1024 ** 3)).toBe("16 GB");
+    expect(formatBytes(1.5 * 1024 ** 3)).toBe("1.5 GB");
+    expect(formatBytes(512 * 1024 ** 2)).toBe("512 MB");
+    expect(formatBytes(null)).toBe("?");
+    expect(formatDuration(3 * 3600 + 25 * 60)).toBe("3h 25m");
+    expect(formatDuration(59 * 60)).toBe("59m");
+  });
+});

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain, session, shell } from "electron";
 import type { ChildProcess } from "node:child_process";
 import path from "node:path";
 import { BACKEND_URL, ensureBackend } from "./backend";
@@ -44,6 +44,25 @@ function createWindow(): void {
   });
 }
 
+function isAppUrl(url: string | undefined): boolean {
+  if (!url) return false;
+  return devServerUrl ? url.startsWith(devServerUrl) : url.startsWith("file://");
+}
+
+/** Microphone only, only for NOVA's own page. Camera, location, notifications etc. stay denied. */
+function configurePermissions(): void {
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    const mediaTypes = "mediaTypes" in details ? (details.mediaTypes ?? []) : [];
+    const audioOnly = mediaTypes.length > 0 && mediaTypes.every((t) => t === "audio");
+    callback(permission === "media" && audioOnly && isAppUrl(details.requestingUrl));
+  });
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
+    if (permission !== "media") return false;
+    const mediaType = "mediaType" in details ? details.mediaType : undefined;
+    return mediaType !== "video" && isAppUrl(requestingOrigin || details.requestingUrl);
+  });
+}
+
 function stopBackend(): void {
   if (backendProcess && backendProcess.exitCode === null) backendProcess.kill();
   backendProcess = null;
@@ -67,6 +86,7 @@ if (!app.requestSingleInstanceLock()) {
   }));
 
   app.whenReady().then(async () => {
+    configurePermissions();
     backendProcess = await ensureBackend(app.getAppPath());
     createWindow();
     app.on("activate", () => {

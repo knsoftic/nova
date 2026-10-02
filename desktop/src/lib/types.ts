@@ -27,7 +27,33 @@ export type EventType =
   | "TASK_COMPLETED"
   | "DISCOVERY_STARTED"
   | "DISCOVERY_COMPLETED"
-  | "DISCOVERY_FAILED";
+  | "DISCOVERY_FAILED"
+  | "SETTINGS_CHANGED";
+
+export interface UserSettings {
+  assistant_name: string;
+  wake_word: string;
+  continuous_listening: boolean;
+  startup_mode: "silent" | "active";
+}
+
+/** One row of the persisted, structured activity log (spec section 30). */
+export interface ActivityRecord {
+  id: number;
+  date: string;
+  time: string;
+  task_id: string;
+  task_name: string;
+  agent: string;
+  action: string;
+  permission_status: string;
+  execution_status: string;
+  test_status: string;
+  verification_status: string;
+  admin_status: string;
+  error: string | null;
+  final_result: string | null;
+}
 
 export interface DriveInfo {
   mountpoint: string;
@@ -106,7 +132,14 @@ export interface NovaEvent {
 
 export interface HelloMessage {
   type: "HELLO";
-  data: { assistant_name: string; state: NovaState; version: string; history: NovaEvent[] };
+  data: {
+    assistant_name: string;
+    state: NovaState;
+    version: string;
+    voice_active: boolean;
+    settings: UserSettings;
+    history: NovaEvent[];
+  };
 }
 
 export type ServerMessage = NovaEvent | HelloMessage | { type: "pong" } | { type: "ERROR"; message: string };

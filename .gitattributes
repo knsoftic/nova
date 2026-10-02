@@ -1,0 +1,5 @@
+# Keep LF in the working tree on every OS so tooling and patches behave the same.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.ico binary

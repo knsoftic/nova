@@ -31,6 +31,10 @@ class ProviderManager:
             for p in self._providers.values()
         ]
 
+    def configure_wake(self, assistant_name: str, wake_word: str) -> None:
+        for provider in self._providers.values():
+            provider.configure_wake(assistant_name, wake_word)
+
     async def detect_intent(self, text: str) -> Intent:
         provider = self.active
         if provider.name != self._fallback and not await provider.is_available():

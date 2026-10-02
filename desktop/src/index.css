@@ -70,6 +70,94 @@ body {
 .nova-core--busy .nova-ring--middle { animation-duration: 2.5s; }
 .nova-core--busy .nova-orb { animation-duration: 1.2s; }
 
+.nova-orb { position: relative; }
+.nova-name {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  padding-left: 0.3em;
+  color: rgb(255 255 255 / 0.9);
+  transition: opacity 250ms ease;
+}
+.nova-glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 2.75rem;
+  font-weight: 700;
+  color: white;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 250ms ease, transform 250ms ease;
+}
+
+/* Hidden by default; individual states switch these layers on. */
+.nova-ripple,
+.nova-sweep,
+.nova-orbit {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+.nova-ripple { inset: 40px; border: 2px solid var(--nova-color); }
+.nova-sweep {
+  inset: 22px;
+  background: conic-gradient(from 0deg, transparent 0 300deg, color-mix(in srgb, var(--nova-color) 55%, transparent) 360deg);
+  mask: radial-gradient(circle, transparent 54%, black 55%);
+}
+.nova-orbit { inset: 30px; }
+.nova-orbit span {
+  position: absolute;
+  top: -4px;
+  left: calc(50% - 4px);
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--nova-color);
+  box-shadow: 0 0 10px var(--nova-color);
+  transform-origin: 4px 84px;
+}
+.nova-orbit span:nth-child(2) { transform: rotate(120deg); }
+.nova-orbit span:nth-child(3) { transform: rotate(240deg); }
+
+/* LISTENING: orb and ripple follow the live microphone level. */
+[data-state="LISTENING"] .nova-orb {
+  animation: none;
+  transform: scale(calc(1 + var(--nova-level) * 0.22));
+  transition: transform 80ms linear, box-shadow 80ms linear;
+  box-shadow: 0 0 calc(30px + var(--nova-level) * 50px) color-mix(in srgb, var(--nova-color) 55%, transparent);
+}
+[data-state="LISTENING"] .nova-ripple { opacity: 0.6; animation: nova-ripple 1.8s ease-out infinite; }
+
+/* THINKING / PLANNING: orbiting dots. */
+[data-state="THINKING"] .nova-orbit,
+[data-state="PLANNING"] .nova-orbit { opacity: 1; animation: nova-spin 1.6s linear infinite; }
+[data-state="PLANNING"] .nova-orbit { animation-duration: 3s; }
+
+/* VERIFYING: radar sweep. */
+[data-state="VERIFYING"] .nova-sweep { opacity: 1; animation: nova-spin 1.4s linear infinite; }
+
+/* WAITING_FOR_PERMISSION: slow amber blink with a question mark. */
+[data-state="WAITING_FOR_PERMISSION"] .nova-orb { animation: nova-blink 1.4s ease-in-out infinite; }
+[data-state="WAITING_FOR_PERMISSION"] .nova-name { opacity: 0; }
+[data-state="WAITING_FOR_PERMISSION"] .nova-glyph--permission { opacity: 1; transform: scale(1); }
+
+/* COMPLETED: check mark and a single flash. */
+[data-state="COMPLETED"] .nova-name { opacity: 0; }
+[data-state="COMPLETED"] .nova-glyph--done { opacity: 1; transform: scale(1); }
+[data-state="COMPLETED"] .nova-ripple { opacity: 0.8; animation: nova-ripple 0.9s ease-out 1; }
+
+/* ERROR: shake once with an exclamation mark. */
+[data-state="ERROR"] .nova-orb { animation: nova-shake 0.45s ease-in-out 1; }
+[data-state="ERROR"] .nova-name { opacity: 0; }
+[data-state="ERROR"] .nova-glyph--error { opacity: 1; transform: scale(1); }
+
+/* IDLE: calm, rings slow down. */
+[data-state="IDLE"] .nova-ring--outer { animation-duration: 60s; }
+
 @keyframes nova-spin {
   to { transform: rotate(360deg); }
 }
@@ -77,7 +165,28 @@ body {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.05); }
 }
+@keyframes nova-ripple {
+  from { transform: scale(1); opacity: 0.7; }
+  to { transform: scale(1.7); opacity: 0; }
+}
+@keyframes nova-blink {
+  0%, 100% { box-shadow: 0 0 20px color-mix(in srgb, var(--nova-color) 30%, transparent); }
+  50% { box-shadow: 0 0 70px color-mix(in srgb, var(--nova-color) 80%, transparent); }
+}
+@keyframes nova-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+/* Short windows (small laptops, split screen): shrink the avatar so the conversation keeps room. */
+@media (max-height: 760px) {
+  .nova-core { transform: scale(0.7); margin: -33px 0; }
+}
+@media (max-height: 560px) {
+  .nova-core { transform: scale(0.5); margin: -55px 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .nova-ring, .nova-orb { animation: none !important; }
+  .nova-ring, .nova-orb, .nova-orbit, .nova-sweep, .nova-ripple { animation: none !important; }
 }

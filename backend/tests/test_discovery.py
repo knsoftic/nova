@@ -122,7 +122,7 @@ def test_recommend_low_ram_and_no_devices():
         ("internet connected hai?", "system_info", {"topic": "network"}),
         ("kya photoshop installed hai", "app_check", {"app": "photoshop"}),
         ("is Telegram installed", "app_check", {"app": "Telegram"}),
-        ("Chrome ko default browser bana do", "change_setting", {"request": "Chrome ko default browser bana do"}),
+        ("Chrome ko default browser bana do", "change_setting", {"setting": "default_browser", "value": "Chrome"}),
         # Whisper's Urdu-script spellings of English words (from real voice tests).
         ("آر ایم کتنی فیہ ہے؟", "system_info", {"topic": "ram"}),
         ("وندوز کا ویشن بتاؤ۔", "system_info", {"topic": "windows"}),
@@ -184,10 +184,10 @@ def test_open_app_reports_missing_app(client):
     assert body["executed"] is False
 
 
-def test_change_setting_is_not_executed(client):
+def test_default_browser_opens_windows_settings_instead_of_changing_it(client):
+    # Windows does not let programs switch the default browser; NOVA opens the right page for the user.
     body = client.post("/api/command", json={"text": "Chrome ko default browser bana do"}).json()
-    assert body["executed"] is False
-    assert "Permission Engine" in body["response"]
+    assert "Default apps" in body["response"] and "khud badalne nahi deta" in body["response"]
 
 
 def test_system_summary_mentions_key_hardware(client):

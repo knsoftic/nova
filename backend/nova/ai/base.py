@@ -59,11 +59,23 @@ KNOWN_INTENTS = (
     "explain_error",
     "fix_error",
     "modify_code",
+    # system settings, messages, design (Phase 8C)
+    "open_settings",
+    "send_message",
+    "save_contact",
+    "list_contacts",
+    "delete_contact",
+    "edit_image",
+    "create_design",
+    "open_with",
     "unknown",
 )
 
 BROWSER_NAV_ACTIONS = ("scroll_down", "scroll_up", "back", "forward", "reload")
 EDIT_ACTIONS = ("append", "replace")
+SETTING_NAMES = ("volume", "mute", "unmute", "brightness", "theme", "wifi", "bluetooth", "default_browser", "other")
+CHANNELS = ("whatsapp", "email")
+IMAGE_OPERATIONS = ("resize", "fit", "convert", "compress", "rotate", "flip", "grayscale", "caption", "watermark")
 
 WINDOW_ACTIONS = ("minimize", "maximize", "restore", "show_desktop")
 SHORTCUT_NAMES = ("copy", "paste", "cut", "undo", "redo", "select_all", "save", "new_tab", "close_tab", "find",

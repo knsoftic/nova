@@ -93,6 +93,12 @@ history html install item js json jsx keys l lines list match mb minute modules 
 packages pages panel paragraphs passed passwords path pdf php pictures pip project projects py pytest python q r react
 readme recycle requirements restore right scripts server sheets syntax syntaxerror tsc tsx txt utf venv videos virtual
 vs word xampp xlsx rename websites bracket print
+adapter ali attach attachment audio background banner black bluetooth box brightness chat chats communication
+compress contact contacts country dark defender degree design designs device devices disconnect disturb dp draft
+drafts email facebook fi firewall format full grand hd header headphones instagram items jpg laptop light linkedin
+mail message monitor mute night notepad original outbox outlook paint phone picture png post power powerpoint
+printers privacy radio region rotated sale scanners security send sent sleep startup story subject theme thumbnail
+time touchpad twitter uac unmute visiting volume wallpaper webp white wi x youtube
 """.split())
 
 
@@ -103,7 +109,9 @@ def test_every_template_word_is_covered():
     for f in ["responses.py", "agents/system_agent.py", "agents/computer.py", "orchestrator.py", "planner.py",
               "permissions/engine.py", "browser/agent.py", "research/agent.py", "agents/file_agent.py", "files/ops.py",
               "files/scope.py", "files/documents.py", "coding/agent.py", "coding/runner.py", "coding/projects.py",
-              "coding/editor.py", "coding/diagnostics.py"]:
+              "coding/editor.py", "coding/diagnostics.py", "agents/settings_agent.py", "control/settings.py",
+              "communication/agent.py", "communication/contacts.py", "communication/email.py",
+              "communication/whatsapp.py", "design/agent.py", "design/images.py"]:
         tree = ast.parse((root / f).read_text(encoding="utf-8"))
         # Docstrings are developer documentation, never spoken.
         skipped = {
@@ -113,11 +121,14 @@ def test_every_template_word_is_covered():
         }
         # Prompts and patterns for the local model are never spoken either.
         # (and regular expressions are patterns, not sentences)
-        model_calls = ("_ask", "complete_json", "complete", "compile", "sub", "search", "match", "fullmatch")
+        # (and PowerShell commands / registry paths are machine text)
+        model_calls = ("_ask", "complete_json", "complete", "compile", "sub", "search", "match", "fullmatch",
+                       "_powershell", "OpenKey")
         for n in ast.walk(tree):
             model_facing = (
                 isinstance(n, (ast.Assign, ast.AugAssign)) and any(
-                    isinstance(t, ast.Name) and (t.id.endswith("_SYSTEM") or t.id in ("_META", "prompt"))
+                    isinstance(t, ast.Name) and (t.id.endswith(("_SYSTEM", "_EXAMPLE")) or t.id in ("_META", "prompt",
+                                                                                               "PERSONALIZE"))
                     for t in (n.targets if isinstance(n, ast.Assign) else [n.target]))
             ) or (isinstance(n, ast.Call) and (
                 (isinstance(n.func, ast.Attribute) and n.func.attr in model_calls)

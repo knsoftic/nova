@@ -482,3 +482,71 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 8B commit `9b478aa`, `main` mein merge `8687054`.
+
+---
+
+### Task: Phase 8C — System settings + Communication Agent + Design Agent
+
+Status: Complete (branch `phase-8c-system-comm-design`, approval ke baad `main` mein merge)
+
+Admin ke faisle (is phase ke shuru mein): messages **WhatsApp + Outlook** (har bhejne se pehle recipient aur poora text dikha kar ijazat), settings **aam settings** (volume, brightness, dark mode, Wi-Fi, Bluetooth; baqi ke liye Settings page; security kabhi nahi), design **image tools**.
+
+Kaam:
+- **Windows settings (System Agent):**
+  - Volume (number, "thori kam/zyada", "aadhi", "full"), mute/unmute, brightness (laptop ki apni screen) — fauran, aur har badlaav ke baad dobara parh kar verify ("ab 30% hai").
+  - Dark/light mode aur Wi-Fi/Bluetooth **off** karna ijazat se (wajah dialog mein: "Internet band ho jayega", "headphones disconnect ho jayenge"); on karna seedha.
+  - Default browser jaisi cheezein Windows khud kisi program ko badalne nahi deta — NOVA sahi Settings page (Default apps) khol deta hai aur batata hai. "display/wallpaper/update/... settings kholo" bhi.
+  - **Security settings (Defender, firewall, UAC, BitLocker, passwords) NOVA kabhi nahi badalta** — saaf inkaar.
+- **Communication Agent:**
+  - **Contacts:** NOVA ki apni list (Settings → Contacts, ya "Ali ka number 0300 1234567 save karo"); numbers "+92 300 1234567" format mein. NOVA aap ki WhatsApp chats/contacts mein **khud kabhi nahi dhoondta** — is liye ghalat "Ali" ko message jane ka khatra nahi. Command mein likha number/email bhi chalta hai.
+  - **WhatsApp:** official click-to-chat link se bilkul usi number ki chat khulti hai aur text message box mein aata hai. NOVA pehle check karta hai ke box mein yahi text hai (accessibility/OCR); confirm na ho to **kuch nahi bhejta**. Enter sirf tab dabata hai jab WhatsApp hi saamne ho; baad mein check karta hai ke box khaali aur text chat mein hai.
+  - **Email:** Outlook account ho to Outlook se (Sent Items mein verify, Outbox mein ho to batata hai), attachment ke sath bhi (file allowed folders se, 20 MB tak). Outlook account na ho (is PC par yahi haal hai) to draft default mail app mein khulta hai — Send aap dabate hain; NOVA "bhej diya" nahi kehta.
+  - Har bhejna **har dafa poocha jata hai** (kabhi yaad nahi), dialog mein recipient + poora text; message mein password/OTP/card jaisi cheez ho to **high risk**. "... ke liye message prepare karo ke ..." → local AI draft likhta hai, bhejta nahi.
+- **Design Agent:**
+  - Tasveer: exact size (1080x1080, Instagram post/story, YouTube thumbnail, DP...) bina khinchay crop, % chhota, format (png/jpg/webp/pdf...), compress (size pehle/baad batata hai), ghumana, flip, black & white, caption (neeche patti), watermark (corner ki roshni dekh kar kala ya safed). **Original kabhi nahi badalta** — hamesha nayi file, aur nayi file khol kar size/format verify.
+  - Template designs: post, story, banner, thumbnail, poster, card... — gradient background, rang ("neela", "sunehra"...), text khud fit hota hai; Pictures\NOVA\Designs mein save aur khul jata hai.
+  - File ko Photoshop / Paint / Word / Excel / PowerPoint / Notepad / VS Code mein kholna (app ka path Windows registry se; programs nahi kholta), verify: window.
+- **Permission Engine:** agent apni resolved halat ke hisaab se kam se kam risk aur wajah de sakta hai (dark mode, Wi-Fi off, message bhejna). Contact ka field model schema mein `contact_name` — `name` rakhne se intent ki list kharab ho jati (test ne pakra).
+- **UI:** Settings mein Contacts section (add/hatao, number check); Design aur Communication Agent active; permission dialog mein message ka poora text.
+- **AI brain:** 8 naye intents, rules + LLM. "awaaz band karo"/"wifi band karo" ab setting hain (app band karna nahi); "isko band kar do" pehle ki tarah app band karna.
+
+Test:
+- Backend automated tests: 474/474 pass (55 naye) — settings (level words, verify, ijazat, security inkaar, default browser page), contacts (numbers, email, API validation), WhatsApp (dialog mein text, har dafa poochna, inkaar par WhatsApp khulta bhi nahi, confirm na ho to na bhejna, Enter sirf WhatsApp mein, anjaan naam), password wala message high risk, local AI draft, email Outlook/bina Outlook/attachment, image edits (nayi file, original same, size verify), designs, Urdu script inkaar, rules/LLM parsing. Tests asli settings, WhatsApp, email ko haath nahi lagate.
+- Frontend: 15/15 tests, typecheck aur build successful.
+- AI brain eval (70 commands, 10 naye): sirf rules 66/70 (baqi 4 aam sawal), **hybrid 70/70**, sirf LLM 68/70 (median 9.4s; dono ghaltiyan hybrid mein rules sambhal lete hain).
+- **Is PC par asli test:**
+  - Volume 78% → 30% → "thori zyada" 40% → mute/unmute; brightness 100% → 70%; light → dark → light (ijazat ke sath) — sab verify; test ke baad **sab pehle jaisa** (volume 78%, brightness 100%, light mode, Wi-Fi/Bluetooth on).
+  - "firewall band karo" → inkaar. "wifi band karo" → dialog (Internet band ho jayega) → Nahi → Wi-Fi on raha. "Chrome ko default browser bana do" → Default apps page khula (verify).
+  - Test contact save/list; usay WhatsApp message → dialog mein number aur text → **Nahi** (koi message nahi bheja gaya); contact hata diya.
+  - Sandbox tasveer: 1080x1080, png, compress (432 KB → 203 KB), 90° ghumana, black & white, watermark, caption — sab nayi files, verify; YouTube thumbnail design bana aur khula; "isko Paint mein kholo" → Paint mein khula (verify).
+  - UI: Contacts section — ghalat number par error, sahi par "+92 300 0000001", Hatao.
+  - Test ke baad: khuli windows (Settings, Photos, Paint) band, sandbox aur design Recycle Bin mein, test contacts hata diye.
+- **Jaan bujh kar asli test nahi kiya:** Wi-Fi/Bluetooth off (meri apni internet connection aur aap ke headphones/mouse), aur koi asli WhatsApp message ya email — ye admin test mein aap khud karein.
+
+Bugs / masail jo test ke dauran mile aur fix kiye gaye:
+- Model schema mein contact ke liye `name` field ne intent ke naam ki list mita di thi (model koi bhi intent naam likh sakta) — `contact_name` kiya; test ne pakra.
+- "awaaz band karo" / "firewall band karo" app band karna samjha jata — ab setting (firewall par inkaar).
+- "isko ... kar do" har cheez tasveer edit ban jati — ab tasveer ke kaam ka lafz zaroori.
+- "WhatsApp par Sara ko likho" mein naam "WhatsApp par Sara" ban raha tha — fix.
+- "90 degree ghumao" mein "ghumao" kat jata tha — fix.
+- Asli tasveer dekh kar: caption patti mein text neeche chipka hua tha, safed watermark halki tasveer par nazar nahi aata tha — dono theek (asli glyph height, corner ki roshni).
+- Pehle ke phases ki safai: lexicon mein "bare" do dafa (do mukhtalif maane) — ek rakha; ek test file mein bekaar imports.
+
+Maloom hadood (limitations):
+- Is PC par Outlook mein email account set nahi — email abhi sirf draft (mail app) ke tor par; account set hone par Outlook se bhejna aur verify chalega.
+- WhatsApp verification OCR/accessibility par hai: Urdu script ya sirf emoji wale message ki tasdeeq OCR nahi kar sakta — tab NOVA nahi bhejta aur batata hai (aap khud Enter dabayein).
+- Brightness sirf laptop ki apni screen; bahar wale monitor ki nahi.
+- Design text sirf Roman Urdu/English (Urdu script ke liye text-shaping library nahi).
+- Wi-Fi/Bluetooth Windows ki radio ijazat par chalta hai; kuch PCs par adapter driver ye na de to NOVA batata hai.
+
+Verification:
+- Settings: har badlaav ke baad dobara parhna. WhatsApp: box mein text → Enter → box khaali + chat mein text. Email: Sent Items. Tasveer: nayi file khol kar size/format. Activity log mein permission/verification.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

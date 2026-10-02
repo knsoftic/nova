@@ -20,6 +20,8 @@ class Prepared:
     executes_code: bool = False  # the project's own code/scripts will run
     network: bool = False  # packages will be downloaded
     always_ask: bool = False  # never covered by a remembered approval
+    min_risk: str = "low"  # the agent's own judgement of the resolved action (the engine may raise it further)
+    reasons: list[str] = field(default_factory=list)  # why it is risky, shown in the dialog
     data: dict[str, Any] = field(default_factory=dict)  # agent-specific: resolved paths, plan, proposal...
 
 

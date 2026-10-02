@@ -20,14 +20,21 @@ export interface AgentInfo {
 
 export const AGENTS: AgentInfo[] = [
   { name: "Orchestrator", description: "Command samajhna aur route karna", phase: null },
-  { name: "System Agent", description: "System maloomat, apps kholna, windows, screen parhna", phase: null },
+  { name: "System Agent", description: "System maloomat, apps, windows, screen, volume/brightness/Wi-Fi", phase: null },
   { name: "Browser Agent", description: "Websites kholna, parhna, click/type aur downloads (ijazat se)", phase: null },
   { name: "Research Agent", description: "Web search (Brave/Wikipedia), jawab aur reports", phase: null },
   { name: "File Agent", description: "Files dhoondna, banana, move/copy, Recycle Bin, organize, undo", phase: null },
   { name: "Coding Agent", description: "VS Code, projects, tests, errors dhoondna aur theek karna", phase: null },
-  { name: "Design Agent", description: "Design tools", phase: "8C" },
-  { name: "Communication Agent", description: "Messages (permission ke sath)", phase: "8C" },
+  { name: "Design Agent", description: "Tasveer resize/convert/watermark, posts aur banners", phase: null },
+  { name: "Communication Agent", description: "WhatsApp aur email (har dafa ijazat se)", phase: null },
 ];
+
+/** "923001234567" -> "+92 300 1234567" (other countries: "+<digits>"). */
+export function showPhone(digits: string | null): string {
+  if (!digits) return "";
+  if (digits.startsWith("92") && digits.length === 12) return `+92 ${digits.slice(2, 5)} ${digits.slice(5)}`;
+  return `+${digits}`;
+}
 
 /** Splits a reply into prose and ``` code blocks (file contents, command output). */
 export function messageBlocks(text: string): { code: boolean; text: string }[] {

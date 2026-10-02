@@ -83,7 +83,19 @@ CAPABILITIES: dict[str, Capability] = {
     "explain_error": Capability("Coding Agent", "explain_error", "low", None, "Error samjhana"),
     "fix_error": Capability("Coding Agent", "fix_error", "medium", None, "Error theek karna (code badalna)"),
     "modify_code": Capability("Coding Agent", "modify_code", "medium", None, "Code badalna"),
-    "change_setting": Capability("System Agent", "change_setting", "medium", 8, "Setting badalna"),
+    # Windows settings (System Agent). Volume/brightness/mute are low; the agent raises dark mode and turning
+    # Wi-Fi/Bluetooth off to medium when it prepares them. Security settings are refused.
+    "change_setting": Capability("System Agent", "change_setting", "low", None, "Setting badalna"),
+    "open_settings": Capability("System Agent", "open_settings", "low", None, "Settings page kholna"),
+    # Communication Agent: every send is asked (raised to medium, never remembered); drafts are low.
+    "send_message": Capability("Communication Agent", "send_message", "low", None, "Message/email"),
+    "save_contact": Capability("Communication Agent", "save_contact", "low", None, "Contact save karna"),
+    "list_contacts": Capability("Communication Agent", "list_contacts", "low", None, "Contacts dikhana"),
+    "delete_contact": Capability("Communication Agent", "delete_contact", "low", None, "Contact hatana"),
+    # Design Agent: new files only (originals untouched).
+    "edit_image": Capability("Design Agent", "edit_image", "low", None, "Tasveer badalna (nayi file)"),
+    "create_design": Capability("Design Agent", "create_design", "low", None, "Design banana"),
+    "open_with": Capability("Design Agent", "open_with", "low", None, "File app mein kholna"),
     "run_workflow": Capability("Orchestrator", "run_workflow", "low", 9, "Workflow chalana"),
 }
 

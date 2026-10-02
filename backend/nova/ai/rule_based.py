@@ -428,8 +428,176 @@ FIX_ERROR = [
                r"(?:theek|thik|fix|durust|hal)\s+(?:karo|kar do|kijiye|kar dein)$", re.IGNORECASE),
     re.compile(r"^fix\s+(?:this\s+|the\s+)?(?:error|bug)s?$", re.IGNORECASE),
 ]
+# ---- system settings, messages, design (Phase 8C) ------------------------------------------
+_VOL = r"(?:volume|awaaz|aawaz|awaz|sound|speaker\s+ki\s+awaaz)"
+_LEVEL_WORDS = re.compile(r"\d|kam|zyada|ziada|barha|ghata|tez|dheem|halk|full|poor|pura|aadh|half|max|min|\bup\b|"
+                          r"\bdown\b|high|low|ooncha|oonchi", re.IGNORECASE)
+_SET_END = r"\s*(?:kar do|karo|kardo|kijiye|kar dein|rakho|set karo|par kar do|par set karo|ho jaye)?"
+SETTING_RULES: list[tuple[str, re.Pattern[str]]] = [
+    ("mute", re.compile(rf"^(?:{_VOL}\s+)?mute\s*(?:karo|kar do|kardo)?$|^{_VOL}\s+band\s*(?:karo|kar do|kardo)?$|"
+                        r"^(?:computer|pc|laptop)\s+(?:ko\s+)?mute\s+(?:karo|kar do)$", re.IGNORECASE)),
+    ("unmute", re.compile(rf"^(?:{_VOL}\s+)?unmute\s*(?:karo|kar do)?$|^{_VOL}\s+(?:wapas\s+)?(?:chalu|khol|on)\s*"
+                          r"(?:karo|kar do)?$", re.IGNORECASE)),
+    ("volume", re.compile(rf"^(?:{_VOL})\s+(?:ko\s+)?(?P<value>.+?){_SET_END}$", re.IGNORECASE)),
+    ("volume", re.compile(r"^(?:turn|set)\s+(?:the\s+)?volume\s+(?:to\s+)?(?P<value>.+)$", re.IGNORECASE)),
+    ("brightness", re.compile(rf"^(?:screen\s+ki\s+)?(?:brightness|roshni|chamak)\s+(?:ko\s+)?(?P<value>.+?){_SET_END}$",
+                              re.IGNORECASE)),
+    ("theme", re.compile(r"^(?P<value>(?:dark|light|kala)\s+(?:mode|theme)(?:\s+(?:on|off|chalu|band|lagao|laga do|"
+                         r"enable|disable))?)\s*(?:karo|kar do|kardo)?$", re.IGNORECASE)),
+    ("theme", re.compile(r"^(?:windows\s+(?:ko\s+)?)?(?:mode|theme)\s+(?P<value>dark|light)\s+(?:karo|kar do)$|"
+                         r"^(?:turn\s+on|enable|switch\s+to)\s+(?P<value2>dark|light)\s+mode$", re.IGNORECASE)),
+    ("radio", re.compile(r"^(?P<radio>wi-?fi|bluetooth)\s+(?:ko\s+)?(?P<value>on|off|band|chalu|khol|enable|disable|"
+                         r"connect)\s*(?:karo|kar do|kardo|kijiye)?$|^turn\s+(?P<value2>on|off)\s+(?:the\s+)?"
+                         r"(?P<radio2>wi-?fi|bluetooth)$", re.IGNORECASE)),
+    ("default_browser", re.compile(r"^(?P<value>.+?)\s+ko\s+default\s+browser\s+(?:bana do|banao|set karo|kar do)$",
+                                   re.IGNORECASE)),
+    # Security switches are understood as settings so the System Agent can refuse them clearly.
+    ("other", re.compile(r"^(?:windows\s+)?(?P<value>(?:windows\s+)?(?:defender|firewall|anti-?virus|uac|bitlocker|"
+                         r"smart\s*screen)\s+(?:ko\s+)?(?:band|off|disable|on|chalu|enable|hata|hatao))\s*"
+                         r"(?:karo|kar do|kardo|do)?$", re.IGNORECASE)),
+]
+OPEN_SETTINGS = [
+    re.compile(r"^(?:windows\s+)?settings?\s+(?:kholo|khol do|open karo)$", re.IGNORECASE),
+    re.compile(r"^(?P<page>.+?)\s+(?:ki\s+|ke\s+)?settings?\s+(?:kholo|khol do|open karo|dikhao)$", re.IGNORECASE),
+    re.compile(r"^open\s+(?:the\s+)?(?P<page>.+?)\s+settings$", re.IGNORECASE),
+    re.compile(r"^(?P<page>windows\s+security)\s+(?:kholo|khol do|open karo)$", re.IGNORECASE),
+]
+_CH = r"(?P<ch>whatsapp|email|e-mail|mail)"
+SEND_MESSAGE = [
+    # "WhatsApp par Sara ko likho ke ..." first, so the channel is not read as part of the name.
+    re.compile(rf"^{_CH}\s+(?:par|pe|se)\s+(?P<to>.+?)\s+ko\s+(?:message\s+)?(?:likho|bhejo|bhej do|karo)\s*"
+               r"(?:ke|ki|:|-)?\s*(?P<text>.+)$", re.IGNORECASE),
+    re.compile(rf"^(?P<to>.+?)\s+ko\s+(?:{_CH}\s+(?:par|pe|se)\s+)?(?:(?P<ch2>message|msg|paigham|whatsapp|email|"
+               r"e-mail|mail)\s+)?(?:bhejo|bhej do|karo|kar do|likho|likh do)\s*(?:ke|ki|k|:|-)\s*(?P<text>.+)$",
+               re.IGNORECASE),
+    re.compile(rf"^(?:send|write)\s+(?:a\s+)?(?:{_CH}\s+)?(?:message\s+)?to\s+(?P<to>.+?)\s+(?:saying|that|:)\s*"
+               r"(?P<text>.+)$", re.IGNORECASE),
+]
+DRAFT_MESSAGE = re.compile(
+    rf"^(?P<to>.+?)\s+(?:ke\s+liye|ko)\s+(?:{_CH}\s+)?(?:message|msg|email|mail)\s+(?:prepare|tayyar|draft)\s+"
+    r"(?:karo|kar do|kar dein)\s*(?:ke|ki|jis\s+mein|:)?\s*(?P<about>.*)$", re.IGNORECASE)
+SEND_NO_TEXT = re.compile(rf"^(?P<to>.+?)\s+ko\s+(?:{_CH}\s+(?:par|pe)\s+)?(?:message|msg|whatsapp|email|mail)\s+"
+                          r"(?:bhejo|bhej do|karo|kar do)$", re.IGNORECASE)
+ATTACH_EMAIL = re.compile(r"^(?P<file>\S+?\.[A-Za-z0-9]{1,6})\s+(?P<to>.+?)\s+ko\s+(?:email|e-mail|mail)\s+"
+                          r"(?:karo|kar do|bhejo|bhej do)$", re.IGNORECASE)
+SAVE_CONTACT = [
+    re.compile(r"^(?P<name>.+?)\s+ka\s+(?:whatsapp\s+|mobile\s+|phone\s+|cell\s+)?(?:number|no\.?|nambar|numbar)\s+"
+               r"(?P<phone>\+?\d[\d\s\-]{6,18})\s+(?:save|add)\s*(?:karo|kar do|kar lo|lo)?$", re.IGNORECASE),
+    re.compile(r"^(?P<name>.+?)\s+ka\s+(?:email|e-mail|mail)\s+(?:address\s+)?(?P<email>\S+@\S+)\s+(?:save|add)\s*"
+               r"(?:karo|kar do|kar lo|lo)?$", re.IGNORECASE),
+    re.compile(r"^save\s+(?P<name>.+?)(?:'s)?\s+(?:number|phone)\s+(?:as\s+)?(?P<phone>\+?\d[\d\s\-]{6,18})$",
+               re.IGNORECASE),
+]
+LIST_CONTACTS = re.compile(r"^(?:mere\s+|nova\s+ke\s+|sab\s+)?contacts?\s+(?:dikhao|batao|ki\s+list(?:\s+dikhao)?)$|"
+                           r"^(?:list|show)\s+(?:my\s+)?contacts$", re.IGNORECASE)
+DELETE_CONTACT = re.compile(r"^(?P<name>.+?)\s+ko\s+contacts?\s+se\s+(?:hatao|hata do|delete karo|nikal do)$",
+                            re.IGNORECASE)
+_IMG = r"[^\s\"'][^\"']*?\.(?:jpe?g|png|webp|bmp|gif|tiff?|heic)"
+_IMG_TARGET = rf"(?P<target>{_IMG}|{_PRON}|(?:is|us|ye|yeh|wo)\s+(?:tasveer|photo|image|picture|pic))"
+EDIT_IMAGE = [
+    re.compile(rf"^{_IMG_TARGET}\s+(?:par|pe)\s+(?P<rest>.+?\s+(?:lagao|laga do|likho|likh do))$", re.IGNORECASE),
+    re.compile(rf"^{_IMG_TARGET}\s+(?:ko\s+)?(?P<rest>.+?)\s*(?:kar do|karo|kardo|kijiye|kar dein|bana do|banao|badal do|"
+               r"badlo|ghumao|ghuma do)$", re.IGNORECASE),
+    re.compile(rf"^(?P<verb>resize|convert|compress|rotate|crop|flip)\s+(?P<target>{_IMG})(?:\s+(?:to|into|by)\s+"
+               r"(?P<rest>.+))?$", re.IGNORECASE),
+]
+IMAGE_OP_WORDS = re.compile(r"\d+\s*[x×*]\s*\d+|\d+\s*%|\b(?:png|jpe?g|webp|bmp|gif)\b|compress|ghum|rotate|flip|mirror|"
+                            r"black\s*(?:and|&)\s*white|grayscale|watermark|caption|instagram|thumbnail|story|\bdp\b|"
+                            r"\bsize\b|chhot|crop", re.IGNORECASE)
+_KINDS = (r"instagram\s+post|instagram\s+story|insta\s+post|youtube\s+thumbnail|facebook\s+post|facebook\s+cover|"
+          r"whatsapp\s+status|visiting\s+card|post|story|banner|thumbnail|poster|flyer|card|status|dp|wallpaper")
+_STYLE = r"(?P<style>(?:[a-z]+\s+){0,3}?)"
+CREATE_DESIGN = [
+    re.compile(rf"^(?:ek\s+)?{_STYLE}(?P<kind>{_KINDS})\s+(?:design\s+)?(?:banao|bana do|tayyar karo|design karo)\s+"
+               rf"(?:jis|jismein|jis\s+mein|jis\s+par)\s*(?:par|pe|mein)?\s*{_Q}(?P<text>.+?){_Q}\s+(?:likha\s+ho|likho|ho)$",
+               re.IGNORECASE),
+    re.compile(rf"^{_Q}(?P<text>[^\"'“”]+?){_Q}\s+(?:ka|ki|ke\s+liye)\s+(?:ek\s+)?{_STYLE}(?P<kind>{_KINDS})\s+"
+               r"(?:banao|bana do|design karo|tayyar karo)$", re.IGNORECASE),
+    re.compile(rf"^(?:make|create|design)\s+(?:a|an)\s+{_STYLE}(?P<kind>{_KINDS})\s+(?:that\s+says|saying|with\s+"
+               rf"(?:the\s+)?text)\s+{_Q}(?P<text>.+?){_Q}$", re.IGNORECASE),
+    re.compile(rf"^(?:ek\s+)?{_STYLE}(?P<kind>{_KINDS})\s+(?:design\s+)?(?:banao|bana do|design karo)$", re.IGNORECASE),
+]
+_APPS = r"photoshop|ms\s*paint|paint|illustrator|gimp|word|excel|powerpoint|notepad|vs\s*code"
+OPEN_WITH = [
+    re.compile(rf"^(?P<target>.+?)\s+(?:ko\s+)?(?P<app>{_APPS})\s+(?:mein|me|se)\s+(?:kholo|khol do|open karo|open kar do|"
+               r"edit karo)$", re.IGNORECASE),
+    re.compile(rf"^open\s+(?P<target>.+?)\s+(?:in|with)\s+(?P<app>{_APPS})$", re.IGNORECASE),
+]
+
 # Whole commands whose text may contain "aur"/"and" that must not split them into several commands.
-UNSPLITTABLE = [CREATE_FILE_WITH_TEXT, *EDIT_REPLACE, *EDIT_APPEND, *MODIFY_CODE, *EXPLAIN_ERROR]
+UNSPLITTABLE = [CREATE_FILE_WITH_TEXT, *EDIT_REPLACE, *EDIT_APPEND, *MODIFY_CODE, *EXPLAIN_ERROR, *SEND_MESSAGE,
+                DRAFT_MESSAGE, *CREATE_DESIGN[:3], EDIT_IMAGE[0]]
+
+
+def _settings_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
+    for setting, pattern in SETTING_RULES:
+        if not (m := pattern.search(cleaned)):
+            continue
+        groups = {k: v for k, v in m.groupdict().items() if v}
+        value = groups.get("value") or groups.get("value2") or ""
+        if setting in ("volume", "brightness") and not _LEVEL_WORDS.search(value):
+            continue  # "awaaz kaisi hai" is not a change
+        if setting == "radio":
+            setting = (groups.get("radio") or groups.get("radio2") or "").lower().replace("-", "")
+        if setting == "other":
+            return "change_setting", {"setting": "other", "request": cleaned}
+        return "change_setting", {"setting": setting, "value": value.strip()}
+    for pattern in OPEN_SETTINGS:
+        if m := pattern.search(cleaned):
+            return "open_settings", {"page": _target_text(m.groupdict().get("page"))}
+    return None
+
+
+def _comm_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
+    def channel(m: re.Match[str]) -> str | None:
+        words = " ".join(filter(None, [m.groupdict().get("ch"), m.groupdict().get("ch2")])).lower()
+        return "email" if "mail" in words else ("whatsapp" if "whatsapp" in words else None)
+
+    if LIST_CONTACTS.search(cleaned):
+        return "list_contacts", {}
+    for pattern in SAVE_CONTACT:
+        if m := pattern.search(cleaned):
+            return "save_contact", {"name": _target_text(m.group("name")), **{k: v.strip() for k, v in
+                                                                                m.groupdict().items()
+                                                                                if k in ("phone", "email") and v}}
+    if m := DELETE_CONTACT.search(cleaned):
+        return "delete_contact", {"name": _target_text(m.group("name"))}
+    if m := ATTACH_EMAIL.search(cleaned):
+        return "send_message", {"channel": "email", "recipient": _target_text(m.group("to")),
+                                "attachment": m.group("file"), "text": f"{m.group('file')} attach hai."}
+    if m := DRAFT_MESSAGE.search(cleaned):
+        about = m.group("about").strip()
+        return "send_message", {"recipient": _target_text(m.group("to")), "channel": channel(m), "draft_only": True,
+                                **({"instruction": about} if about else {})}
+    for pattern in SEND_MESSAGE:
+        if m := pattern.search(cleaned):
+            text, _quoted_text = _quoted(m.group("text"))
+            return "send_message", {"recipient": _target_text(m.group("to")), "channel": channel(m), "text": text}
+    if m := SEND_NO_TEXT.search(cleaned):
+        return "send_message", {"recipient": _target_text(m.group("to")), "channel": channel(m)}
+    return None
+
+
+def _design_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
+    for pattern in OPEN_WITH:
+        if (m := pattern.search(cleaned)) and _fileish(m.group("target")):
+            return "open_with", {"target": _target_text(m.group("target")),
+                                 "app": re.sub(r"\s+", " ", m.group("app").lower()).replace("ms paint", "paint")}
+    for pattern in CREATE_DESIGN:
+        if m := pattern.search(cleaned):
+            text = m.groupdict().get("text")
+            return "create_design", {"kind": " ".join(m.group("kind").lower().split()).replace("insta ", "instagram "),
+                                     **({"text": text.strip()} if text else {}),
+                                     **({"style": m.group("style").strip()} if (m.group("style") or "").strip() else {})}
+    for pattern in EDIT_IMAGE:
+        if m := pattern.search(cleaned):
+            # Everything after the file name (verb included): "90 degree ghumao" needs "ghumao" to mean rotate.
+            rest = " ".join(filter(None, [m.groupdict().get("verb"), cleaned[m.end("target"):]]))
+            target = m.group("target")
+            if not re.search(_IMG + "$", target, re.IGNORECASE) and not IMAGE_OP_WORDS.search(rest):
+                continue  # "isko band kar do" is not a picture edit
+            return "edit_image", {"target": _target_text(target), "request": rest.strip()}
+    return None
 
 
 def _target_text(value: str | None) -> str | None:
@@ -579,8 +747,15 @@ def _computer_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
     for p in TYPE_TEXT[:2]:
         if m := p.search(cleaned):
             return "type_text", {"text": m.group("text").strip()}
+    # Settings first: "awaaz band karo" / "wifi band karo" are settings, not "close the app called awaaz".
+    if setting := _settings_intent(cleaned):
+        return setting
     if coding := _coding_intent(cleaned):
         return coding
+    if message := _comm_intent(cleaned):
+        return message
+    if design := _design_intent(cleaned):
+        return design
     if files := _file_intent(cleaned):
         return files
     if browser := _browser_intent(cleaned):
@@ -729,7 +904,7 @@ class RuleBasedProvider(AIProvider):
         carries_text = any(p.search(cleaned) for p in TYPE_TEXT[:2]) or any(p.search(cleaned) for p in UNSPLITTABLE)
         damping = 0.75 if len(cleaned.split()) > 8 and not carries_text else 1.0
 
-        def make(name: str, confidence: float, **entities: object) -> Intent:
+        def make(name: str, confidence: float, /, **entities: object) -> Intent:  # "/": an entity may be called "name"
             return Intent(
                 name=name,
                 confidence=round(confidence * damping, 3),

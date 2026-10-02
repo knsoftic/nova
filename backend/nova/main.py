@@ -22,7 +22,12 @@ from . import __version__
 from .ai.manager import ProviderManager
 from .ai.ollama import OllamaProvider
 from .agents.file_agent import FileAgent
+from .agents.settings_agent import SettingsAgent
 from .coding import CodingAgent, Tools, find_tools
+from .communication import CommunicationAgent, Mailer, WhatsAppDesktop
+from .communication.contacts import normalize_phone, valid_email
+from .control.settings import WindowsSettings
+from .design import DesignAgent
 from .config import PROJECT_ROOT, Settings, load_settings
 from .files import FileOps, FileScope
 from .db import Database
@@ -93,6 +98,12 @@ class SecretRequest(BaseModel):
     value: str
 
 
+class ContactRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    phone: str | None = Field(default=None, max_length=30)
+    email: str | None = Field(default=None, max_length=120)
+
+
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
 
@@ -116,6 +127,9 @@ def create_app(
     known_folders: Callable[[str], Path] | None = None,
     file_overrides: dict[str, Any] | None = None,
     coding_overrides: dict[str, Any] | None = None,
+    windows_settings: WindowsSettings | None = None,
+    comm_overrides: dict[str, Any] | None = None,
+    design_overrides: dict[str, Any] | None = None,
 ) -> FastAPI:
     """`scanner`/`stats`/`ollama_transport`/`stt`/`tts` replace real collectors, Ollama and voice models (tests).
     `known_folders`/`file_overrides`/`coding_overrides` keep tests away from real folders, the Recycle Bin
@@ -184,12 +198,34 @@ def create_app(
         coding_kwargs.update({k: v for k, v in (coding_overrides or {}).items() if k != "tools"})
         coding = CodingAgent(scope, ops, providers.ollama.complete_json, providers.ollama.is_available, tools,
                              **coding_kwargs)
+        files = FileAgent(ops, scope, projects=coding.find)
+
+        def remember(path: Path) -> None:  # results of other agents become "isko" for the File Agent too
+            files.ctx.last_path, files.ctx.last_folder = path, path.parent
+
+        desk = computer.desktop
+        comm = comm_overrides or {}
+        communication = CommunicationAgent(
+            db,
+            comm.get("whatsapp") or WhatsAppDesktop(desk.list_windows, desk.focus, desk.foreground_hwnd,
+                                                    lambda: desk.hotkey("enter")),
+            comm.get("mailer") or Mailer(),
+            providers.ollama.complete_json, providers.ollama.is_available,
+            resolve_file=files.resolve_target,
+        )
+        design_kwargs: dict[str, Any] = {"code_exe": lambda: tools().code, "window_titles": window_titles}
+        design_kwargs.update(design_overrides or {})
+        design = DesignAgent(scope, designs_dir=lambda: known("pictures") / "NOVA" / "Designs",
+                             resolve_file=files.resolve_target, remember=remember, **design_kwargs)
         app.state.orchestrator = Orchestrator(
             bus, db, providers, assistant_name, discovery, computer, permissions,
             browser=BrowserAgent(browser, engine=lambda: app.state.user_settings.search_engine),
             research=research,
-            files=FileAgent(ops, scope, projects=coding.find),
+            files=files,
             coding=coding,
+            settings_agent=SettingsAgent(windows_settings or WindowsSettings(), window_titles=window_titles),
+            communication=communication,
+            design=design,
         )
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
@@ -328,6 +364,40 @@ def create_app(
     @app.get("/api/permissions/history")
     async def permission_history(limit: int = 100) -> list[dict[str, Any]]:
         return app.state.db.list_permission_requests(max(1, min(limit, 500)))
+
+    @app.get("/api/contacts")
+    async def contacts() -> list[dict[str, Any]]:
+        return app.state.db.list_contacts()
+
+    @app.post("/api/contacts")
+    async def add_contact(body: ContactRequest) -> dict[str, Any]:
+        name = " ".join(body.name.split())
+        phone = normalize_phone(body.phone) if body.phone else None
+        email = valid_email(body.email) if body.email else None
+        errors = []
+        if body.phone and not phone:
+            errors.append({"loc": ("body", "phone"), "msg": "Number sahi nahi (maslan 0300 1234567 ya +92 300 1234567)",
+                           "type": "value_error"})
+        if body.email and not email:
+            errors.append({"loc": ("body", "email"), "msg": "Email address sahi nahi", "type": "value_error"})
+        if not phone and not email and not errors:
+            errors.append({"loc": ("body", "phone"), "msg": "Number ya email zaroori hai", "type": "value_error"})
+        if errors:
+            raise RequestValidationError(errors)
+        row = app.state.db.save_contact(name, phone, email)
+        app.state.db.add_activity(task_id="contacts", task_name="save_contact", agent="Communication Agent",
+                                  action="save_contact", permission_status="user_initiated",
+                                  execution_status="success", final_result=f"contact {name} save hua")
+        return row
+
+    @app.delete("/api/contacts/{contact_id}")
+    async def remove_contact(contact_id: int) -> dict[str, Any]:
+        if not app.state.db.delete_contact(contact_id):
+            raise HTTPException(status_code=404, detail="Contact nahi mila")
+        app.state.db.add_activity(task_id="contacts", task_name="delete_contact", agent="Communication Agent",
+                                  action="delete_contact", permission_status="user_initiated",
+                                  execution_status="success", final_result=f"contact {contact_id} hataya")
+        return {"ok": True}
 
     @app.get("/api/files/roots")
     async def file_roots() -> list[dict[str, Any]]:

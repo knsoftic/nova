@@ -2,7 +2,7 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 8B (File + Coding agents)**. NOVA listens (push-to-talk or wake word), understands
+Current status: **Phase 8C (System settings + Communication + Design)** — all Phase 8 agents. NOVA listens (push-to-talk or wake word), understands
 Urdu / Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in
 an offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
 afterwards). Risky actions — typing, clicking, pasting, closing apps — run only after the user says yes
@@ -10,8 +10,9 @@ afterwards). Risky actions — typing, clicking, pasting, closing apps — run o
 trail. It drives its own browser (open, read, summarise, click, type, download) and answers live questions
 or writes research reports from web sources. It manages files in the user's folders (search, create, read,
 rename, move, copy, delete to the Recycle Bin, edit, organize, report, undo) and works on code projects (VS Code,
-tests, error checks, explaining and fixing errors with a diff shown first). See [LOGS.md](LOGS.md) for
-development history and approval status.
+tests, error checks, explaining and fixing errors with a diff shown first). It changes common Windows settings,
+sends WhatsApp messages and emails to contacts the user saved (always asking first), and edits pictures or makes
+simple designs. See [LOGS.md](LOGS.md) for development history and approval status.
 
 ## Voice (offline)
 
@@ -83,6 +84,23 @@ Measure the brain against real commands:
   syntax-checked, shown as a diff in the permission dialog, written with a backup and verified by re-running
   the same check.
 
+## Settings, messages and design
+
+- **Windows settings (System Agent):** volume / mute and brightness (built-in screen) change directly; dark/light
+  mode and turning Wi-Fi or Bluetooth **off** ask first. Every change is read back. Anything else (e.g. the default
+  browser, which Windows does not let programs change) opens the right Settings page. Security settings
+  (Defender, firewall, UAC, BitLocker) are never changed — NOVA refuses.
+- **Messages (Communication Agent):** WhatsApp Desktop through its official click-to-chat link, and email through
+  classic Outlook (or a draft in the default mail app when no Outlook account is set up). Recipients come only from
+  NOVA's own contact list (⚙ Settings → Contacts, or "Ali ka number 0300 1234567 save karo") or a number/email
+  typed in the command — NOVA never searches the user's chats. Every send shows the recipient and the full text
+  and is asked every time (never remembered); NOVA confirms the text is in WhatsApp's message box before pressing
+  Enter and checks afterwards. "... message prepare karo" lets the local model draft it; drafts are not sent.
+- **Design Agent:** resize/crop to sizes (1080x1080, Instagram post/story, YouTube thumbnail...), convert, compress,
+  rotate, black & white, caption, watermark — always into a **new** file next to the original; simple template
+  designs (post, story, banner, thumbnail, poster...) saved to `Pictures\NOVA\Designs`; open a file in Photoshop,
+  Paint, Word, VS Code... Roman Urdu/English text only (Urdu script needs a text-shaping library not installed).
+
 ## Layout
 
 ```
@@ -94,8 +112,10 @@ nova/
 │   │   ├── planner.py      intents → ordered steps with agent, risk and availability
 │   │   ├── discovery/      system scan: probe.ps1, Windows collectors, app catalog, self-configuration
 │   │   ├── agents/         System Agent (system info, computer control), File Agent, prepared actions
-│   │   ├── control/        Win32 windows, app launcher with verification, SendInput, screen capture/OCR/UIA
+│   │   ├── control/        Win32 windows, app launcher, SendInput, screen capture/OCR/UIA, Windows settings
 │   │   ├── permissions/    risk classification, asking the user, remembered approvals, audit
+│   │   ├── communication/  Communication Agent: contacts, WhatsApp click-to-chat, Outlook/mail drafts
+│   │   ├── design/         Design Agent: image tools and template designs (Pillow)
 │   │   ├── files/          allowed folders, search, documents, Recycle Bin, verified file operations + undo
 │   │   ├── coding/         Coding Agent: projects, allowed commands, error parsing, checked code edits
 │   │   ├── browser/        Browser Agent + Playwright controller (NOVA's own Chrome profile)
@@ -185,6 +205,30 @@ Environment variables (backend):
 | `NOVA_ASSISTANT_NAME` | `NOVA` | Assistant name |
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
+
+## Admin manual test (Phase 8C, approved)
+
+1. `desktop/` mein `npm start`.
+2. **Settings:** `volume 30 kar do`, `awaaz thori zyada karo`, `mute karo` / `unmute karo`, `brightness 60 karo`
+   — fauran, jawab mein "Verify: ab ...% hai". `dark mode on karo` → dialog → Haan → Windows dark; `light mode karo`
+   se wapas. `bluetooth band karo` → dialog mein wajah (headphones disconnect) → Nahi (ya Haan kar ke phir `bluetooth
+   on karo`). `firewall band karo` → NOVA inkaar kare. `Chrome ko default browser bana do` → Default apps page khule.
+   `display settings kholo`.
+3. **Contacts:** ⚙ Settings → Contacts mein apna ya kisi bharosemand shakhs ka naam + number add karein (ya kahein
+   `Ali ka number 0300 1234567 save karo`). `mere contacts dikhao`.
+4. **WhatsApp (asli message):** WhatsApp Desktop logged-in ho. `<naam> ko WhatsApp par message bhejo ke NOVA test`
+   → dialog mein recipient aur poora text → **Haan** → WhatsApp khule, sahi chat, message chala jaye, jawab
+   "bhej diya (Verify...)". **Nahi** dabane par WhatsApp khulta bhi nahi.
+   Draft: `<naam> ke liye message prepare karo ke main late hoon` → message box mein text, bheja nahi.
+   Anjaan naam: `Bilal ko message bhejo ke salam` → "contacts mein nahi".
+5. **Email:** Outlook mein account ho to `<naam> ko email karo ke ...` → dialog → Haan → Sent Items. Account na ho to
+   draft default mail app mein khulega — Send aap dabayenge.
+6. **Design:** kisi tasveer (copy par) `photo.jpg ko 1080x1080 kar do`, `... ko png mein badal do`, `... ko compress
+   karo`, `... ko 90 degree ghumao`, `... par 'KN Softic' watermark lagao` — har dafa **nayi** file, original
+   waisi hi. `Instagram post banao jis par 'Grand Sale' likha ho` → design bane aur khule
+   (Pictures\NOVA\Designs). `isko Paint mein kholo` / `Photoshop mein kholo`.
+7. **Activity Log** mein sab kaam, ijazat aur verification.
+8. Sab theek ho to approve karein, warna problem batayein.
 
 ## Admin manual test (Phase 8B, approved)
 

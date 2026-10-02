@@ -57,6 +57,14 @@ export interface UserSettings {
   project_folders: string[];
 }
 
+/** Someone the Communication Agent may message (added by the user only). Phone: international digits. */
+export interface Contact {
+  id: number;
+  name: string;
+  phone: string | null;
+  email: string | null;
+}
+
 /** A folder the File/Coding agents may use. */
 export interface FileRoot {
   name: string;

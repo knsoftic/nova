@@ -86,6 +86,17 @@ CASES: list[tuple[str, list[str], dict[str, str] | None]] = [
     ("is project mein errors check karo", ["check_errors"], None),
     ("ye error samjhao", ["explain_error"], None),
     ("error theek kar do", ["fix_error"], None),
+    # settings, messages, design (Phase 8C)
+    ("volume thori kam kar do", ["change_setting"], {"setting": "volume"}),
+    ("dark mode laga do", ["change_setting"], {"setting": "theme"}),
+    ("bluetooth band kar do", ["change_setting"], {"setting": "bluetooth"}),
+    ("display settings kholo", ["open_settings"], None),
+    ("Sara ko WhatsApp par message bhejo ke main 5 baje aaungi", ["send_message"], {"recipient": "sara"}),
+    ("Ahmed ko email karo ke report bhej di hai", ["send_message"], {"recipient": "ahmed"}),
+    ("Ali ka number 0300 1234567 save karo", ["save_contact"], None),
+    ("photo.jpg ko instagram post size ka bana do", ["edit_image"], {"target": "photo.jpg"}),
+    ("Eid Mubarak ka sunehra poster banao", ["create_design"], None),
+    ("logo.png ko Photoshop mein kholo", ["open_with"], {"target": "logo.png"}),
 ]
 
 

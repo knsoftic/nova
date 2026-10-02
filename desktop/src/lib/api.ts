@@ -1,6 +1,7 @@
 import type {
   ActivityRecord,
   AiStatus,
+  Contact,
   FileRoot,
   LiveStats,
   PermissionRequest,
@@ -56,6 +57,10 @@ export const api = {
   aiStatus: (refresh = false) => request<AiStatus>(`/api/ai/status${refresh ? "?refresh=true" : ""}`),
   webStatus: () => request<WebStatus>("/api/web/status"),
   fileRoots: () => request<FileRoot[]>("/api/files/roots"),
+  contacts: () => request<Contact[]>("/api/contacts"),
+  addContact: (contact: { name: string; phone?: string; email?: string }) =>
+    request<Contact>("/api/contacts", json("POST", contact)),
+  deleteContact: (id: number) => request<{ ok: boolean }>(`/api/contacts/${id}`, { method: "DELETE" }),
   /** Write-only: the backend encrypts the value and only ever returns a masked hint. */
   setSecret: (name: string, value: string) =>
     request<{ ok: boolean; masked: string }>(`/api/secrets/${encodeURIComponent(name)}`, json("PUT", { value })),

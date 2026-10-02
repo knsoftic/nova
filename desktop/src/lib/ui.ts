@@ -1,4 +1,4 @@
-import type { AiStatus, NovaState } from "./types";
+import type { AiStatus, HistoryOutcome, MemoryFact, NovaState, UserSettings, WorkflowStep } from "./types";
 
 export const STATE_META: Record<NovaState, { label: string; color: string }> = {
   IDLE: { label: "Tayyar hoon", color: "#38bdf8" },
@@ -27,7 +27,50 @@ export const AGENTS: AgentInfo[] = [
   { name: "Coding Agent", description: "VS Code, projects, tests, errors dhoondna aur theek karna", phase: null },
   { name: "Design Agent", description: "Tasveer resize/convert/watermark, posts aur banners", phase: null },
   { name: "Communication Agent", description: "WhatsApp aur email (har dafa ijazat se)", phase: null },
+  { name: "Memory Agent", description: "Aap ki batai baatein, history aur workflows (sab isi PC par)", phase: null },
 ];
+
+export const OUTCOME_META: Record<HistoryOutcome, { label: string; tone: string }> = {
+  done: { label: "ho gaya", tone: "text-emerald-300" },
+  failed: { label: "nahi hua", tone: "text-red-300" },
+  denied: { label: "ijazat nahi mili", tone: "text-orange-300" },
+  answered: { label: "jawab", tone: "text-slate-400" },
+  not_understood: { label: "samajh nahi aaya", tone: "text-slate-500" },
+};
+
+export const STEP_KIND: Record<WorkflowStep["kind"], { icon: string; label: string }> = {
+  app: { icon: "▣", label: "app" },
+  website: { icon: "◍", label: "website" },
+  project: { icon: "</>", label: "project" },
+  folder: { icon: "▤", label: "folder" },
+  setting: { icon: "◐", label: "setting" },
+};
+
+export const SLOT_LABEL: Record<NonNullable<MemoryFact["slot"]>, string> = {
+  name: "Naam",
+  city: "Shehar",
+  work: "Kaam",
+  birthday: "Birthday",
+};
+
+export const RETENTION_OPTIONS: { value: UserSettings["history_days"]; label: string }[] = [
+  { value: 30, label: "30 din" },
+  { value: 90, label: "90 din (tajweez)" },
+  { value: 365, label: "1 saal" },
+  { value: 0, label: "Hamesha (jab tak aap na mitayein)" },
+];
+
+/** The command the "Chalao" button sends, so a workflow runs through the normal plan/permission/verify path. */
+export function workflowCommand(name: string): string {
+  return `${name} workflow chalao`;
+}
+
+/** "2026-10-02T14:05:00" -> "2 Oct" (dates of memories and history). */
+export function shortDate(iso: string | null | undefined): string {
+  const d = iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso) : null;
+  if (!d || Number.isNaN(d.getTime())) return "";
+  return `${d.getDate()} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getMonth()]}`;
+}
 
 /** "923001234567" -> "+92 300 1234567" (other countries: "+<digits>"). */
 export function showPhone(digits: string | null): string {

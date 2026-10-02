@@ -18,18 +18,21 @@ FALLBACK_NOTES = {
 }
 
 
-def build_response(intent: Intent, assistant_name: str, answer: str | None = None) -> str:
+def build_response(intent: Intent, assistant_name: str, answer: str | None = None, user_name: str | None = None) -> str:
     e = intent.entities
     match intent.name:
         case "greeting":
-            return f"Assalam-o-Alaikum! {assistant_name} online hai. Main aapki kya madad kar sakta hoon?"
+            to = f" {user_name}" if user_name else ""
+            return f"Assalam-o-Alaikum{to}! {assistant_name} online hai. Main aapki kya madad kar sakta hoon?"
         case "help":
             return (
                 f"Main {assistant_name} hoon. Main sawalon ke jawab deta hoon, system ki maloomat batata hoon, apps "
                 "kholta hoon aur windows control karta hoon, screen parhta hoon, websites kholta aur parhta hoon, web "
                 "research karta hoon, files dhoondta, banata, move/copy/rename aur Recycle Bin mein bhejta hoon, folders "
-                "organize karta hoon, aur code projects mein tests chala kar errors dhoondta aur theek karta hoon. "
-                "Khatre wale kaam se pehle hamesha ijazat leta hoon."
+                "organize karta hoon, code projects mein tests chala kar errors dhoondta aur theek karta hoon, volume, "
+                "brightness aur dark mode badalta hoon, aap ke contacts ko WhatsApp/email bhejta hoon, tasveerein aur "
+                "designs banata hoon, aap ke kehne par baatein yaad rakhta hoon, purani baatein dhoondta hoon aur "
+                "\"work start karo\" jaise workflows yaad rakhta hoon. Khatre wale kaam se pehle hamesha ijazat leta hoon."
             )
         case "chat":
             if answer:
@@ -58,11 +61,6 @@ def build_response(intent: Intent, assistant_name: str, answer: str | None = Non
             return (
                 f"Main samajh gaya, aap {target} banwana chahte hain. File Agent abhi available nahi hai, "
                 "is liye koi folder create nahi kiya gaya."
-            )
-        case "run_workflow":
-            return (
-                "Main samajh gaya, aap apna work workflow start karna chahte hain. Workflow memory "
-                f"Phase {PENDING_CAPABILITY_PHASE['run_workflow']} mein aayegi."
             )
         case _:
             return "Maaf kijiye, main ye command abhi samajh nahi saka. Dobara thore mukhtalif alfaaz mein bataiye."

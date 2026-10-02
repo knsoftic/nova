@@ -68,6 +68,16 @@ KNOWN_INTENTS = (
     "edit_image",
     "create_design",
     "open_with",
+    # memory, history, workflows (Phase 9)
+    "remember_fact",
+    "recall_memory",
+    "forget_memory",
+    "search_history",
+    "clear_history",
+    "save_workflow",
+    "list_workflows",
+    "delete_workflow",
+    "repeat_last",
     "unknown",
 )
 
@@ -76,6 +86,9 @@ EDIT_ACTIONS = ("append", "replace")
 SETTING_NAMES = ("volume", "mute", "unmute", "brightness", "theme", "wifi", "bluetooth", "default_browser", "other")
 CHANNELS = ("whatsapp", "email")
 IMAGE_OPERATIONS = ("resize", "fit", "convert", "compress", "rotate", "flip", "grayscale", "caption", "watermark")
+HISTORY_PERIODS = ("today", "yesterday", "week", "month")
+WORKFLOW_ACTIONS = ("replace", "add", "remove")
+REPEAT_WHAT = ("command", "response")
 
 WINDOW_ACTIONS = ("minimize", "maximize", "restore", "show_desktop")
 SHORTCUT_NAMES = ("copy", "paste", "cut", "undo", "redo", "select_all", "save", "new_tab", "close_tab", "find",
@@ -118,7 +131,9 @@ class AIProvider(ABC):
     async def detect_intent(self, text: str) -> Intent:
         """Map a user utterance (any supported language) to a single structured intent."""
 
-    async def understand(self, text: str, context: list[ConversationTurn] | None = None) -> Understanding:
+    async def understand(self, text: str, context: list[ConversationTurn] | None = None,
+                         memories: list[str] | None = None) -> Understanding:
+        """`context`: the last turns (short-term memory). `memories`: related things the user asked NOVA to remember."""
         intent = await self.detect_intent(text)
         return Understanding(intents=[intent], provider=self.name)
 

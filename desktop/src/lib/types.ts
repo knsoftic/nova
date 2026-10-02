@@ -38,7 +38,8 @@ export type EventType =
   | "VOICE_STATUS"
   | "VOICE_TRANSCRIBED"
   | "WAKE_WORD_DETECTED"
-  | "NOVA_SPEAK";
+  | "NOVA_SPEAK"
+  | "MEMORY_CHANGED";
 
 export type AiMode = "hybrid" | "llm" | "rules";
 
@@ -55,6 +56,66 @@ export interface UserSettings {
   search_engine: "google" | "bing" | "duckduckgo";
   browser_channel: "chrome" | "msedge";
   project_folders: string[];
+  /** Conversation history is deleted after this many days; 0 = kept until the user deletes it. */
+  history_days: 30 | 90 | 365 | 0;
+}
+
+/** Something the user asked NOVA to remember (or said "haan" to). Slots hold one value (a new name replaces the old). */
+export interface MemoryFact {
+  id: number;
+  text: string;
+  slot: "name" | "city" | "work" | "birthday" | null;
+  value: string | null;
+  source: string;
+  created_at: string;
+  updated_at: string;
+  uses: number;
+  last_used: string | null;
+}
+
+export interface WorkflowStep {
+  kind: "app" | "website" | "project" | "folder" | "setting";
+  value: string;
+  label: string;
+  setting?: string;
+}
+
+export interface Workflow {
+  id: number;
+  name: string;
+  steps: WorkflowStep[];
+  created_at: string;
+  updated_at: string;
+  runs: number;
+  last_run: string | null;
+}
+
+export type HistoryOutcome = "done" | "failed" | "denied" | "answered" | "not_understood";
+export type HistoryPeriod = "" | "today" | "yesterday" | "week" | "month";
+
+/** One searchable conversation record (spec: date, time, task, request, response, result, permission, action, error, status). */
+export interface HistoryRecord {
+  task_id: string;
+  date: string;
+  time: string;
+  source: string;
+  request: string;
+  response: string | null;
+  intent: string | null;
+  actions: string[];
+  permission: string;
+  verification: string;
+  error: string | null;
+  outcome: HistoryOutcome;
+}
+
+/** The current conversation (RAM only, cleared after a pause). */
+export interface ShortTermMemory {
+  turns: { user: string; assistant: string }[];
+  pending: string | null;
+  last_command: string | null;
+  idle_reset_min: number;
+  resets_in_s: number | null;
 }
 
 /** Someone the Communication Agent may message (added by the user only). Phone: international digits. */
@@ -223,6 +284,8 @@ export interface ChatMessage {
   steps?: PlanStepSummary[];
   /** User message that came from speech recognition. */
   voice?: boolean;
+  /** NOVA asked something ("Ye yaad rakhoon?"): one-tap answers. */
+  quickReplies?: string[];
 }
 
 export type Risk = "low" | "medium" | "high";

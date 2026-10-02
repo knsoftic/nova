@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,7 +21,7 @@ from .agents import system_agent
 from .agents.computer import ComputerAgent, ControlOutcome
 from .agents.file_agent import FILE_INTENTS, FileAgent
 from .agents.prepared import Prepared, Reply
-from .ai.base import ConversationTurn, Intent, Understanding
+from .ai.base import Intent, Understanding
 from .agents.settings_agent import SETTINGS_INTENTS
 from .coding import CODING_INTENTS, CodingAgent
 from .communication import COMM_INTENTS
@@ -36,6 +35,10 @@ from .discovery.apps import find_app
 from .discovery.models import LiveStats, SystemProfile
 from .discovery.service import DiscoveryService
 from .events import EventBus, EventType, NovaEvent, NovaState
+from .language import detect_language
+from .memory.agent import MEMORY_INTENTS, MemoryAgent
+from .memory.agent import NAME as MEMORY
+from .memory.short_term import ShortTermMemory
 from .permissions import PermissionEngine, TargetContext
 from .permissions.engine import classify
 from .planner import Plan, PlanStep, build_plan
@@ -56,7 +59,6 @@ CONTROL_INTENTS = {"open_app", "focus_app", "window_control", "read_screen", "sc
 BROWSER_INTENTS = {"open_website", "web_search", "read_page", "browser_nav", "browser_click", "browser_type",
                    "download"}
 RESEARCH_INTENTS = {"research", "web_answer"}
-CONTEXT_TURNS = 4  # short-term context for the AI brain; long-term memory is Phase 9
 
 
 class CommandResult(BaseModel):
@@ -99,6 +101,8 @@ class Orchestrator:
         settings_agent: Any = None,
         communication: Any = None,
         design: Any = None,
+        memory: MemoryAgent | None = None,
+        short_term: ShortTermMemory | None = None,
     ) -> None:
         self.permissions = permissions
         self.browser = browser
@@ -109,7 +113,7 @@ class Orchestrator:
         # run(intent, prepared, approved, progress) -> ControlOutcome.
         self.prepared_agents: dict[str, Any] = {}
         for agent, intents in ((settings_agent, SETTINGS_INTENTS), (communication, COMM_INTENTS),
-                               (design, DESIGN_INTENTS)):
+                               (design, DESIGN_INTENTS), (memory, MEMORY_INTENTS)):
             if agent is not None:
                 self.prepared_agents.update(dict.fromkeys(intents, agent))
         self.bus = bus
@@ -120,7 +124,9 @@ class Orchestrator:
         self.computer = computer
         self.state = NovaState.IDLE
         self.voice_active = False  # UI microphone is open (level meter only until Phase 5 adds STT)
-        self.context: deque[ConversationTurn] = deque(maxlen=CONTEXT_TURNS)
+        self.memory = memory
+        # Short-term memory: the current conversation (context for the AI brain, "dobara karo", open questions).
+        self.short_term = short_term or (memory.short_term if memory is not None else ShortTermMemory())
 
     @property
     def rest_state(self) -> NovaState:
@@ -163,6 +169,8 @@ class Orchestrator:
                                      response="Theek hai." if answer else "Theek hai, ye kaam nahi karunga.")
         if self.computer is not None:
             self.computer.note_command(source)  # the window hosting NOVA's UI is never a target
+        self.short_term.touch()
+        asked_before = self.short_term.pending
         await self.bus.publish(
             NovaEvent(
                 type=EventType.TASK_STARTED,
@@ -177,8 +185,17 @@ class Orchestrator:
             NovaEvent(type=EventType.NOVA_THINKING, task_id=task_id, agent=ORCHESTRATOR, message="Command samajh raha hai")
         )
 
+        repeated: str | None = None
         try:
-            understanding = await self.providers.understand(text, list(self.context))
+            # An answer to NOVA's own question ("Ye yaad rakhoon?" -> "haan") is not a new command.
+            followup = await self.memory.answer(text, detect_language(text)) if self.memory is not None else None
+            if followup is not None and followup.reply is not None:
+                return await self._reply_only(task_id, text, source, followup.reply, asked_before)
+            if followup is not None:
+                understanding = Understanding(intents=followup.intents, provider="memory")
+            else:
+                memories = self.memory.context_for(text) if self.memory is not None else None
+                understanding = await self.providers.understand(text, self.short_term.turns(), memories)
             names = ", ".join(i.name for i in understanding.intents)
             await self.bus.publish(
                 NovaEvent(
@@ -199,7 +216,9 @@ class Orchestrator:
 
             await self.set_state(NovaState.PLANNING, task_id)
             understanding = await self._route(understanding)
+            understanding, workflow, repeated = await self._expand(task_id, understanding)
             plan = build_plan(understanding)
+            plan.workflow = workflow or (followup.workflow if followup is not None else None)
             await self.bus.publish(
                 NovaEvent(
                     type=EventType.PLAN_CREATED,
@@ -229,23 +248,13 @@ class Orchestrator:
             response=response,
             status=status,
         )
-        self.context.append(ConversationTurn(user=text[:500], assistant=response[:500]))
-
-        await self.bus.publish(
-            NovaEvent(
-                type=EventType.NOVA_RESPONSE,
-                task_id=task_id,
-                agent=ORCHESTRATOR,
-                message=response,
-                data={"response": response, "intent": primary.name, "steps": plan.summary(),
-                      "provider": plan.provider, "source": source},
-            )
-        )
-        await self.bus.publish(
-            NovaEvent(type=EventType.TASK_COMPLETED, task_id=task_id, agent=ORCHESTRATOR, message="Task mukammal")
-        )
-        await self.set_state(NovaState.COMPLETED, task_id)
-        await self.set_state(self.rest_state)
+        # "dobara karo" repeats the last real command: not answers or repeats, and not plain statements or questions
+        # (only something that ran, or that the user may want to retry after saying no).
+        is_command = (followup is None and repeated is None and primary.name != "repeat_last"
+                      and any(o.executed or s.status == "denied" for s, o in zip(plan.steps, outcomes)))
+        self.short_term.add_turn(text, response, command=is_command)
+        await self._finish(task_id, source, response, asked_before,
+                           {"intent": primary.name, "steps": plan.summary(), "provider": plan.provider})
         return CommandResult(
             task_id=task_id,
             intent=primary,
@@ -258,6 +267,83 @@ class Orchestrator:
             status=status,
             executed=any(o.executed for o in outcomes),
         )
+
+    async def _finish(self, task_id: str, source: str, response: str, asked_before: Any, data: dict[str, Any]) -> None:
+        """Publish the reply (and whether NOVA now waits for an answer to its own question) and close the task."""
+        asked = self.short_term.pending
+        awaiting = asked is not None and asked is not asked_before
+        await self.bus.publish(
+            NovaEvent(
+                type=EventType.NOVA_RESPONSE,
+                task_id=task_id,
+                agent=ORCHESTRATOR,
+                message=response,
+                data={"response": response, "source": source, "awaiting_answer": awaiting,
+                      "quick_replies": ["Haan", "Nahi"] if awaiting and asked.kind == "remember" else [], **data},
+            )
+        )
+        await self.bus.publish(
+            NovaEvent(type=EventType.TASK_COMPLETED, task_id=task_id, agent=ORCHESTRATOR, message="Task mukammal")
+        )
+        await self.set_state(NovaState.COMPLETED, task_id)
+        await self.set_state(self.rest_state)
+        self.purge_history()
+
+    def purge_history(self, force: bool = False) -> int:
+        """History older than the user's chosen number of days is deleted (checked at most once an hour)."""
+        removed = self.memory.purge(force=force) if self.memory is not None else 0
+        if removed:
+            self.db.add_activity(task_id="memory", task_name="history_retention", agent=MEMORY, action="purge_history",
+                                 permission_status="user_setting", execution_status="success",
+                                 final_result=f"{removed} purani baatein mitai gayin")
+        return removed
+
+    async def _reply_only(self, task_id: str, text: str, source: str, response: str, asked_before: Any) -> CommandResult:
+        """NOVA's question was answered with a plain reply ("nahi" -> "Theek hai, yaad nahi rakha")."""
+        self.db.add_conversation(task_id=task_id, source=source, user_text=text, detected_language=detect_language(text),
+                                 intent="followup", response=response, status="understood")
+        self.db.add_activity(task_id=task_id, task_name="command:followup", agent=MEMORY, action="answer_question",
+                             execution_status="responded", final_result="sawal ka jawab")
+        self.short_term.add_turn(text, response, command=False)
+        await self._finish(task_id, source, response, asked_before, {"intent": "followup", "steps": [],
+                                                                     "provider": "memory"})
+        return CommandResult(task_id=task_id, intent=None, response=response, status="understood")
+
+    async def _expand(self, task_id: str, understanding: Understanding) -> tuple[Understanding, str | None, str | None]:
+        """A saved workflow becomes its steps; "dobara karo" becomes the last command again. Both then go through
+        the normal plan, permission and verification like any other command."""
+        requested: list[Intent] = []
+        workflow = repeated = None
+        for intent in understanding.intents:
+            if (intent.name == "repeat_last" and intent.entities.get("what") != "response" and repeated is None
+                    and (last := self.short_term.last_command)):
+                repeated = last
+                again = await self.providers.understand(last, self.short_term.turns())
+                await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=MEMORY,
+                                                 message=f"Pichla kaam dobara: \"{last[:80]}\""))
+                requested += [i for i in (await self._route(again)).intents if i.name != "repeat_last"]
+                continue
+            requested.append(intent)
+        intents: list[Intent] = []
+        for intent in requested:  # after repeats, so "dobara karo" after "work start karo" runs the workflow too
+            if intent.name == "run_workflow" and self.memory is not None:
+                found = self.memory.workflow(str(intent.entities.get("workflow") or ""))
+                if found is not None:
+                    row, steps = found
+                    workflow = row["name"]
+                    self.db.mark_workflow_run(row["id"])
+                    self.db.add_activity(task_id=task_id, task_name="command:run_workflow", agent=MEMORY,
+                                         action="run_workflow", execution_status="expanded",
+                                         final_result=f"{row['name']}: {len(steps)} cheezein")
+                    await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=MEMORY,
+                                                     message=f"'{row['name']}' workflow: "
+                                                             + ", ".join(s.label for s in steps)))
+                    intents += [s.intent(intent.language) for s in steps]
+                    continue
+            intents.append(intent)
+        if not intents:  # e.g. the repeated command was itself only "dobara karo"
+            intents = [i for i in understanding.intents]
+        return understanding.model_copy(update={"intents": intents}), workflow, repeated
 
     async def _run_step(self, task_id: str, step: PlanStep, plan: Plan) -> AgentOutcome:
         intent = step.intent
@@ -294,7 +380,8 @@ class Orchestrator:
             outcome = AgentOutcome(build_permission_response(intent, step.description), step.agent, step.action,
                                    executed=False)
         else:
-            outcome = AgentOutcome(build_response(intent, self.assistant_name, plan.answer), step.agent,
+            user_name = self.memory.user_name() if self.memory is not None and intent.name == "greeting" else None
+            outcome = AgentOutcome(build_response(intent, self.assistant_name, plan.answer, user_name), step.agent,
                                    step.action, executed=False)
             if intent.name == "chat" and plan.answer:
                 # The answer was written by the local model; only words, nothing executed on the PC.
@@ -344,11 +431,14 @@ class Orchestrator:
         browser_is_target: bool | None = None
         for intent in understanding.intents:
             e = intent.entities
-            if intent.name == "open_app" and self.browser is not None and (app := str(e.get("app") or "")):
-                profile = self.discovery.profile
-                installed = profile is not None and find_app(profile.apps, app) is not None
-                if not installed and site_for(app):
-                    intent = intent.model_copy(update={"name": "open_website", "entities": {"url": app}})
+            if intent.name == "open_app" and (app := str(e.get("app") or "")):
+                if self.memory is not None and self.memory.workflow(app):  # "study start karo": the saved workflow
+                    intent = intent.model_copy(update={"name": "run_workflow", "entities": {"workflow": app}})
+                elif self.browser is not None:
+                    profile = self.discovery.profile
+                    installed = profile is not None and find_app(profile.apps, app) is not None
+                    if not installed and site_for(app):
+                        intent = intent.model_copy(update={"name": "open_website", "entities": {"url": app}})
             if intent.name in ("mouse_click", "type_text") and self.browser is not None and self.computer is not None:
                 if browser_is_target is None:
                     browser_is_target = await asyncio.to_thread(self._browser_is_target)
@@ -586,6 +676,12 @@ class Orchestrator:
         return await self._report(task_id, step, result)
 
     def _compose(self, plan: Plan, outcomes: list[AgentOutcome]) -> str:
+        if plan.workflow:
+            pairs = list(zip(plan.steps, outcomes))
+            saved = [o.response for s, o in pairs if s.intent.name == "save_workflow"]
+            opened = [o.response for s, o in pairs if s.intent.name != "save_workflow"]
+            lines = saved or [f"'{plan.workflow}' workflow ({len(opened)} cheezein):"]
+            return "\n".join(lines + [f"{n}. {r}" for n, r in enumerate(opened, start=1)])
         if len(outcomes) == 1:
             text = outcomes[0].response
         else:

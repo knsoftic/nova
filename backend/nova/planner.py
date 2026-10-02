@@ -96,7 +96,18 @@ CAPABILITIES: dict[str, Capability] = {
     "edit_image": Capability("Design Agent", "edit_image", "low", None, "Tasveer badalna (nayi file)"),
     "create_design": Capability("Design Agent", "create_design", "low", None, "Design banana"),
     "open_with": Capability("Design Agent", "open_with", "low", None, "File app mein kholna"),
-    "run_workflow": Capability("Orchestrator", "run_workflow", "low", 9, "Workflow chalana"),
+    # Memory Agent (Phase 9). Saving what the user asked is low; forgetting/deleting is permanent, so it is never
+    # below medium here, and the agent raises "everything" to high. Workflows only open things.
+    "remember_fact": Capability("Memory Agent", "remember_fact", "low", None, "Baat yaad rakhna"),
+    "recall_memory": Capability("Memory Agent", "recall_memory", "low", None, "Yaadein dekhna"),
+    "forget_memory": Capability("Memory Agent", "forget_memory", "medium", None, "Yaad mitana"),
+    "search_history": Capability("Memory Agent", "search_history", "low", None, "History mein dhoondna"),
+    "clear_history": Capability("Memory Agent", "clear_history", "medium", None, "History mitana"),
+    "save_workflow": Capability("Memory Agent", "save_workflow", "low", None, "Workflow save karna"),
+    "list_workflows": Capability("Memory Agent", "list_workflows", "low", None, "Workflows dikhana"),
+    "delete_workflow": Capability("Memory Agent", "delete_workflow", "medium", None, "Workflow mitana"),
+    "run_workflow": Capability("Memory Agent", "run_workflow", "low", None, "Workflow chalana"),
+    "repeat_last": Capability("Memory Agent", "repeat_last", "low", None, "Pichla kaam dobara"),
 }
 
 
@@ -125,6 +136,7 @@ class Plan(BaseModel):
     provider: str
     fallback_reason: str | None = None
     answer: str | None = None
+    workflow: str | None = None  # the steps come from this saved workflow
 
     @property
     def is_compound(self) -> bool:
@@ -146,6 +158,8 @@ LOW_RISK_SHORTCUTS = {"copy", "select_all", "find", "escape"}
 def risk_for(intent: Intent, cap: Capability) -> Risk:
     if intent.name == "keyboard_shortcut" and intent.entities.get("keys") in LOW_RISK_SHORTCUTS:
         return "low"
+    if intent.name == "forget_memory" and intent.entities.get("scope") == "conversation":
+        return "low"  # "naya topic": only the current conversation context is dropped, nothing saved is deleted
     return cap.risk
 
 

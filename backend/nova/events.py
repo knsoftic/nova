@@ -41,6 +41,7 @@ class EventType(str, Enum):
     VOICE_TRANSCRIBED = "VOICE_TRANSCRIBED"
     WAKE_WORD_DETECTED = "WAKE_WORD_DETECTED"
     NOVA_SPEAK = "NOVA_SPEAK"
+    MEMORY_CHANGED = "MEMORY_CHANGED"
 
 
 class NovaState(str, Enum):
@@ -83,6 +84,10 @@ class EventBus:
 
     def history(self) -> list[NovaEvent]:
         return list(self._history)
+
+    def clear_history(self) -> None:
+        """When the user deletes their history, the events replayed to a reconnecting UI go too."""
+        self._history.clear()
 
     async def publish(self, event: NovaEvent) -> None:
         self._history.append(event)

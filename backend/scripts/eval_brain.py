@@ -97,6 +97,17 @@ CASES: list[tuple[str, list[str], dict[str, str] | None]] = [
     ("photo.jpg ko instagram post size ka bana do", ["edit_image"], {"target": "photo.jpg"}),
     ("Eid Mubarak ka sunehra poster banao", ["create_design"], None),
     ("logo.png ko Photoshop mein kholo", ["open_with"], {"target": "logo.png"}),
+    # memory, history, workflows (Phase 9)
+    ("yaad rakho ke meri wife ki birthday 5 March ko hai", ["remember_fact"], None),
+    ("mera naam Ahmed hai", ["remember_fact"], None),
+    ("mera naam kya hai", ["recall_memory"], None),
+    ("tumhe mere baare mein kya yaad hai", ["recall_memory"], None),
+    ("chai wali baat bhool jao", ["forget_memory"], None),
+    ("kal maine kya kaha tha", ["search_history"], {"period": "yesterday"}),
+    ("pichle hafte maine kaun si files delete ki thi", ["search_history"], None),
+    ("saari history mita do", ["clear_history"], None),
+    ("study workflow banao: YouTube aur Notion", ["save_workflow"], {"workflow": "study"}),
+    ("dobara karo", ["repeat_last"], None),
 ]
 
 

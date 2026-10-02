@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 
 from ..language import detect_language
+from ..memory.facts import detect_fact
 from .base import AIProvider, ConversationTurn, Intent, Understanding
 
 BUILTIN_NAMES = ("nova", "نووا", "नोवा")
@@ -524,9 +525,96 @@ OPEN_WITH = [
     re.compile(rf"^open\s+(?P<target>.+?)\s+(?:in|with)\s+(?P<app>{_APPS})$", re.IGNORECASE),
 ]
 
+# ---- memory, history, workflows (Phase 9) --------------------------------------------------
+_REMEMBER = r"(?:yaad\s+(?:rakho|rakhna|rakh\s+lo|kar\s+lo|karlo)|remember)"
+_THIS = r"(?:ye|yeh|is\s+baat\s+ko|isko|is\s+ko|ye\s+baat|yeh\s+baat|this|that)"
+REMEMBER_FACT = [
+    re.compile(rf"^{_THIS}\s+{_REMEMBER}$", re.IGNORECASE),  # "ye yaad rakho": what was said just before
+    re.compile(rf"^(?:please\s+)?{_REMEMBER}(?:\s+(?:ke|ki|k|that)\s+|\s*[:\-]\s*|\s+)(?P<fact>.+)$", re.IGNORECASE),
+    # "... yaad rakhna" at the end (Roman Urdu only: "do you remember" is a question, not a request)
+    re.compile(rf"^(?P<fact>.+?)\s*[,:-]?\s+(?:{_THIS}\s+)?yaad\s+(?:rakho|rakhna|rakh\s+lo|kar\s+lo|karlo)$", re.IGNORECASE),
+    re.compile(r"^یاد\s+(?:رکھو|رکھنا|رکھ\s+لو)\s+(?:کہ|کے)\s+(?P<fact>.+)$"),
+    re.compile(r"^याद\s+(?:रखो|रखना|रख\s+लो)\s+(?:कि|के)\s+(?P<fact>.+)$"),
+]
+_YAAD = r"(?:yaad|yad)"
+RECALL_MEMORY = [
+    (re.compile(rf"^(?:(?:tum(?:he|hein|hen)?|aap\s+ko|nova\s+ko)\s+)?(?:mere\s+(?:baare|bare)\s+mein\s+)?kya\s+(?:kya\s+)?"
+                rf"{_YAAD}\s+hai$|^(?:meri|mere|apni)\s+(?:yaadein|yaaden|memories|memory)\s+(?:dikhao|batao)$|"
+                r"^(?:show|list)\s+(?:my\s+)?memories$|^what\s+do\s+you\s+remember(?:\s+about\s+me)?$", re.IGNORECASE), ""),
+    (re.compile(r"^(?:mera|meraa)\s+naam\s+kya\s+hai$|^what(?:'s|\s+is)\s+my\s+name$|^میرا\s+نام\s+کیا\s+ہے$",
+                re.IGNORECASE), "naam"),
+    (re.compile(r"^main\s+kahan\s+(?:rehta|rehti|rahta|rahti)\s+(?:hoon|hun|hu)$|^where\s+do\s+i\s+live$",
+                re.IGNORECASE), "shehar"),
+    (re.compile(r"^(?:meri|mera)\s+(?:birthday|salgirah|saalgirah|janamdin)\s+kab\s+(?:hai|hoti\s+hai|aati\s+hai)$|"
+                r"^when\s+is\s+my\s+birthday$", re.IGNORECASE), "birthday"),
+    (re.compile(rf"^(?:kya\s+)?(?:(?:tum(?:he|hein)?|aap\s+ko)\s+)?{_YAAD}\s+hai\s+(?:ke|ki|k)\s+(?P<query>.+?)$",
+                re.IGNORECASE), None),
+    (re.compile(rf"^(?P<query>.+?)\s+ke\s+(?:baare|bare)\s+mein\s+(?:(?:tumhe|tumhein|aap\s+ko)\s+)?kya\s+{_YAAD}\s+hai$",
+                re.IGNORECASE), None),
+]
+_FORGET = r"(?:bhool\s+jao|bhul\s+jao|bhool\s+jaao|bhula\s+do)"
+FORGET_MEMORY = [
+    (re.compile(rf"^(?:sab|saari|sari|tamam)\s+(?:yaadein|yaaden|memories|baatein)\s+(?:{_FORGET}|mita\s+do|mitao|"
+                rf"delete\s+karo)$|^(?:sab\s+kuch|sab)\s+{_FORGET}$|^forget\s+everything$", re.IGNORECASE), "all"),
+    (re.compile(rf"^(?:pichli\s+baatein|ye\s+conversation|conversation)\s+(?:{_FORGET}|reset\s+karo|chhoro|chhor\s+do)$|"
+                r"^(?:naya|new)\s+topic$", re.IGNORECASE), "conversation"),
+    (re.compile(rf"^{_THIS}\s+{_FORGET}$|^forget\s+(?:it|that)$", re.IGNORECASE), "last"),
+    (re.compile(rf"^(?:{_FORGET}|forget)\s*(?:ke|ki|that|:)?\s+(?P<query>.+)$", re.IGNORECASE), None),
+    (re.compile(rf"^(?P<query>.+?)\s+(?:wali\s+baat\s+)?(?:{_FORGET}|yaad\s+se\s+(?:mita\s+do|hata\s+do)|memory\s+se\s+"
+                r"(?:hatao|hata\s+do|mita\s+do))$", re.IGNORECASE), None),
+]
+_PERIOD = (r"(?P<period>aaj|kal|parson|is\s+hafte|pichle\s+hafte|is\s+mahine|pichle\s+mahine|today|yesterday|"
+           r"this\s+week|last\s+week)")
+_HISTORY = r"(?:history|conversation\s+history|chat\s+history|purani\s+baatein|pichli\s+baatein)"
+SEARCH_HISTORY = [
+    re.compile(rf"^(?:(?:main(?:ne)?|maine|hum(?:ne)?)\s+)?{_PERIOD}\s+(?:(?:main(?:ne)?|maine|hum(?:ne)?|tum(?:ne)?|"
+               r"nova\s+ne)\s+)?(?P<query>.*?)\s*kya\s+(?:kya\s+)?(?:kaha|kiya|kia|baat\s+ki|poocha|pucha|karwaya|"
+               r"kaam\s+kiya)(?:\s+(?:tha|thi|the|hai))?$", re.IGNORECASE),
+    re.compile(rf"^{_HISTORY}\s+(?:mein|me)\s+(?P<query>.+?)\s+(?:dhoondo|dhundo|search\s+karo|talash\s+karo)$",
+               re.IGNORECASE),
+    re.compile(rf"^(?:{_PERIOD}\s+ki\s+|meri\s+)?{_HISTORY}\s+(?:dikhao|batao)$|^(?:show\s+)?(?:my\s+)?history$",
+               re.IGNORECASE),
+    re.compile(r"^(?:pichla|aakhri|last)\s+(?:kaam|command)\s+kya\s+(?:tha|thi)$", re.IGNORECASE),
+]
+CLEAR_HISTORY = [
+    re.compile(rf"^(?:{_PERIOD}\s+ki\s+|saari\s+|sari\s+|poori\s+|meri\s+)?{_HISTORY}\s+(?:mita\s+do|mitao|delete\s+karo|"
+               r"delete\s+kar\s+do|saaf\s+karo|saaf\s+kar\s+do|clear\s+karo|hata\s+do)$|^(?:clear|delete)\s+(?:my\s+)?"
+               r"(?:chat\s+|conversation\s+)?history$", re.IGNORECASE),
+]
+_WF = r"(?:workflow|routine)"
+_WF_NAME = r"(?P<name>[\w\s-]{1,30}?)"
+SAVE_WORKFLOW = [
+    (re.compile(rf"^(?:naya\s+|ek\s+)?{_WF}\s+(?:banao|bana\s+do|save\s+karo)\s*[:\-]?\s*{_Q}{_WF_NAME}{_Q}\s*[:\-—]\s*"
+                r"(?P<steps>.+)$", re.IGNORECASE), "replace"),
+    (re.compile(rf"^(?:naya\s+|ek\s+|mera\s+|new\s+)?{_Q}{_WF_NAME}{_Q}\s+(?:naam\s+ka\s+)?{_WF}\s+(?:banao|bana\s+do|"
+                r"save\s+karo)\s*(?:[:\-—]|jis\s+mein|jismein)?\s*(?P<steps>.*?)(?:\s+(?:hon|ho|khulein|kholo))?$",
+                re.IGNORECASE), "replace"),
+    (re.compile(rf"^{_WF_NAME}\s+{_WF}\s+(?:mein|me)\s+(?P<steps>.+?)\s+(?:bhi\s+)?(?:add\s+karo|add\s+kar\s+do|daal\s+do|"
+                r"dalo|shamil\s+karo)$", re.IGNORECASE), "add"),
+    (re.compile(rf"^{_WF_NAME}\s+{_WF}\s+se\s+(?P<steps>.+?)\s+(?:hata\s+do|hatao|nikal\s+do|remove\s+karo)$",
+                re.IGNORECASE), "remove"),
+    (re.compile(rf"^{_WF_NAME}\s+{_WF}\s+(?:badlo|badal\s+do|change\s+karo|dobara\s+set\s+karo|edit\s+karo)$",
+                re.IGNORECASE), "replace"),
+]
+LIST_WORKFLOWS = re.compile(rf"^(?:mere\s+|sab\s+|saare\s+)?{_WF}s?\s+(?:dikhao|batao)$|^(?:mere|my)\s+{_WF}s?\s+(?:kya|"
+                            rf"kaun\s+se)\s+hain$|^(?:list|show)\s+(?:my\s+)?{_WF}s$", re.IGNORECASE)
+DELETE_WORKFLOW = re.compile(rf"^{_WF_NAME}\s+{_WF}\s+(?:delete\s+karo|delete\s+kar\s+do|mita\s+do|mitao|hata\s+do|"
+                             r"hatao)$", re.IGNORECASE)
+REPEAT_LAST = [
+    (re.compile(r"^(?:(?:wahi|wohi|yehi|pichla|pichli)\s+)?(?:(?:kaam|command)\s+)?(?:dobara|phir\s+se|again|repeat)\s+"
+                r"(?:karo|kar\s+do|kardo|chalao|chala\s+do)$|^do\s+it\s+again$|^repeat\s+(?:that|the\s+last\s+command)$",
+                re.IGNORECASE), "command"),
+    (re.compile(r"^(?:kya\s+kaha|dobara\s+(?:bolo|batao|kaho)|phir\s+se\s+(?:bolo|batao)|say\s+(?:that|it)\s+again|"
+                r"repeat\s+what\s+you\s+said)$", re.IGNORECASE), "response"),
+]
+PERIOD_KEYS = {"aaj": "today", "today": "today", "kal": "yesterday", "yesterday": "yesterday", "parson": "before_yesterday",
+               "is hafte": "week", "pichle hafte": "week", "this week": "week", "last week": "week",
+               "is mahine": "month", "pichle mahine": "month"}
+
 # Whole commands whose text may contain "aur"/"and" that must not split them into several commands.
 UNSPLITTABLE = [CREATE_FILE_WITH_TEXT, *EDIT_REPLACE, *EDIT_APPEND, *MODIFY_CODE, *EXPLAIN_ERROR, *SEND_MESSAGE,
-                DRAFT_MESSAGE, *CREATE_DESIGN[:3], EDIT_IMAGE[0]]
+                DRAFT_MESSAGE, *CREATE_DESIGN[:3], EDIT_IMAGE[0], *REMEMBER_FACT[1:3],
+                *(p for p, _ in SAVE_WORKFLOW[:4])]
 
 
 def _settings_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
@@ -597,6 +685,46 @@ def _design_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
             if not re.search(_IMG + "$", target, re.IGNORECASE) and not IMAGE_OP_WORDS.search(rest):
                 continue  # "isko band kar do" is not a picture edit
             return "edit_image", {"target": _target_text(target), "request": rest.strip()}
+    return None
+
+
+def _memory_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
+    for p, what in REPEAT_LAST:
+        if p.search(cleaned):
+            return "repeat_last", {"what": what}
+    for p, query in RECALL_MEMORY:  # before "remember": "kya tumhe yaad hai ke ..." is a question
+        if m := p.search(cleaned):
+            return "recall_memory", {"query": query if query is not None else _target_text(m.group("query")) or ""}
+    for p in REMEMBER_FACT:
+        if m := p.search(cleaned):
+            fact = (m.groupdict().get("fact") or "").strip(" ,:-\"'“”")
+            return "remember_fact", {"fact": fact, "explicit": True}
+    for p, kind in FORGET_MEMORY:
+        if m := p.search(cleaned):
+            if kind == "all":
+                return "forget_memory", {"all": True}
+            if kind == "conversation":
+                return "forget_memory", {"scope": "conversation"}
+            return "forget_memory", {"query": "" if kind == "last" else _target_text(m.group("query")) or ""}
+    for p in CLEAR_HISTORY:
+        if m := p.search(cleaned):
+            period = PERIOD_KEYS.get(" ".join((m.groupdict().get("period") or "").lower().split()), "")
+            return "clear_history", {"period": period}
+    for p in SEARCH_HISTORY:
+        if m := p.search(cleaned):
+            groups = m.groupdict()
+            period = PERIOD_KEYS.get(" ".join((groups.get("period") or "").lower().split()), "")
+            return "search_history", {"query": (groups.get("query") or "").strip(), "period": period}
+    if LIST_WORKFLOWS.search(cleaned):
+        return "list_workflows", {}
+    for p, action in SAVE_WORKFLOW:
+        if m := p.search(cleaned):
+            return "save_workflow", {"workflow": _target_text(m.group("name")), "steps": (m.group("steps") or "").strip()
+                                     if "steps" in m.groupdict() else "", "edit_action": action}
+    if m := DELETE_WORKFLOW.search(cleaned):
+        return "delete_workflow", {"workflow": _target_text(m.group("name"))}
+    if fact := detect_fact(cleaned):  # "mera naam Ahmed hai": NOVA offers to remember it
+        return "remember_fact", {"fact": fact.text, "explicit": False}
     return None
 
 
@@ -807,7 +935,9 @@ WEB_SEARCH = [
 
 RUN_WORKFLOW = re.compile(
     r"^(?:mera\s+|meri\s+|my\s+)?(?P<name>work(?:\s+environment)?|kaam)\s+(?:start|shuru)\s*(?:karo|kar do|kardo|kijiye|karein)?$"
-    r"|^start\s+(?:my\s+)?(?P<name2>work(?:\s+environment)?)$",
+    r"|^start\s+(?:my\s+)?(?P<name2>work(?:\s+environment)?)$"
+    r"|^(?:mera\s+|meri\s+|my\s+)?(?P<name3>[\w\s-]{1,30}?)\s+(?:workflow|routine)\s+(?:chalao|chala do|start karo|shuru karo|"
+    r"run karo|kholo)$|^(?:run|start)\s+(?:the\s+|my\s+)?(?P<name4>[\w\s-]{1,30}?)\s+(?:workflow|routine)$",
     re.IGNORECASE,
 )
 
@@ -874,7 +1004,8 @@ class RuleBasedProvider(AIProvider):
     def configure_wake(self, assistant_name: str, wake_word: str) -> None:
         self._wake = build_wake_pattern(assistant_name, wake_word)
 
-    async def understand(self, text: str, context: list[ConversationTurn] | None = None) -> Understanding:
+    async def understand(self, text: str, context: list[ConversationTurn] | None = None,
+                         memories: list[str] | None = None) -> Understanding:
         """Splits compound commands ("Chrome kholo aur RAM batao") when every part is understood."""
         cleaned = normalize(text, self._wake)
         # Explicit dictation ("likho: main aur tum", "type hello and bye") is never split into commands, nor is
@@ -917,7 +1048,12 @@ class RuleBasedProvider(AIProvider):
             return make("greeting", 0.9)  # bare wake word
 
         if m := RUN_WORKFLOW.search(cleaned):
-            return make("run_workflow", 0.8, workflow=(m.group("name") or m.group("name2")).lower())
+            name = next(g for g in (m["name"], m["name2"], m["name3"], m["name4"]) if g)
+            return make("run_workflow", 0.85, workflow=" ".join(name.lower().split()))
+
+        if not any(p.search(cleaned) for p in TYPE_TEXT[:2]) and (memory := _memory_intent(cleaned)):
+            name, entities = memory
+            return make(name, 0.85, **entities)
 
         if computer := _computer_intent(cleaned):
             name, entities = computer

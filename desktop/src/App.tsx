@@ -5,6 +5,7 @@ import { AgentPanel } from "./components/AgentPanel";
 import { CommandBar } from "./components/CommandBar";
 import { Conversation } from "./components/Conversation";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { MemoryView } from "./components/MemoryView";
 import { MIC_LABEL, MicControl } from "./components/MicControl";
 import { NovaCore } from "./components/NovaCore";
 import { PermissionDialog } from "./components/PermissionDialog";
@@ -17,12 +18,13 @@ import { useNova } from "./lib/useNova";
 import { useSpeechPlayer } from "./lib/useSpeechPlayer";
 import { useVoice, type ListenMode } from "./lib/useVoice";
 
-type CenterView = "conversation" | "system" | "log";
+type CenterView = "conversation" | "system" | "log" | "memory";
 
 const VIEWS: { id: CenterView; label: string }[] = [
   { id: "conversation", label: "Conversation" },
   { id: "system", label: "System Profile" },
   { id: "log", label: "Activity Log" },
+  { id: "memory", label: "Memory" },
 ];
 
 const PREVIEW_MS = 4000;
@@ -83,14 +85,15 @@ export default function App() {
     if (nova.connection !== "connected") stopListening();
   }, [nova.connection, stopListening]);
 
-  // Voice commands that need permission: once NOVA has finished asking out loud, open the mic for the answer.
+  // Voice commands that need permission, or NOVA's own question ("Ye yaad rakhoon?"): once NOVA has finished
+  // asking out loud, open the mic for the answer.
   const awaitingVoiceAnswer = useRef<string | null>(null);
   const wasSpeaking = useRef(false);
   const latestRequest = nova.permissions[nova.permissions.length - 1];
+  const voiceQuestion = latestRequest ? (latestRequest.source === "voice" ? latestRequest.id : null) : nova.voiceFollowUp;
   useEffect(() => {
-    if (latestRequest?.source === "voice") awaitingVoiceAnswer.current = latestRequest.id;
-    if (!latestRequest) awaitingVoiceAnswer.current = null;
-  }, [latestRequest]);
+    awaitingVoiceAnswer.current = voiceQuestion;
+  }, [voiceQuestion]);
   useEffect(() => {
     const finished = wasSpeaking.current && !player.speaking;
     wasSpeaking.current = player.speaking;
@@ -195,7 +198,7 @@ export default function App() {
               />
               <div className="min-h-0 w-full max-w-2xl flex-1 overflow-y-auto px-2 pb-2" data-scroll-container>
                 <ErrorBoundary label="Conversation">
-                  <Conversation messages={nova.messages} assistantName={nova.assistantName} />
+                  <Conversation messages={nova.messages} assistantName={nova.assistantName} onQuickReply={send} />
                 </ErrorBoundary>
               </div>
             </>
@@ -207,6 +210,14 @@ export default function App() {
               ) : view === "system" ? (
                 <ErrorBoundary label="System Profile">
                   <SystemProfileView revision={nova.profileRevision} scanning={nova.scanning} />
+                </ErrorBoundary>
+              ) : view === "memory" ? (
+                <ErrorBoundary label="Memory">
+                  <MemoryView
+                    revision={nova.memoryRevision}
+                    historyDays={nova.settings?.history_days ?? 90}
+                    onRun={(command) => void send(command)}
+                  />
                 </ErrorBoundary>
               ) : (
                 <ErrorBoundary label="Activity Log">

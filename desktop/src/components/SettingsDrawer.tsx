@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, fieldErrors } from "../lib/api";
-import type { AiMode, AiStatus, NovaState, PermissionRule, UserSettings, VoiceStatus } from "../lib/types";
+import type { AiMode, AiStatus, NovaState, PermissionRule, UserSettings, VoiceStatus, WebStatus } from "../lib/types";
 import { STATE_META } from "../lib/ui";
 
 interface Props {
@@ -200,6 +200,152 @@ function VoiceSettings({
   );
 }
 
+const SEARCH_ENGINES: { value: UserSettings["search_engine"]; label: string }[] = [
+  { value: "google", label: "Google" },
+  { value: "bing", label: "Bing" },
+  { value: "duckduckgo", label: "DuckDuckGo" },
+];
+
+const BROWSER_CHANNELS: { value: UserSettings["browser_channel"]; label: string }[] = [
+  { value: "chrome", label: "Google Chrome" },
+  { value: "msedge", label: "Microsoft Edge" },
+];
+
+/** Browser + web search. The Brave key is write-only: typed here, encrypted by the backend, never shown again. */
+function WebSettings({
+  draft,
+  set,
+  errors,
+  open,
+}: {
+  draft: UserSettings;
+  set: <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => void;
+  errors: Record<string, string>;
+  open: boolean;
+}) {
+  const [status, setStatus] = useState<WebStatus | null>(null);
+  const [key, setKey] = useState("");
+  const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.webStatus().then(setStatus).catch(() => setStatus(null));
+  useEffect(() => {
+    if (open) {
+      setKey("");
+      setNote(null);
+      void load();
+    }
+  }, [open]);
+
+  const saveKey = async () => {
+    if (!key.trim() || busy) return;
+    setBusy(true);
+    try {
+      const r = await api.setSecret("brave_api_key", key.trim());
+      setNote({ text: `Key save ho gayi (${r.masked}) — encrypted, sirf is PC par.`, ok: true });
+      setKey("");
+      void load();
+    } catch {
+      setNote({ text: "Key save nahi hui — format check karein (sirf letters, numbers, - _ .).", ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeKey = async () => {
+    setBusy(true);
+    await api.deleteSecret("brave_api_key").catch(() => undefined);
+    setNote({ text: "Key hata di — ab search Wikipedia se hogi.", ok: true });
+    setBusy(false);
+    void load();
+  };
+
+  return (
+    <fieldset className="flex flex-col gap-3 border-t border-white/10 pt-4">
+      <legend className="mb-1 text-xs font-medium text-slate-300">Web aur browser</legend>
+      {status && (
+        <span className={`text-xs ${status.brave_configured ? "text-emerald-300" : "text-amber-300"}`}>
+          {status.brave_configured
+            ? `Search: Brave API (key ${status.brave_key_masked})`
+            : "Search: sirf Wikipedia — taza khabron ke liye Brave key daalein."}
+        </span>
+      )}
+      <Field
+        label="Brave Search API key"
+        hint="brave.com/search/api se free key milti hai. Key encrypted save hoti hai aur dobara dikhai nahi jati."
+      >
+        <div className="flex gap-2">
+          <input
+            type="password"
+            className={`${inputClass} min-w-0 flex-1`}
+            value={key}
+            placeholder={status?.brave_configured ? "Nayi key se badlein" : "Key yahan paste karein"}
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={200}
+            onChange={(e) => setKey(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault(); // not the settings form's submit
+                void saveKey();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => void saveKey()}
+            disabled={!key.trim() || busy}
+            className="shrink-0 rounded-lg border border-sky-500/40 px-3 text-xs text-sky-200 hover:bg-sky-500/10 disabled:opacity-40"
+          >
+            Save key
+          </button>
+          {status?.brave_configured && (
+            <button
+              type="button"
+              onClick={() => void removeKey()}
+              disabled={busy}
+              className="shrink-0 text-xs text-red-300 hover:text-red-200 disabled:opacity-40"
+            >
+              Hatao
+            </button>
+          )}
+        </div>
+      </Field>
+      {note && <span className={`text-xs ${note.ok ? "text-emerald-300" : "text-red-300"}`}>{note.text}</span>}
+      <Field label="Browser mein search engine" hint='"YouTube search karo" jaisi commands ke liye.' error={errors.search_engine}>
+        <select
+          className={inputClass}
+          value={draft.search_engine}
+          onChange={(e) => set("search_engine", e.target.value as UserSettings["search_engine"])}
+        >
+          {SEARCH_ENGINES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field
+        label="NOVA ka browser"
+        hint="NOVA apni alag profile istemal karta hai — aap ke passwords aur cookies use nahi hote. Badalne ka asar agli dafa browser khulne par hoga."
+        error={errors.browser_channel}
+      >
+        <select
+          className={inputClass}
+          value={draft.browser_channel}
+          onChange={(e) => set("browser_channel", e.target.value as UserSettings["browser_channel"])}
+        >
+          {BROWSER_CHANNELS.map((b) => (
+            <option key={b.value} value={b.value}>
+              {b.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+    </fieldset>
+  );
+}
+
 const inputClass =
   "rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/60";
 
@@ -339,6 +485,8 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
             </fieldset>
 
             <VoiceSettings draft={draft} set={set} errors={errors} open={open} />
+
+            <WebSettings draft={draft} set={set} errors={errors} open={open} />
 
             <fieldset className="flex flex-col gap-2 border-t border-white/10 pt-4">
               <legend className="mb-1 text-xs font-medium text-slate-300">AI brain (local, PC se bahar kuch nahi jata)</legend>

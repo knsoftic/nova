@@ -60,6 +60,18 @@ CASES: list[tuple[str, list[str], dict[str, str] | None]] = [
     ("jo select kiya hai usay copy kar lo", ["keyboard_shortcut"], None),
     ("likho: Kal meeting 5 baje hai", ["type_text"], {"text": "kal meeting 5 baje hai"}),
     ("OK button par click karo", ["mouse_click"], None),
+    # browser + research (Phase 8A)
+    ("example.com kholo", ["open_website"], None),
+    ("is page ko summarize karo", ["read_page"], None),
+    ("thora neeche scroll karo", ["browser_nav"], {"action": "scroll_down"}),
+    ("browser mein peeche jao", ["browser_nav"], {"action": "back"}),
+    ("Sign in link par click karo", ["browser_click"], None),
+    ("search box mein python tutorial likho", ["browser_type"], None),
+    ("ye report download kar do", ["download"], None),
+    ("solar energy par research karo", ["research"], {"query": "solar energy"}),
+    ("aaj lahore ka mausam kaisa hai", ["web_answer"], None),
+    ("dollar ka rate kya hai", ["web_answer"], None),
+    ("dollar rate google par search karo", ["web_search"], {"query": "dollar rate"}),
 ]
 
 

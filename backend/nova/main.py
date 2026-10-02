@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Any, Callable
 
@@ -24,6 +25,11 @@ from .discovery import DiscoveryService, LiveStats, SystemProfile, find_app
 from .events import EventBus, EventType, NovaEvent
 from .orchestrator import CommandResult, Orchestrator
 from .agents.computer import ComputerAgent, Desktop
+from .browser import BrowserController
+from .browser.agent import BrowserAgent
+from .known_folders import known_folder
+from .research import ResearchAgent
+from .secret_store import KNOWN_SECRETS, delete_secret, get_secret, masked, set_secret
 from .permissions import PermissionEngine
 from .voice import SpeechToText, TextToSpeech, VoiceService, VoiceSession
 from .user_settings import (
@@ -77,6 +83,11 @@ class PermissionDecisionRequest(BaseModel):
     remember: bool = False
 
 
+class SecretRequest(BaseModel):
+    # Validated by hand in the endpoint: a pydantic error response would echo the secret back.
+    value: str
+
+
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
 
@@ -94,6 +105,9 @@ def create_app(
     stt: SpeechToText | None = None,
     tts: TextToSpeech | None = None,
     desktop: Desktop | None = None,
+    browser_controller: BrowserController | None = None,
+    web_transport: httpx.AsyncBaseTransport | None = None,
+    web_resolver: Callable[..., Any] | None = None,
 ) -> FastAPI:
     """`scanner`/`stats`/`ollama_transport`/`stt`/`tts` replace real collectors, Ollama and voice models (tests)."""
     settings = settings or load_settings()
@@ -122,7 +136,25 @@ def create_app(
         computer = ComputerAgent(desktop or Desktop(), lambda: discovery.profile, settings.data_dir / "screenshots")
         permissions = PermissionEngine(db, bus, timeout_s=settings.permission_timeout_s)
         app.state.permissions = permissions
-        app.state.orchestrator = Orchestrator(bus, db, providers, assistant_name, discovery, computer, permissions)
+        browser = browser_controller or BrowserController(
+            settings.data_dir / "browser-profile",
+            downloads_dir=lambda: known_folder("downloads") / "NOVA",
+            channel=lambda: app.state.user_settings.browser_channel,
+        )
+        app.state.browser = browser
+        research = ResearchAgent(
+            providers.ollama,
+            brave_key=lambda: get_secret(db, "brave_api_key"),
+            reports_dir=lambda: settings.reports_dir or known_folder("documents") / "NOVA" / "Research",
+            transport=web_transport,
+            resolver=web_resolver,
+        )
+        app.state.research = research
+        app.state.orchestrator = Orchestrator(
+            bus, db, providers, assistant_name, discovery, computer, permissions,
+            browser=BrowserAgent(browser, engine=lambda: app.state.user_settings.search_engine),
+            research=research,
+        )
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
         voice = VoiceService(
@@ -157,6 +189,7 @@ def create_app(
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
             await voice.shutdown()
+            await asyncio.to_thread(browser.shutdown)
             db.close()
 
     app = FastAPI(title="NOVA Backend", version=__version__, lifespan=lifespan)
@@ -253,6 +286,40 @@ def create_app(
     @app.get("/api/permissions/history")
     async def permission_history(limit: int = 100) -> list[dict[str, Any]]:
         return app.state.db.list_permission_requests(max(1, min(limit, 500)))
+
+    @app.get("/api/web/status")
+    async def web_status() -> dict[str, Any]:
+        key = get_secret(app.state.db, "brave_api_key")
+        s = app.state.user_settings
+        return {
+            "search_provider": "brave" if key else "wikipedia",
+            "brave_configured": bool(key),
+            "brave_key_masked": masked(key),  # never the key itself
+            "search_engine": s.search_engine,
+            "browser_channel": s.browser_channel,
+        }
+
+    @app.put("/api/secrets/{name}")
+    async def put_secret(name: str, body: SecretRequest) -> dict[str, Any]:
+        if name not in KNOWN_SECRETS:
+            raise HTTPException(status_code=404, detail="Unknown secret")
+        if not re.fullmatch(r"[A-Za-z0-9_\-.]{8,200}", body.value.strip()):
+            raise HTTPException(status_code=422, detail="Key ka format sahi nahi lag raha")
+        set_secret(app.state.db, name, body.value.strip())
+        app.state.db.add_activity(task_id="settings", task_name="set_secret", agent="Orchestrator",
+                                  action="set_secret", permission_status="user_initiated", execution_status="success",
+                                  final_result=f"{name} save hui (encrypted)")
+        return {"ok": True, "masked": masked(body.value.strip())}
+
+    @app.delete("/api/secrets/{name}")
+    async def remove_secret(name: str) -> dict[str, Any]:
+        if name not in KNOWN_SECRETS:
+            raise HTTPException(status_code=404, detail="Unknown secret")
+        delete_secret(app.state.db, name)
+        app.state.db.add_activity(task_id="settings", task_name="delete_secret", agent="Orchestrator",
+                                  action="delete_secret", permission_status="user_initiated",
+                                  execution_status="success", final_result=f"{name} hataya")
+        return {"ok": True}
 
     @app.get("/api/voice/status")
     async def voice_status() -> dict[str, Any]:

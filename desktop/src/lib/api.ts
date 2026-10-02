@@ -7,6 +7,7 @@ import type {
   SystemProfile,
   UserSettings,
   VoiceStatus,
+  WebStatus,
 } from "./types";
 
 export const API_BASE = import.meta.env.VITE_NOVA_API_URL ?? "http://127.0.0.1:8765";
@@ -52,6 +53,11 @@ export const api = {
   speak: (text: string) => request<{ speech_id: string }>("/api/voice/speak", json("POST", { text })),
   speechUrl: (id: string) => `${API_BASE}/api/voice/speech/${encodeURIComponent(id)}`,
   aiStatus: (refresh = false) => request<AiStatus>(`/api/ai/status${refresh ? "?refresh=true" : ""}`),
+  webStatus: () => request<WebStatus>("/api/web/status"),
+  /** Write-only: the backend encrypts the value and only ever returns a masked hint. */
+  setSecret: (name: string, value: string) =>
+    request<{ ok: boolean; masked: string }>(`/api/secrets/${encodeURIComponent(name)}`, json("PUT", { value })),
+  deleteSecret: (name: string) => request<{ ok: boolean }>(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
 };
 
 /** Turns a FastAPI 422 body into {field: message} for form display. */

@@ -9,7 +9,7 @@ from array import array
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import FakeDesktop, FakeOllama, fake_stats, make_profile
+from conftest import FakeBrowser, FakeDesktop, FakeOllama, fake_stats, make_profile
 from nova.config import Settings
 from nova.main import create_app
 from nova.voice.stt import Transcript
@@ -78,7 +78,7 @@ def voice_app(tmp_path):
     stt, tts = FakeSTT(), FakeTTS()
     app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False), scanner=make_profile,
                      stats=fake_stats, ollama_transport=FakeOllama(models=[]).transport, stt=stt, tts=tts,
-                     desktop=FakeDesktop())
+                     desktop=FakeDesktop(), browser_controller=FakeBrowser())
     with TestClient(app) as client:
         yield client, stt, tts
 
@@ -185,7 +185,7 @@ def test_audio_ignored_while_nova_is_speaking(voice_app):
 def test_missing_model_reports_error(tmp_path):
     app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False), scanner=make_profile,
                      stats=fake_stats, ollama_transport=FakeOllama(models=[]).transport,
-                     stt=FakeSTT(downloaded=False), tts=FakeTTS(available=False), desktop=FakeDesktop())
+                     stt=FakeSTT(downloaded=False), tts=FakeTTS(available=False), desktop=FakeDesktop(), browser_controller=FakeBrowser())
     with TestClient(app) as client:
         with client.websocket_connect("/ws/voice") as ws:
             ws.send_json({"type": "start", "mode": "ptt"})

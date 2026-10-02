@@ -3,7 +3,7 @@ import { matchesActivity } from "./activityFilter";
 import { computeLevel, smoothLevel } from "./audio";
 import { emptyHistory, navigateHistory, pushHistory } from "./commandHistory";
 import type { AiStatus, EventType, NovaEvent } from "./types";
-import { aiLabel, formatBytes, formatDuration, providerLabel } from "./ui";
+import { aiLabel, formatBytes, formatDuration, linkParts, providerLabel } from "./ui";
 
 const ev = (type: EventType, agent: string | null = "Orchestrator"): NovaEvent => ({
   type,
@@ -113,5 +113,21 @@ describe("formatting", () => {
     expect(formatBytes(null)).toBe("?");
     expect(formatDuration(3 * 3600 + 25 * 60)).toBe("3h 25m");
     expect(formatDuration(59 * 60)).toBe("59m");
+  });
+});
+
+describe("linkParts", () => {
+  it("turns https sources into links and leaves the sentence punctuation outside", () => {
+    expect(linkParts("[1] Islamabad — https://en.wikipedia.org/wiki/Islamabad.\nDone")).toEqual([
+      { text: "[1] Islamabad — " },
+      { text: "https://en.wikipedia.org/wiki/Islamabad", href: "https://en.wikipedia.org/wiki/Islamabad" },
+      { text: ".\nDone" },
+    ]);
+  });
+
+  it("does not link plain http, file paths or javascript", () => {
+    for (const t of ["http://example.com", "C:\\Users\\x\\report.md", "javascript:alert(1)"]) {
+      expect(linkParts(t)).toEqual([{ text: t }]);
+    }
   });
 });

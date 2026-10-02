@@ -29,6 +29,7 @@ class Settings:
 
     stt_model: str = "small"
     permission_timeout_s: float = 60.0  # no answer = "no"
+    reports_dir: Path | None = None  # research reports; default Documents\NOVA\Research
 
     @property
     def db_path(self) -> Path:

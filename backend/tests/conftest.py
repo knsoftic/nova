@@ -209,13 +209,214 @@ class FakeDesktop:
         return self.close_works
 
 
+class FakeBrowser:
+    """Stand-in for NOVA's Playwright browser: an in-memory set of pages."""
+
+    PAGES = {
+        "https://example.com/": ("Example Domain", "<html><body><main><h1>Example Domain</h1><p>This domain is for "
+                                 "use in illustrative examples in documents. You may use this domain freely.</p>"
+                                 "</main></body></html>"),
+        "https://shop.example/": ("Shop", "<html><body><p>Buy things here.</p></body></html>"),
+    }
+
+    def __init__(self):
+        self.open = False
+        self.url = ""
+        self.title = ""
+        self.scroll = 0
+        self.history: list[str] = []
+        self.calls: list[tuple] = []
+        # clickable elements on the current page: label -> (text, kind, href or None, "download:<name>")
+        self.links = {"More information": ("More information...", "link", "https://www.iana.org/domains/example", None),
+                      "Delete": ("Delete account", "button", None, None),
+                      "Report": ("Annual report (PDF)", "link", "https://example.com/report.pdf", "download:report.pdf"),
+                      "Setup": ("Download setup.exe", "link", "https://example.com/setup.exe", "download:setup.exe")}
+        self.fields = {"search box": ("search", ""), "password": ("password", ""), "card number": ("text", "cc-number")}
+        self.downloads_dir = None
+
+    def is_open(self):
+        return self.open
+
+    def pid(self):
+        return 4242 if self.open else None
+
+    def state(self):
+        from nova.browser.controller import PageState
+
+        return PageState(self.title, self.url) if self.open else None
+
+    def goto(self, url):
+        from nova.browser.controller import PageState
+
+        self.calls.append(("goto", url))
+        self.open = True
+        key = url if url.endswith("/") else url + "/"
+        self.url = key if key in self.PAGES else url
+        self.title = self.PAGES.get(key, (url.split("//")[-1].split("/")[0], ""))[0]
+        self.history.append(self.url)
+        return PageState(self.title, self.url)
+
+    def search(self, query, engine):
+        from urllib.parse import quote_plus
+
+        self.calls.append(("search", query, engine))
+        return self.goto(f"https://www.{engine}.com/search?q={quote_plus(query)}")
+
+    def read(self):
+        from nova.browser.controller import PageState
+
+        if not self.open:
+            return None
+        html = self.PAGES.get(self.url, ("", "<html><body><p>Search results page.</p></body></html>"))[1]
+        return PageState(self.title, self.url), html
+
+    def navigate(self, action):
+        from nova.browser.controller import PageState
+
+        self.calls.append(("nav", action))
+        before = (self.url, self.scroll)
+        if action == "scroll_down":
+            self.scroll += 700
+        elif action == "scroll_up":
+            self.scroll = max(0, self.scroll - 700)
+        elif action == "back" and len(self.history) > 1:
+            self.history.pop()
+            self.url = self.history[-1]
+        return PageState(self.title, self.url), (self.url, self.scroll) != before or action == "reload"
+
+    def _find(self, label):
+        for key, value in self.links.items():
+            if label.lower() in (key.lower(), value[0].lower()) or label.lower() in value[0].lower():
+                return value
+        return None
+
+    def inspect_click(self, label):
+        from nova.browser.controller import ElementInfo
+
+        found = self._find(label) if self.open else None
+        return ElementInfo(True, found[0], found[1], found[2]) if found else ElementInfo(False)
+
+    def inspect_field(self, label):
+        from nova.browser.controller import ElementInfo
+
+        if not self.open:
+            return ElementInfo(False)
+        key = (label or "search box").lower()
+        if key not in self.fields:
+            return ElementInfo(False)
+        input_type, autocomplete = self.fields[key]
+        return ElementInfo(True, key, "field", input_type=input_type, autocomplete=autocomplete, name=key)
+
+    def click(self, label, expected_text):
+        from nova.browser.controller import PageState
+
+        self.calls.append(("click", label))
+        found = self._find(label)
+        if not found:
+            return "not_found", None
+        if found[0] != expected_text:
+            return "changed_target", None
+        if found[2]:
+            return "clicked_changed", self.goto(found[2])
+        return "clicked_same", PageState(self.title, self.url)
+
+    def fill(self, label, text):
+        self.calls.append(("fill", label, text))
+        key = (label or "search box").lower()
+        if key not in self.fields:
+            return "not_found", None
+        if self.fields[key][0] == "password":
+            return "refused_password", None
+        return "filled", text
+
+    def download(self, label):
+        self.calls.append(("download", label))
+        found = self._find(label)
+        if not found:
+            return "not_found", None
+        if not found[3]:
+            return "not_a_download", None
+        folder = self.downloads_dir
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / found[3].split(":", 1)[1]
+        path.write_bytes(b"x" * 2048)
+        return "saved", path
+
+    def shutdown(self):
+        pass
+
+
+PUBLIC_TEST_IPS = {"en.wikipedia.org": "198.35.26.96", "example.com": "93.184.216.34",
+                   "news.example.org": "93.184.216.35", "blog.example.net": "93.184.216.36",
+                   "evil.example": "127.0.0.1"}
+
+
+async def fake_resolver(host, port):
+    if host not in PUBLIC_TEST_IPS:
+        raise OSError("unknown host")
+    return [PUBLIC_TEST_IPS[host]]
+
+
+class FakeWeb:
+    """Brave API, Wikipedia API and a few web pages, served from memory."""
+
+    def __init__(self):
+        self.brave_calls: list[dict] = []
+        self.brave_status = 200
+        self.pages = {
+            "news.example.org": "<html><head><title>Solar Report</title></head><body><article><p>"
+                                + "Solar power capacity grew strongly in 2026 across Pakistan. " * 30
+                                + "</p></article></body></html>",
+            "blog.example.net": "<html><head><title>Solar Blog</title></head><body><article><p>"
+                                + "Rooftop solar is cheaper than grid power for many homes. " * 30
+                                + "</p></article></body></html>",
+            "example.com": "<html><head><title>Example</title></head><body><p>Example page.</p></body></html>",
+        }
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        host = request.headers.get("host", request.url.host)
+        if request.url.host == "api.search.brave.com":
+            self.brave_calls.append({"q": request.url.params.get("q"), "key": request.headers.get("x-subscription-token")})
+            if self.brave_status != 200:
+                return httpx.Response(self.brave_status, json={})
+            return httpx.Response(200, json={"web": {"results": [
+                {"title": "Solar Report 2026", "url": "https://news.example.org/solar", "description": "Solar grew.",
+                 "extra_snippets": ["Capacity doubled."], "age": "2 days ago"},
+                {"title": "Solar Blog", "url": "https://blog.example.net/solar", "description": "Rooftop solar."},
+                {"title": "Local trick", "url": "http://evil.example/admin", "description": "should be skipped"},
+                {"title": "Not web", "url": "file:///C:/secret.txt", "description": "never fetched"},
+            ]}})
+        if request.url.host == "en.wikipedia.org":
+            params = request.url.params
+            if params.get("list") == "search":
+                return httpx.Response(200, json={"query": {"search": [
+                    {"title": "Islamabad", "snippet": "capital of <b>Pakistan</b>"},
+                    {"title": "Islamabad (disambiguation)", "snippet": "may refer to"},
+                    {"title": "Capital", "snippet": "a capital"}]}})
+            return httpx.Response(200, json={"query": {"pages": {
+                "1": {"title": "Islamabad", "extract": "Islamabad is the capital city of Pakistan."},
+                "2": {"title": "Islamabad (disambiguation)", "extract": "Islamabad may refer to:"},
+                "3": {"title": "Capital", "extract": "Capital may refer to:"}}}})
+        if host in self.pages:
+            return httpx.Response(200, html=self.pages[host])
+        return httpx.Response(404)
+
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self.handler)
+
+
 def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDesktop | None = None,
-                 permission_timeout_s: float = 0.5):
+                 permission_timeout_s: float = 0.5, browser: FakeBrowser | None = None, web: FakeWeb | None = None):
     ollama = ollama or FakeOllama(models=[])  # reachable but no model: rules only, deterministic
+    browser = browser or FakeBrowser()
+    browser.downloads_dir = tmp_path / "Downloads" / "NOVA"
     # Short permission timeout: an unanswered question resolves to "no" quickly in tests.
-    app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False, permission_timeout_s=permission_timeout_s),
+    app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False, permission_timeout_s=permission_timeout_s,
+                              reports_dir=tmp_path / "Research"),
                      scanner=make_profile, stats=fake_stats, ollama_transport=ollama.transport,
-                     desktop=desktop or FakeDesktop())
+                     desktop=desktop or FakeDesktop(), browser_controller=browser,
+                     web_transport=(web or FakeWeb()).transport, web_resolver=fake_resolver)
     return TestClient(app)
 
 

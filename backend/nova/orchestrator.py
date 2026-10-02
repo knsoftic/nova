@@ -18,15 +18,19 @@ from typing import Any
 from pydantic import BaseModel
 
 from .agents import system_agent
-from .agents.computer import ComputerAgent
-from .ai.base import ConversationTurn, Intent
+from .agents.computer import ComputerAgent, ControlOutcome
+from .ai.base import ConversationTurn, Intent, Understanding
+from .browser.agent import BrowserAgent, download_is_executable, site_for
+from .browser.controller import ElementInfo
 from .ai.manager import ProviderManager
 from .db import Database
+from .discovery.apps import find_app
 from .discovery.models import LiveStats, SystemProfile
 from .discovery.service import DiscoveryService
 from .events import EventBus, EventType, NovaEvent, NovaState
 from .permissions import PermissionEngine, TargetContext
 from .planner import Plan, PlanStep, build_plan
+from .research import ResearchAgent, SearchError
 from .responses import (
     FALLBACK_NOTES,
     build_error_response,
@@ -40,6 +44,9 @@ ORCHESTRATOR = "Orchestrator"
 SYSTEM_INTENTS = {"system_info", "app_check", "rescan_system"}
 CONTROL_INTENTS = {"open_app", "focus_app", "window_control", "read_screen", "screenshot", "keyboard_shortcut",
                    "close_app", "type_text", "mouse_click"}
+BROWSER_INTENTS = {"open_website", "web_search", "read_page", "browser_nav", "browser_click", "browser_type",
+                   "download"}
+RESEARCH_INTENTS = {"research", "web_answer"}
 CONTEXT_TURNS = 4  # short-term context for the AI brain; long-term memory is Phase 9
 
 
@@ -75,8 +82,12 @@ class Orchestrator:
         discovery: DiscoveryService,
         computer: ComputerAgent | None = None,
         permissions: PermissionEngine | None = None,
+        browser: BrowserAgent | None = None,
+        research: ResearchAgent | None = None,
     ) -> None:
         self.permissions = permissions
+        self.browser = browser
+        self.research = research
         self.bus = bus
         self.db = db
         self.providers = providers
@@ -163,6 +174,7 @@ class Orchestrator:
                 )
 
             await self.set_state(NovaState.PLANNING, task_id)
+            understanding = await self._route(understanding)
             plan = build_plan(understanding)
             await self.bus.publish(
                 NovaEvent(
@@ -232,6 +244,13 @@ class Orchestrator:
                 outcome = AgentOutcome("Computer control is PC par available nahi.", step.agent, step.action, False)
             else:
                 outcome = await self._run_computer(task_id, step)
+        elif intent.name in BROWSER_INTENTS and step.status == "ready" and self.browser is not None:
+            outcome = await self._run_browser(task_id, step)
+        elif intent.name in RESEARCH_INTENTS and step.status == "ready" and self.research is not None:
+            outcome = await self._run_research(task_id, step)
+        elif step.status == "denied" and step.permission == "refused":
+            # NOVA itself refuses (e.g. a password field) - the user was not even asked.
+            outcome = AgentOutcome(step.result or "Ye kaam NOVA nahi karta.", step.agent, step.action, executed=False)
         elif step.status == "denied":
             reply = ("Aap ka jawab nahi aaya, is liye ye kaam nahi kiya" if step.permission == "timeout"
                      else "Theek hai, ijazat nahi mili, is liye ye kaam nahi kiya")
@@ -258,6 +277,7 @@ class Orchestrator:
         }.get(step.status, step.status)
         permission_status = {
             "approved": "approved_by_user", "rule": "approved_by_saved_rule", "denied": "denied", "timeout": "timeout",
+            "refused": "refused_by_nova",
         }.get(step.permission or "", "required_pending" if step.status == "needs_permission" else "not_required")
         self.db.add_activity(
             task_id=task_id,
@@ -281,18 +301,72 @@ class Orchestrator:
         )
         return outcome
 
+    async def _route(self, understanding: Understanding) -> Understanding:
+        """Send each intent to the agent that can actually do it, using what is on screen right now:
+        - "YouTube kholo" with no YouTube app installed -> open the website;
+        - click/type while the user's window is NOVA's own browser -> act inside the web page."""
+        routed: list[Intent] = []
+        browser_is_target: bool | None = None
+        for intent in understanding.intents:
+            e = intent.entities
+            if intent.name == "open_app" and self.browser is not None and (app := str(e.get("app") or "")):
+                profile = self.discovery.profile
+                installed = profile is not None and find_app(profile.apps, app) is not None
+                if not installed and site_for(app):
+                    intent = intent.model_copy(update={"name": "open_website", "entities": {"url": app}})
+            if intent.name in ("mouse_click", "type_text") and self.browser is not None and self.computer is not None:
+                if browser_is_target is None:
+                    browser_is_target = await asyncio.to_thread(self._browser_is_target)
+                if browser_is_target:
+                    if intent.name == "mouse_click":
+                        intent = intent.model_copy(update={"name": "browser_click"})
+                    else:
+                        intent = intent.model_copy(update={"name": "browser_type",
+                                                           "entities": {"text": e.get("text", "")}})
+            routed.append(intent)
+        return understanding.model_copy(update={"intents": routed})
+
+    def _browser_is_target(self) -> bool:
+        assert self.computer is not None and self.browser is not None
+        window = self.computer._last_user_window()
+        pid = self.browser.browser.pid()
+        return bool(window and pid and window.pid == pid)
+
+    async def _target_for(self, step: PlanStep) -> TargetContext | str:
+        """Where a risky step would act, or a refusal reason if NOVA will not do it at all."""
+        intent = step.intent
+        if intent.name in BROWSER_INTENTS and self.browser is not None:
+            target = await asyncio.to_thread(self.browser.describe_target, intent)
+            if target.refusal:
+                return target.refusal
+            element = target.element.text if target.element and target.element.found else None
+            step.element_text = element
+            return TargetContext(title=target.title, process=f"browser:{target.host}", element=element,
+                                 executable=intent.name == "download" and download_is_executable(
+                                     str(intent.entities.get("target") or ""), target.element))
+        if self.computer is not None:
+            title, process = await asyncio.to_thread(self.computer.describe_target, intent)
+            return TargetContext(title=title, process=process)
+        return TargetContext()
+
     async def _seek_permission(self, task_id: str, plan: Plan, source: str) -> None:
         """Ask the user (or apply a remembered approval) for every step that needs permission."""
         risky = [s for s in plan.steps if s.status == "needs_permission"]
-        if not risky or self.permissions is None or self.computer is None:
+        if not risky or self.permissions is None:
             return
         items = []
-        for step in risky:
-            title, process = await asyncio.to_thread(self.computer.describe_target, step.intent)
+        for step in list(risky):
+            target = await self._target_for(step)
+            if isinstance(target, str):
+                step.status, step.permission, step.result = "denied", "refused", target
+                risky.remove(step)
+                continue
             item = self.permissions.make_item(step.id, step.intent.name, step.intent.entities, step.description,
-                                              step.risk, TargetContext(title=title, process=process))
+                                              step.risk, target)
             step.risk, step.reasons = item.risk, item.reasons
             items.append(item)
+        if not items:
+            return
         await self.set_state(NovaState.WAITING_FOR_PERMISSION, task_id)
         decisions = await self.permissions.request(task_id, items, source)
         for step in risky:
@@ -304,16 +378,56 @@ class Orchestrator:
                 step.status = "denied"
                 step.permission = "timeout" if decision.decided_by == "timeout" else "denied"
 
-    async def _run_computer(self, task_id: str, step: PlanStep) -> AgentOutcome:
-        """Run a computer-control action and report its verification (spec: never assume success)."""
-        assert self.computer is not None
-        if step.intent.name in ("open_app", "focus_app", "window_control", "close_app"):
-            await self._ensure_profile(task_id)  # app names are resolved through the discovered catalog
+    async def _run_browser(self, task_id: str, step: PlanStep) -> AgentOutcome:
+        assert self.browser is not None
         await self.set_state(NovaState.WORKING, task_id)
         await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
                                          message=f"{step.description}..."))
         approved = step.permission in ("approved", "rule")
-        result = await asyncio.to_thread(self.computer.run, step.intent, approved)
+        if step.intent.name == "read_page":
+            page = await asyncio.to_thread(self.browser.page_text)
+            if isinstance(page, ControlOutcome):
+                result = page
+            else:
+                await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=step.agent,
+                                                 message="Page ka khulasa bana raha hai..."))
+                summary = await self.research.summarise_page(page[0], page[2]) if self.research else None
+                result = self.browser.page_outcome(*page, summary=summary)
+        else:
+            element = ElementInfo(True, step.element_text) if step.element_text else None
+            result = await asyncio.to_thread(self.browser.run, step.intent, approved, element)
+        return await self._report(task_id, step, result)
+
+    async def _run_research(self, task_id: str, step: PlanStep) -> AgentOutcome:
+        assert self.research is not None
+        await self.set_state(NovaState.WORKING, task_id)
+
+        async def progress(message: str) -> None:
+            await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=step.agent,
+                                             message=message))
+
+        query = str(step.intent.entities.get("query") or "").strip()
+        if not query:
+            return AgentOutcome("Kis cheez ke baare mein dhoondna hai?", step.agent, step.action, False)
+        await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
+                                         message=f"{step.description}: {query}"))
+        try:
+            if step.intent.name == "research":
+                found = await self.research.report(query, progress)
+            else:
+                found = await self.research.answer(query, progress)
+        except SearchError as exc:
+            return AgentOutcome(f"Web se maloomat nahi mil saki: {exc}.", step.agent, step.action, False)
+        if found.report_path is not None:
+            ok = found.report_path.exists() and found.report_path.stat().st_size > 0
+            result = ControlOutcome(found.response, step.action, True, "passed" if ok else "failed",
+                                    str(found.report_path))
+        else:
+            result = ControlOutcome(found.response, step.action, bool(found.sources), "not_applicable")
+        return await self._report(task_id, step, result)
+
+    async def _report(self, task_id: str, step: PlanStep, result: ControlOutcome) -> AgentOutcome:
+        """Publish what an agent did and how it was verified; return it for the step log."""
         if result.executed:
             await self.bus.publish(NovaEvent(type=EventType.ACTION_EXECUTED, task_id=task_id, agent=step.agent,
                                              message=f"Action: {result.action}", data={"action": result.action}))
@@ -331,6 +445,18 @@ class Orchestrator:
             )
         return AgentOutcome(result.response, step.agent, result.action, executed=result.executed,
                             verification=result.verification)
+
+    async def _run_computer(self, task_id: str, step: PlanStep) -> AgentOutcome:
+        """Run a computer-control action and report its verification (spec: never assume success)."""
+        assert self.computer is not None
+        if step.intent.name in ("open_app", "focus_app", "window_control", "close_app"):
+            await self._ensure_profile(task_id)  # app names are resolved through the discovered catalog
+        await self.set_state(NovaState.WORKING, task_id)
+        await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
+                                         message=f"{step.description}..."))
+        approved = step.permission in ("approved", "rule")
+        result = await asyncio.to_thread(self.computer.run, step.intent, approved)
+        return await self._report(task_id, step, result)
 
     def _compose(self, plan: Plan, outcomes: list[AgentOutcome]) -> str:
         if len(outcomes) == 1:

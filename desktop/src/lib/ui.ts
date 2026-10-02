@@ -15,19 +15,34 @@ export const STATE_META: Record<NovaState, { label: string; color: string }> = {
 export interface AgentInfo {
   name: string;
   description: string;
-  phase: number | null; // phase that delivers it; null = active now
+  phase: string | null; // phase that delivers it; null = active now
 }
 
 export const AGENTS: AgentInfo[] = [
   { name: "Orchestrator", description: "Command samajhna aur route karna", phase: null },
   { name: "System Agent", description: "System maloomat, apps kholna, windows, screen parhna", phase: null },
-  { name: "Browser Agent", description: "Browser, search, websites", phase: 8 },
-  { name: "File Agent", description: "Files aur folders", phase: 8 },
-  { name: "Coding Agent", description: "VS Code, projects, errors", phase: 8 },
-  { name: "Research Agent", description: "Web research aur reports", phase: 8 },
-  { name: "Design Agent", description: "Design tools", phase: 8 },
-  { name: "Communication Agent", description: "Messages (permission ke sath)", phase: 8 },
+  { name: "Browser Agent", description: "Websites kholna, parhna, click/type aur downloads (ijazat se)", phase: null },
+  { name: "Research Agent", description: "Web search (Brave/Wikipedia), jawab aur reports", phase: null },
+  { name: "File Agent", description: "Files aur folders", phase: "8B" },
+  { name: "Coding Agent", description: "VS Code, projects, errors", phase: "8B" },
+  { name: "Design Agent", description: "Design tools", phase: "8C" },
+  { name: "Communication Agent", description: "Messages (permission ke sath)", phase: "8C" },
 ];
+
+/** Splits text into plain parts and https links, so web sources can be opened from a reply. */
+export function linkParts(text: string): { text: string; href?: string }[] {
+  const parts: { text: string; href?: string }[] = [];
+  let last = 0;
+  for (const m of text.matchAll(/https:\/\/[^\s<>"'`]+/g)) {
+    const url = m[0].replace(/[.,;:!?]+$/, ""); // trailing punctuation belongs to the sentence
+    const start = m.index ?? 0;
+    if (start > last) parts.push({ text: text.slice(last, start) });
+    parts.push({ text: url, href: url });
+    last = start + url.length;
+  }
+  if (last < text.length) parts.push({ text: text.slice(last) });
+  return parts;
+}
 
 /** Short label for who is understanding commands right now. */
 export function aiLabel(status: AiStatus | null): { text: string; ok: boolean } {

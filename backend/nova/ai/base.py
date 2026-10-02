@@ -29,8 +29,19 @@ KNOWN_INTENTS = (
     "keyboard_shortcut",
     "type_text",
     "mouse_click",
+    # browser + research (Phase 8A)
+    "open_website",
+    "read_page",
+    "browser_nav",
+    "browser_click",
+    "browser_type",
+    "download",
+    "research",
+    "web_answer",
     "unknown",
 )
+
+BROWSER_NAV_ACTIONS = ("scroll_down", "scroll_up", "back", "forward", "reload")
 
 WINDOW_ACTIONS = ("minimize", "maximize", "restore", "show_desktop")
 SHORTCUT_NAMES = ("copy", "paste", "cut", "undo", "redo", "select_all", "save", "new_tab", "close_tab", "find",

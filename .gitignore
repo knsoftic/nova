@@ -1,0 +1,25 @@
+# runtime data
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# python
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# node / electron
+desktop/node_modules/
+desktop/dist/
+desktop/dist-electron/
+
+# env / secrets
+.env
+.env.*
+
+# os / editors
+.DS_Store
+Thumbs.db
+.vscode/

@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nova-backend",
+      "runtimeExecutable": "C:\\xampp\\htdocs\\nova\\backend\\.venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "nova"],
+      "cwd": "C:\\xampp\\htdocs\\nova\\backend",
+      "port": 8765
+    },
+    {
+      "name": "nova-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:renderer"],
+      "cwd": "C:\\xampp\\htdocs\\nova\\desktop",
+      "port": 5173
+    }
+  ]
+}

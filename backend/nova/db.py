@@ -52,6 +52,29 @@ CREATE TABLE IF NOT EXISTS system_profile (
     profile_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS permission_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    intent TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    description TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    uses INTEGER NOT NULL DEFAULT 0,
+    last_used TEXT,
+    UNIQUE(intent, scope)
+);
+
+CREATE TABLE IF NOT EXISTS permission_requests (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    steps_json TEXT NOT NULL,
+    max_risk TEXT NOT NULL,
+    decision TEXT,
+    decided_by TEXT,
+    decided_at TEXT,
+    remembered INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX IF NOT EXISTS idx_activity_task ON activity_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at);
 """
@@ -163,6 +186,42 @@ class Database:
 
     def list_activity(self, limit: int = 100) -> list[dict[str, Any]]:
         return self._query("SELECT * FROM activity_log ORDER BY id DESC LIMIT ?", (limit,))
+
+    # permissions: remembered approvals and the audit trail of every request
+    def add_permission_rule(self, intent: str, scope: str, description: str) -> None:
+        self._execute(
+            "INSERT OR IGNORE INTO permission_rules(intent, scope, description, created_at) VALUES (?, ?, ?, ?)",
+            (intent, scope, redact(description), datetime.now().isoformat(timespec="seconds")),
+        )
+
+    def find_permission_rule(self, intent: str, scope: str) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM permission_rules WHERE intent = ? AND scope = ?", (intent, scope))
+        return rows[0] if rows else None
+
+    def touch_permission_rule(self, rule_id: int) -> None:
+        self._execute("UPDATE permission_rules SET uses = uses + 1, last_used = ? WHERE id = ?",
+                      (datetime.now().isoformat(timespec="seconds"), rule_id))
+
+    def list_permission_rules(self) -> list[dict[str, Any]]:
+        return self._query("SELECT * FROM permission_rules ORDER BY id DESC")
+
+    def delete_permission_rule(self, rule_id: int) -> bool:
+        return self._execute("DELETE FROM permission_rules WHERE id = ?", (rule_id,)).rowcount > 0
+
+    def add_permission_request(self, request_id: str, task_id: str, steps_json: str, max_risk: str) -> None:
+        self._execute(
+            "INSERT INTO permission_requests(id, task_id, created_at, steps_json, max_risk) VALUES (?, ?, ?, ?, ?)",
+            (request_id, task_id, datetime.now().isoformat(timespec="seconds"), redact(steps_json), max_risk),
+        )
+
+    def decide_permission_request(self, request_id: str, decision: str, decided_by: str, remembered: bool) -> None:
+        self._execute(
+            "UPDATE permission_requests SET decision = ?, decided_by = ?, decided_at = ?, remembered = ? WHERE id = ?",
+            (decision, decided_by, datetime.now().isoformat(timespec="seconds"), int(remembered), request_id),
+        )
+
+    def list_permission_requests(self, limit: int = 100) -> list[dict[str, Any]]:
+        return self._query("SELECT * FROM permission_requests ORDER BY created_at DESC LIMIT ?", (limit,))
 
     # system profile (latest few kept for comparison)
     def save_system_profile(self, profile_json: str, keep: int = 5) -> None:

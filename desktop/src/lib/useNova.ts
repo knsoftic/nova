@@ -6,6 +6,7 @@ import type {
   ConnectionStatus,
   NovaEvent,
   NovaState,
+  PermissionRequest,
   PlanStepSummary,
   ServerMessage,
   UserSettings,
@@ -35,6 +36,8 @@ export function useNova() {
   const [activityRevision, setActivityRevision] = useState(0);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  // Open permission questions, oldest first.
+  const [permissions, setPermissions] = useState<PermissionRequest[]>([]);
   // Latest speech NOVA produced; the UI fetches and plays it.
   const [lastSpeech, setLastSpeech] = useState<{ id: string; duration: number } | null>(null);
 
@@ -66,6 +69,11 @@ export function useNova() {
         setSettings(msg.data.settings);
         setState(msg.data.state);
         api.aiStatus().then(setAiStatus).catch(() => undefined);
+        // Questions asked before this window connected (e.g. after a reload) must still be answerable.
+        api
+          .pendingPermissions()
+          .then((reqs) => setPermissions(reqs.map((r) => ({ ...r, received_at: Date.now() }))))
+          .catch(() => undefined);
         setEvents(msg.data.history.filter((e) => e.type !== "STATE_CHANGED").reverse());
         return;
       }
@@ -90,6 +98,14 @@ export function useNova() {
         setProfileRevision((n) => n + 1);
       }
       if (msg.type === "AI_STATUS") setAiStatus(msg.data as unknown as AiStatus);
+      if (msg.type === "PERMISSION_REQUIRED") {
+        const req = { ...(msg.data as unknown as PermissionRequest), received_at: Date.now() };
+        setPermissions((prev) => [...prev.filter((p) => p.id !== req.id), req]);
+      }
+      if (msg.type === "PERMISSION_DECIDED") {
+        const id = (msg.data as { request_id?: string }).request_id;
+        setPermissions((prev) => prev.filter((p) => p.id !== id));
+      }
       if (msg.type === "NOVA_SPEAK") {
         const d = msg.data as { speech_id: string; duration_s: number };
         setLastSpeech({ id: d.speech_id, duration: d.duration_s });
@@ -215,5 +231,6 @@ export function useNova() {
     refreshAiStatus,
     lastSpeech,
     sendPlayback,
+    permissions,
   };
 }

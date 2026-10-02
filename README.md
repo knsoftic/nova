@@ -2,11 +2,12 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 6 (Computer Control)**. NOVA listens (push-to-talk or wake word), understands Urdu /
+Current status: **Phase 7 (Permission Engine)**. NOVA listens (push-to-talk or wake word), understands Urdu /
 Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in an
-offline Urdu voice. It opens apps, switches/minimizes/maximizes windows, reads the screen (UI Automation + OCR)
-and takes screenshots — each verified afterwards. Typing, clicking, pasting and closing apps are built but stay
-locked until the Permission Engine (Phase 7). See [LOGS.md](LOGS.md) for development history and approval status.
+offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
+afterwards). Risky actions — typing, clicking, pasting, closing apps — run only after the user says yes
+(dialog or voice), with context-aware risk levels, remembered approvals for medium risk, and a full audit
+trail. See [LOGS.md](LOGS.md) for development history and approval status.
 
 ## Voice (offline)
 
@@ -61,6 +62,7 @@ nova/
 │   │   ├── discovery/      system scan: probe.ps1, Windows collectors, app catalog, self-configuration
 │   │   ├── agents/         System Agent: system info + computer control (computer.py)
 │   │   ├── control/        Win32 windows, app launcher with verification, SendInput, screen capture/OCR/UIA
+│   │   ├── permissions/    risk classification, asking the user, remembered approvals, audit
 │   │   ├── voice/          segmenter, Whisper STT, wake word, Piper TTS, Roman Urdu → Urdu script
 │   │   ├── events.py       event types, NOVA states, event bus
 │   │   ├── ai/             Provider Manager (hybrid/llm/rules), Ollama provider, rule-based provider
@@ -145,7 +147,22 @@ Environment variables (backend):
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
 
-## Admin manual test (Phase 6)
+## Admin manual test (Phase 7)
+
+1. `desktop/` mein `npm start` chalayein. **Notepad** kholein aur us mein click kar dein (taa ke wo aap ki "pichli window" ho), phir NOVA par aayein.
+2. **Ijazat dialog:** `hello type karo` — dialog aaye: "Text type karna: "hello" (… Notepad)", peela "Darmiyana khatra", countdown, focus **Nahi** par. Avatar "?" (WAITING FOR PERMISSION).
+   - **Nahi** (ya Esc): kuch type na ho, jawab "ijazat nahi mili".
+   - Dobara, **Haan, karo**: Notepad mein "hello" likha jaye, jawab "likh diya".
+3. **Text se jawab:** `paste karo` → dialog khula ho to command box mein `haan` ya `nahi` likh kar bhejein — wahi jawab maana jaye.
+4. **Yaad rakhna:** `paste karo` → "Aage se isi app mein…" tick + Haan. Doosri dafa `paste karo` bina pooche chale (jawab mein "pehle di gayi ijazat se"). Settings → "Yaad rakhi gayi ijazatein" mein nazar aaye; **Hatao** dabayein — phir se poochna shuru ho.
+5. **Khatarnak (high risk):** `Delete par click karo` — laal dialog, "Dhyan dein…", aur "yaad rakhna" ka option **nahi** hona chahiye. Nahi dabayein.
+6. **Waqt khatam:** `hello type karo` aur 60 second kuch na karein — "jawab nahi aaya, is liye ye kaam nahi kiya".
+7. **Awaaz se:** mic se kahein "hello type karo" — NOVA sawal bolega, phir mic khud khulega; "haan" ya "nahi" kahein.
+8. **App band karna:** `Calculator kholo`, phir `Calculator band karo` → Haan → "band ho gaya (Verify…)". Unsaved Notepad par `Notepad band karo` → Haan → Notepad save ka poochega aur NOVA batayega ke window abhi khuli hai.
+9. **Activity Log** tab mein har sawal/jawab (approved / denied / timeout, kis ne) nazar aaye.
+10. Sab theek ho to approve karein, warna problem batayein.
+
+## Admin manual test (Phase 6, approved)
 
 1. `desktop/` mein `npm start` chalayein.
 2. **App kholna:** `Calculator kholo`, `Notepad kholo`, `Chrome kholo` (ya awaaz se). App khulni chahiye aur jawab mein "khul gaya hai (Verify: window ... nazar aayi)" aaye. Jo app pehle se khuli ho us par "pehle se khula tha, saamne la diya".

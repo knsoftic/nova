@@ -112,11 +112,17 @@ class FakeDesktop:
         self.clipboard = 1
         self.copy_changes_clipboard = True
 
+    foreground = None  # hwnd in front when a command is typed (None = not known)
+
     def list_windows(self):
         return list(self.windows)
 
-    def last_user_window(self):
-        return self.windows[0] if self.windows else None
+    def foreground_hwnd(self):
+        return self.foreground
+
+    def last_user_window(self, exclude=None):
+        exclude = exclude or set()
+        return next((w for w in self.windows if w.hwnd not in exclude), None)
 
     def find_windows(self, name, executable=None):
         from nova.control.windows import window_matches
@@ -171,11 +177,45 @@ class FakeDesktop:
     def clipboard_sequence(self):
         return self.clipboard
 
+    # actions that need permission
+    typed_field_value: str | None = None  # what the focused field reports after typing (None = not readable)
+    close_works = True
+    element_status = "invoked"
 
-def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDesktop | None = None):
+    def type_text(self, text):
+        self.calls.append(("type", text))
+        if self.typed_field_value == "":
+            self.typed_field_value = text
+        return True
+
+    def focused_value(self):
+        return self.typed_field_value
+
+    def find_element(self, hwnd, label):
+        from nova.control.screen import UiElement
+
+        self.calls.append(("find_element", hwnd, label))
+        if self.element_status == "not_found":
+            return "not_found", None
+        return self.element_status, UiElement("button", label, 300, 400)
+
+    def click(self, x, y):
+        self.calls.append(("click", x, y))
+        return True
+
+    def wait_closed(self, hwnd, timeout=5.0):
+        if self.close_works:
+            self.windows = [w for w in self.windows if w.hwnd != hwnd]
+        return self.close_works
+
+
+def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDesktop | None = None,
+                 permission_timeout_s: float = 0.5):
     ollama = ollama or FakeOllama(models=[])  # reachable but no model: rules only, deterministic
-    app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False), scanner=make_profile,
-                     stats=fake_stats, ollama_transport=ollama.transport, desktop=desktop or FakeDesktop())
+    # Short permission timeout: an unanswered question resolves to "no" quickly in tests.
+    app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False, permission_timeout_s=permission_timeout_s),
+                     scanner=make_profile, stats=fake_stats, ollama_transport=ollama.transport,
+                     desktop=desktop or FakeDesktop())
     return TestClient(app)
 
 

@@ -7,13 +7,17 @@ const STEP_BADGE: Record<PlanStepSummary["status"], { icon: string; tone: string
   ready: { icon: "•", tone: "text-slate-300" },
   unavailable: { icon: "⏳", tone: "text-slate-400" },
   needs_permission: { icon: "🔒", tone: "text-orange-300" },
+  denied: { icon: "⛔", tone: "text-slate-400" },
   failed: { icon: "✕", tone: "text-red-300" },
   skipped: { icon: "–", tone: "text-slate-500" },
 };
 
 function stepNote(s: PlanStepSummary): string {
   if (s.status === "unavailable" && s.available_from_phase) return `Phase ${s.available_from_phase} mein`;
-  if (s.status === "needs_permission") return "ijazat chahiye (Phase 7)";
+  if (s.status === "needs_permission") return "ijazat chahiye";
+  if (s.status === "denied") return s.permission === "timeout" ? "jawab nahi aaya — nahi kiya" : "ijazat nahi mili";
+  if (s.status === "done" && s.permission === "rule") return "ho gaya (pehle di gayi ijazat se)";
+  if (s.status === "done" && s.permission === "approved") return "ijazat se ho gaya";
   if (s.status === "done") return "ho gaya";
   return s.status;
 }

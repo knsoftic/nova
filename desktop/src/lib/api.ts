@@ -1,4 +1,13 @@
-import type { ActivityRecord, AiStatus, LiveStats, SystemProfile, UserSettings, VoiceStatus } from "./types";
+import type {
+  ActivityRecord,
+  AiStatus,
+  LiveStats,
+  PermissionRequest,
+  PermissionRule,
+  SystemProfile,
+  UserSettings,
+  VoiceStatus,
+} from "./types";
 
 export const API_BASE = import.meta.env.VITE_NOVA_API_URL ?? "http://127.0.0.1:8765";
 
@@ -34,6 +43,11 @@ export const api = {
   settings: () => request<UserSettings>("/api/settings"),
   updateSettings: (patch: Partial<UserSettings>) => request<UserSettings>("/api/settings", json("PUT", patch)),
   activity: (limit = 200) => request<ActivityRecord[]>(`/api/activity?limit=${limit}`),
+  pendingPermissions: () => request<PermissionRequest[]>("/api/permissions/pending"),
+  decidePermission: (id: string, approved: boolean, remember: boolean) =>
+    request<{ ok: boolean }>(`/api/permissions/${encodeURIComponent(id)}/decision`, json("POST", { approved, remember })),
+  permissionRules: () => request<PermissionRule[]>("/api/permissions/rules"),
+  deletePermissionRule: (id: number) => request<{ ok: boolean }>(`/api/permissions/rules/${id}`, { method: "DELETE" }),
   voiceStatus: () => request<VoiceStatus>("/api/voice/status"),
   speak: (text: string) => request<{ speech_id: string }>("/api/voice/speak", json("POST", { text })),
   speechUrl: (id: string) => `${API_BASE}/api/voice/speech/${encodeURIComponent(id)}`,

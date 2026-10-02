@@ -16,7 +16,7 @@ def test_status_reports_honest_capabilities(client):
     assert data["state"] == "IDLE"
     assert data["capabilities"]["system_discovery"] is True
     assert data["capabilities"]["computer_control"] is True
-    assert not data["capabilities"]["permission_engine"]
+    assert data["capabilities"]["permission_engine"] is True
 
 
 def test_open_app_is_executed_and_reported_in_roman_urdu(client):

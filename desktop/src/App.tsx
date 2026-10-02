@@ -7,6 +7,7 @@ import { Conversation } from "./components/Conversation";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { MIC_LABEL, MicControl } from "./components/MicControl";
 import { NovaCore } from "./components/NovaCore";
+import { PermissionDialog } from "./components/PermissionDialog";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { StatusBar } from "./components/StatusBar";
 import { SystemProfileView } from "./components/SystemProfileView";
@@ -81,6 +82,24 @@ export default function App() {
   useEffect(() => {
     if (nova.connection !== "connected") stopListening();
   }, [nova.connection, stopListening]);
+
+  // Voice commands that need permission: once NOVA has finished asking out loud, open the mic for the answer.
+  const awaitingVoiceAnswer = useRef<string | null>(null);
+  const wasSpeaking = useRef(false);
+  const latestRequest = nova.permissions[nova.permissions.length - 1];
+  useEffect(() => {
+    if (latestRequest?.source === "voice") awaitingVoiceAnswer.current = latestRequest.id;
+    if (!latestRequest) awaitingVoiceAnswer.current = null;
+  }, [latestRequest]);
+  useEffect(() => {
+    const finished = wasSpeaking.current && !player.speaking;
+    wasSpeaking.current = player.speaking;
+    if (finished && awaitingVoiceAnswer.current && mic.status === "off") {
+      awaitingVoiceAnswer.current = null;
+      userStopped.current = false;
+      void startListening("ptt");
+    }
+  }, [player.speaking, mic.status, startListening]);
 
   // After a continuous-mode command, NOVA returns to LISTENING: show "waiting" again.
   useEffect(() => {
@@ -219,6 +238,7 @@ export default function App() {
           />
         }
       />
+      {nova.permissions.length > 0 && <PermissionDialog key={nova.permissions[0].id} request={nova.permissions[0]} />}
       <SettingsDrawer
         open={settingsOpen}
         settings={nova.settings}

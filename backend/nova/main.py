@@ -24,6 +24,7 @@ from .discovery import DiscoveryService, LiveStats, SystemProfile, find_app
 from .events import EventBus, EventType, NovaEvent
 from .orchestrator import CommandResult, Orchestrator
 from .agents.computer import ComputerAgent, Desktop
+from .permissions import PermissionEngine
 from .voice import SpeechToText, TextToSpeech, VoiceService, VoiceSession
 from .user_settings import (
     UserSettings,
@@ -71,6 +72,11 @@ async def _prepare_ai(providers: ProviderManager, bus: EventBus) -> None:
                                 data=await providers.status()))
 
 
+class PermissionDecisionRequest(BaseModel):
+    approved: bool
+    remember: bool = False
+
+
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
 
@@ -114,7 +120,9 @@ def create_app(
         app.state.providers = providers
         app.state.discovery = discovery
         computer = ComputerAgent(desktop or Desktop(), lambda: discovery.profile, settings.data_dir / "screenshots")
-        app.state.orchestrator = Orchestrator(bus, db, providers, assistant_name, discovery, computer)
+        permissions = PermissionEngine(db, bus, timeout_s=settings.permission_timeout_s)
+        app.state.permissions = permissions
+        app.state.orchestrator = Orchestrator(bus, db, providers, assistant_name, discovery, computer, permissions)
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
         voice = VoiceService(
@@ -123,6 +131,7 @@ def create_app(
             stt or SpeechToText(settings.models_dir / "whisper", settings.stt_model, user_settings.stt_language),
             tts or TextToSpeech(settings.models_dir / "piper", user_settings.tts_voice),
             settings=lambda: app.state.user_settings,
+            permissions=permissions,
         )
         voice.apply_settings(user_settings)
         voice.start_listener()
@@ -154,7 +163,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
-        allow_methods=["GET", "POST", "PUT"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Content-Type"],
     )
 
@@ -177,7 +186,7 @@ def create_app(
                 "voice": app.state.voice.stt.model_downloaded() and app.state.voice.tts.is_available(),
                 "system_discovery": True,
                 "computer_control": True,
-                "permission_engine": False,
+                "permission_engine": True,
             },
         }
 
@@ -216,6 +225,34 @@ def create_app(
     @app.get("/api/ai/status")
     async def ai_status(refresh: bool = False) -> dict[str, Any]:
         return await app.state.providers.status(refresh=refresh)
+
+    @app.get("/api/permissions/pending")
+    async def permissions_pending() -> list[dict[str, Any]]:
+        return [{**r.model_dump(), "rememberable": r.rememberable} for r in app.state.permissions.pending]
+
+    @app.post("/api/permissions/{request_id}/decision")
+    async def permission_decision(request_id: str, body: PermissionDecisionRequest) -> dict[str, Any]:
+        ok = await app.state.permissions.decide(request_id, body.approved, "user_ui", body.remember)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Ye sawal ab khula nahi (jawab de diya gaya ya waqt khatam)")
+        return {"ok": True}
+
+    @app.get("/api/permissions/rules")
+    async def permission_rules() -> list[dict[str, Any]]:
+        return app.state.db.list_permission_rules()
+
+    @app.delete("/api/permissions/rules/{rule_id}")
+    async def delete_permission_rule(rule_id: int) -> dict[str, Any]:
+        if not app.state.db.delete_permission_rule(rule_id):
+            raise HTTPException(status_code=404, detail="Rule nahi mila")
+        app.state.db.add_activity(task_id="permissions", task_name="revoke_rule", agent="Permission Engine",
+                                  action="revoke_rule", permission_status="user_initiated",
+                                  execution_status="success", final_result=f"rule {rule_id} hataya")
+        return {"ok": True}
+
+    @app.get("/api/permissions/history")
+    async def permission_history(limit: int = 100) -> list[dict[str, Any]]:
+        return app.state.db.list_permission_requests(max(1, min(limit, 500)))
 
     @app.get("/api/voice/status")
     async def voice_status() -> dict[str, Any]:

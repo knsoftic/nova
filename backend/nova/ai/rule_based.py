@@ -260,8 +260,9 @@ class RuleBasedProvider(AIProvider):
     async def understand(self, text: str, context: list[ConversationTurn] | None = None) -> Understanding:
         """Splits compound commands ("Chrome kholo aur RAM batao") when every part is understood."""
         cleaned = normalize(text, self._wake)
-        # Dictated text ("likho: main aur tum") must never be split into separate commands.
-        dictation = any(p.search(cleaned) for p in TYPE_TEXT)
+        # Explicit dictation ("likho: main aur tum", "type hello and bye") is never split into commands.
+        # The trailing form ("... type karo") is ambiguous, so it may still be one part of a compound.
+        dictation = any(p.search(cleaned) for p in TYPE_TEXT[:2])
         parts = [] if dictation else [p for p in COMPOUND_SPLIT.split(cleaned) if p.strip()]
         if len(parts) > 1:
             intents = [await self.detect_intent(p) for p in parts]

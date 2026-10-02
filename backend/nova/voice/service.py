@@ -22,6 +22,7 @@ from .wake import detect_wake
 
 if TYPE_CHECKING:
     from ..orchestrator import Orchestrator
+    from ..permissions import PermissionEngine
     from ..user_settings import UserSettings
 
 log = logging.getLogger("nova.voice")
@@ -82,7 +83,8 @@ class VoiceSession:
             await orch.set_state(NovaState.THINKING)
             transcript = await asyncio.to_thread(svc.stt.transcribe, pcm)
             settings = svc.settings()
-            in_follow_up = time.monotonic() < self.follow_up_until
+            # Answering NOVA's own question ("haan"/"nahi") never needs the wake word.
+            in_follow_up = time.monotonic() < self.follow_up_until or bool(svc.permissions and svc.permissions.pending)
 
             if not transcript.usable:
                 await self._finish(heard=False)
@@ -153,7 +155,9 @@ class VoiceService:
         stt: SpeechToText,
         tts: TextToSpeech,
         settings: Callable[[], UserSettings],
+        permissions: PermissionEngine | None = None,
     ) -> None:
+        self.permissions = permissions
         self.bus = bus
         self.orchestrator = orchestrator
         self.stt = stt
@@ -253,7 +257,7 @@ class VoiceService:
         try:
             while True:
                 event = await queue.get()
-                if event.type != EventType.NOVA_RESPONSE or not event.message:
+                if event.type not in (EventType.NOVA_RESPONSE, EventType.PERMISSION_REQUIRED) or not event.message:
                     continue
                 mode = self.settings().speak_responses
                 source = event.data.get("source", "text")

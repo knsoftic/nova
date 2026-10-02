@@ -19,6 +19,7 @@ export type EventType =
   | "AGENT_STARTED"
   | "AGENT_WORKING"
   | "PERMISSION_REQUIRED"
+  | "PERMISSION_DECIDED"
   | "ACTION_EXECUTED"
   | "VERIFICATION_STARTED"
   | "VERIFICATION_PASSED"
@@ -68,7 +69,8 @@ export interface PlanStepSummary {
   agent: string;
   action: string;
   risk: "low" | "medium" | "high";
-  status: "ready" | "unavailable" | "needs_permission" | "done" | "failed" | "skipped";
+  status: "ready" | "unavailable" | "needs_permission" | "denied" | "done" | "failed" | "skipped";
+  permission?: "approved" | "rule" | "denied" | "timeout" | null;
   description: string;
   intent: string;
   available_from_phase: number | null;
@@ -196,6 +198,42 @@ export interface ChatMessage {
   voice?: boolean;
 }
 
+export type Risk = "low" | "medium" | "high";
+
+export interface PermissionItem {
+  step_id: number;
+  intent: string;
+  description: string;
+  risk: Risk;
+  reasons: string[];
+  target: string | null;
+  scope: string;
+  rememberable: boolean;
+}
+
+export interface PermissionRequest {
+  id: string;
+  task_id: string;
+  items: PermissionItem[];
+  max_risk: Risk;
+  question: string;
+  timeout_s: number;
+  source: string;
+  rememberable: boolean;
+  /** Client-side: when it arrived, for the countdown. */
+  received_at?: number;
+}
+
+export interface PermissionRule {
+  id: number;
+  intent: string;
+  scope: string;
+  description: string;
+  created_at: string;
+  uses: number;
+  last_used: string | null;
+}
+
 export interface VoiceStatus {
   stt: { model: string; language: string; downloaded: boolean; loaded: boolean; error: string | null };
   tts: { voice: string; available: boolean; voices: { id: string; label: string }[] };
@@ -208,6 +246,8 @@ declare global {
   interface Window {
     nova?: {
       getInfo: () => Promise<{ appVersion: string; platform: string; backendUrl: string; backendManaged: boolean }>;
+      /** Bring the NOVA window to the front (e.g. when it needs the user's permission). */
+      attention: () => Promise<void>;
     };
   }
 }

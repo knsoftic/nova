@@ -80,6 +80,16 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
+  // NOVA needs an answer (permission): bring its window forward even if another app is in front.
+  ipcMain.handle("nova:attention", () => {
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.flashFrame(true);
+    setTimeout(() => mainWindow?.flashFrame(false), 3000);
+  });
+
   ipcMain.handle("nova:get-info", () => ({
     appVersion: app.getVersion(),
     platform: process.platform,

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, fieldErrors } from "../lib/api";
-import type { AiMode, AiStatus, NovaState, UserSettings, VoiceStatus } from "../lib/types";
+import type { AiMode, AiStatus, NovaState, PermissionRule, UserSettings, VoiceStatus } from "../lib/types";
 import { STATE_META } from "../lib/ui";
 
 interface Props {
@@ -60,6 +60,54 @@ const STT_LANGUAGES: { value: UserSettings["stt_language"]; label: string }[] = 
 ];
 
 const TEST_SENTENCE = "Assalam-o-Alaikum! Main aapki awaaz test kar raha hoon. Kya aap mujhe saaf sun sakte hain?";
+
+/** Approvals the user chose to remember ("don't ask again"), with a way to take them back. */
+function PermissionRules({ open }: { open: boolean }) {
+  const [rules, setRules] = useState<PermissionRule[] | null>(null);
+  const load = () => api.permissionRules().then(setRules).catch(() => setRules([]));
+  useEffect(() => {
+    if (open) void load();
+  }, [open]);
+
+  const remove = async (id: number) => {
+    await api.deletePermissionRule(id).catch(() => undefined);
+    void load();
+  };
+
+  return (
+    <section className="flex flex-col gap-2 border-t border-white/10 pt-4">
+      <h3 className="text-xs font-medium text-slate-300">Yaad rakhi gayi ijazatein</h3>
+      <p className="text-xs text-slate-500">
+        In kaamon ke liye NOVA dobara nahi poochta. Khatarnak (high risk) kaam kabhi yaad nahi rakhe jate.
+      </p>
+      {rules === null ? (
+        <span className="text-xs text-slate-500">Load ho rahi hain...</span>
+      ) : rules.length === 0 ? (
+        <span className="text-xs text-slate-500">Koi nahi — NOVA har dafa poochta hai.</span>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {rules.map((r) => (
+            <li key={r.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.03] px-3 py-2">
+              <span className="flex flex-col">
+                <span className="text-xs text-slate-200">{r.description}</span>
+                <span className="font-mono text-[10px] text-slate-500">
+                  {r.scope} · {r.uses} dafa istemal
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => void remove(r.id)}
+                className="shrink-0 text-xs text-red-300 hover:text-red-200"
+              >
+                Hatao
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 function VoiceSettings({
   draft,
@@ -345,6 +393,8 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
             </div>
           </form>
         )}
+
+        <PermissionRules open={open} />
 
         <section className="flex flex-col gap-2 border-t border-white/10 pt-4">
           <h3 className="text-xs font-medium text-slate-300">Avatar states (admin preview)</h3>

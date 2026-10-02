@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from .ai.base import Intent, Understanding
 
 Risk = Literal["low", "medium", "high"]
-StepStatus = Literal["ready", "unavailable", "needs_permission", "done", "failed", "skipped"]
+StepStatus = Literal["ready", "unavailable", "needs_permission", "denied", "done", "failed", "skipped"]
 
 PERMISSION_ENGINE_PHASE = 7
 
@@ -64,6 +64,9 @@ class PlanStep(BaseModel):
     status: StepStatus
     available_from_phase: int | None = None
     result: str | None = None
+    # Set by the Permission Engine: approved | rule (remembered approval) | denied | timeout
+    permission: str | None = None
+    reasons: list[str] = Field(default_factory=list)
 
 
 class Plan(BaseModel):
@@ -81,7 +84,7 @@ class Plan(BaseModel):
         return [
             {"id": s.id, "agent": s.agent, "action": s.action, "risk": s.risk, "status": s.status,
              "description": s.description, "intent": s.intent.name,
-             "available_from_phase": s.available_from_phase}
+             "available_from_phase": s.available_from_phase, "permission": s.permission}
             for s in self.steps
         ]
 

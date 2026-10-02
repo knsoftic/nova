@@ -65,6 +65,12 @@ def test_parse(text, expected):
 
 def test_dictation_is_never_split_into_commands():
     assert parse("likho: Chrome kholo aur RAM batao") == [("type_text", {"text": "Chrome kholo aur RAM batao"})]
+    assert parse("type main aur tum") == [("type_text", {"text": "main aur tum"})]
+
+
+def test_trailing_type_form_can_be_part_of_a_compound():
+    assert parse("RAM batao aur hello type karo") == [("system_info", {"topic": "ram"}),
+                                                      ("type_text", {"text": "hello"})]
 
 
 def test_existing_commands_unchanged():
@@ -175,17 +181,17 @@ def test_copy_focuses_user_window_and_checks_clipboard(control_client, desktop):
 
 @pytest.mark.parametrize("text", ["paste karo", "hello world type karo", "Submit par click karo", "Chrome band karo",
                                   "save karo"])
-def test_risky_actions_are_locked_until_permission_engine(control_client, desktop, text):
-    body = run(control_client, text)
+def test_risky_actions_do_not_run_without_an_answer(control_client, desktop, text):
+    body = run(control_client, text)  # nobody answers the permission question: timeout = no
     assert body["executed"] is False
-    assert "ijazat" in body["response"] and "Abhi kuch nahi kiya gaya" in body["response"]
+    assert "jawab nahi aaya" in body["response"]
     assert desktop.calls == []  # the desktop was not touched at all
     row = last_activity(control_client)
-    assert (row["permission_status"], row["execution_status"]) == ("required_pending", "blocked_needs_permission")
+    assert (row["permission_status"], row["execution_status"]) == ("timeout", "not_executed_denied")
 
 
 def test_model_cannot_bypass_the_lock(tmp_path):
-    """Even if the AI model is tricked into producing a typing command, it stays locked."""
+    """Even if the AI model is tricked into producing a typing command, it still needs the user's yes."""
     from conftest import FakeDesktop
 
     ollama, desktop = FakeOllama(models=["qwen3:4b"]), FakeDesktop()

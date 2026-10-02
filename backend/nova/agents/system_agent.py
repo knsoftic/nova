@@ -180,14 +180,3 @@ def describe_app(query: str, p: SystemProfile) -> tuple[str, bool]:
     app = match.app
     extra = f" (version {app.version})" if app.version else ""
     return f"Haan, {app.name}{extra} is PC par installed hai.", True
-
-
-def describe_open_app(query: str, p: SystemProfile | None, launch_phase: int) -> str:
-    if p is None:
-        return (f"Main samajh gaya, aap {query} open karwana chahte hain. System scan abhi mukammal nahi hua. "
-                f"Application launch Phase {launch_phase} mein aayega, is liye abhi koi action nahi kiya gaya.")
-    match = find_app(p.apps, query)
-    if not match:
-        return f"Mujhe is PC par \"{query}\" nahi mila, is liye open nahi kar sakta. Kya naam sahi hai?"
-    return (f"{match.app.name} is PC par installed hai. Application launch ki capability Phase {launch_phase} "
-            "mein aayegi, is liye abhi koi action nahi kiya gaya.")

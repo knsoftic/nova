@@ -80,6 +80,100 @@ def system_topic(text: str) -> str | None:
             return topic
     return None
 
+_DO = r"(?:karo|kar do|kardo|kar dein|kijiye|karein|kro|kar lo)"
+
+# ---- computer control (Phase 6) ------------------------------------------------------------
+TYPE_TEXT = [
+    re.compile(r"^(?:(?:ye|yeh|is)\s+)?(?:type|likho|likh do|type karo)\s*[:\-]\s*(?P<text>.+)$", re.IGNORECASE),
+    re.compile(r"^(?:please\s+)?type\s+(?P<text>.+)$", re.IGNORECASE),
+    re.compile(r"^(?P<text>.+?)\s+(?:type karo|type kar do|likh do|likho)$", re.IGNORECASE),
+]
+
+SCREENSHOT = re.compile(r"\bscreen\s*shot\b|سکرین\s*شاٹ|اسکرین\s*شاٹ|स्क्रीनशॉट", re.IGNORECASE)
+
+READ_SCREEN = [
+    re.compile(r"^(?P<app>.+?)\s+(?:window\s+)?(?:mein|me|par|pe)\s+kya\s+(?:likha|likhaa)\b", re.IGNORECASE),
+    re.compile(r"\bscreen\s+(?:par|pe|per|mein)\s+kya\b|\b(?:screen|window)\s+(?:read|parh|parho|padho|parhein)\b"
+               r"|\bread\s+(?:my\s+|the\s+|this\s+)?(?:screen|window)\b|\bwhat'?s\s+on\s+(?:my\s+|the\s+)?screen\b"
+               r"|سکرین\s+پر\s+کیا|اسکرین\s+پر\s+کیا|स्क्रीन\s+पर\s+क्या", re.IGNORECASE),
+]
+
+SHORTCUT_WORDS = {
+    "copy": "copy", "paste": "paste", "cut": "cut", "undo": "undo", "redo": "redo", "select all": "select_all",
+    "sab select": "select_all", "save": "save", "new tab": "new_tab", "naya tab": "new_tab", "tab band": "close_tab",
+    "refresh": "refresh", "reload": "refresh", "enter": "enter", "escape": "escape",
+}
+KEYBOARD_SHORTCUT = re.compile(
+    r"^(?:(?:ye|yeh|isko|is ko|sab kuch|text)\s+)?(?P<k>copy|paste|cut|undo|redo|select all|sab select|save|new tab|"
+    r"naya tab|tab band|refresh|reload|enter|escape)\s*(?:" + _DO[3:-1] + r"|dabao|press karo|kholo)?$",
+    re.IGNORECASE,
+)
+
+MOUSE_CLICK = [
+    re.compile(r"^(?P<target>.+?)\s+(?:button\s+)?(?:par|pe|per)\s+click\s*(?:" + _DO[3:-1] + r")?$", re.IGNORECASE),
+    re.compile(r"^(?:please\s+)?click\s+(?:on\s+)?(?:the\s+)?(?P<target>.+?)(?:\s+button)?$", re.IGNORECASE),
+]
+
+SHOW_DESKTOP = re.compile(
+    r"\b(?:sab|saari|sari|all)\s+windows?\s+(?:minimi[sz]e|chhot[ie])|\bshow\s+(?:the\s+)?desktop\b|\bdesktop\s+dikhao\b",
+    re.IGNORECASE,
+)
+WINDOW_CONTROL = [
+    re.compile(r"^(?P<action>minimi[sz]e|maximi[sz]e|restore)\s+(?P<app>.+)$", re.IGNORECASE),
+    re.compile(r"^(?:(?P<app>.+?)\s+(?:ko\s+|ki\s+window\s+)?)?(?:window\s+)?(?P<action>minimi[sz]e|maximi[sz]e|restore|"
+               r"chhota|chhoti|chota|choti|bara|bari|bada|badi|full\s*screen)\s*" + _DO + r"?$", re.IGNORECASE),
+]
+WINDOW_ACTIONS = {"chhota": "minimize", "chhoti": "minimize", "chota": "minimize", "choti": "minimize",
+                  "bara": "maximize", "bari": "maximize", "bada": "maximize", "badi": "maximize"}
+
+CLOSE_APP = [
+    re.compile(r"^(?:please\s+)?close\s+(?P<app>.+)$", re.IGNORECASE),
+    re.compile(r"^(?P<app>.+?)\s+(?:ko\s+)?(?:band|close)\s+" + _DO + r"$", re.IGNORECASE),
+    re.compile(r"^(?P<app>.+?)\s+(?:کو\s+)?بند\s+(?:کرو|کر دو|کریں)$"),
+    re.compile(r"^(?P<app>.+?)\s+(?:को\s+)?बंद\s+(?:करो|कर दो)$"),
+]
+
+FOCUS_APP = [
+    re.compile(r"^(?:switch\s+to|go\s+to|focus)\s+(?P<app>.+)$", re.IGNORECASE),
+    re.compile(r"^(?P<app>.+?)\s+(?:pe|par|per)\s+(?:jao|chalo|le chalo|switch\s+" + _DO[3:-1] + r")$", re.IGNORECASE),
+    re.compile(r"^(?P<app>.+?)\s+(?:ko\s+)?(?:samne|saamne|aage)\s+(?:lao|le aao|kar do|karo)$", re.IGNORECASE),
+    re.compile(r"^(?P<app>.+?)\s+(?:پر\s+جاؤ|سامنے\s+لاؤ)$"),
+]
+
+
+def _computer_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
+    """Computer-control commands. Typing is checked first so dictated text is never treated as a command."""
+    for p in TYPE_TEXT:
+        if m := p.search(cleaned):
+            return "type_text", {"text": m.group("text").strip()}
+    if SCREENSHOT.search(cleaned):
+        return "screenshot", {}
+    for p in READ_SCREEN:
+        if m := p.search(cleaned):
+            app = _clean_entity(m.groupdict().get("app"))
+            return "read_screen", {"app": app} if app and app.lower() not in ("screen", "is", "ye") else {}
+    if m := KEYBOARD_SHORTCUT.search(cleaned):
+        return "keyboard_shortcut", {"keys": SHORTCUT_WORDS[m.group("k").lower()]}
+    if SHOW_DESKTOP.search(cleaned):
+        return "window_control", {"action": "show_desktop"}
+    for p in WINDOW_CONTROL:
+        if m := p.search(cleaned):
+            raw = m.group("action").lower().replace(" ", "")
+            action = WINDOW_ACTIONS.get(raw, "maximize" if raw == "fullscreen" else raw.replace("mise", "mize"))
+            app = _clean_entity(m.group("app"))
+            return "window_control", {"action": action, **({"app": app} if app else {})}
+    for p in CLOSE_APP:
+        if m := p.search(cleaned):
+            return "close_app", {"app": _clean_entity(m.group("app"))}
+    for p in FOCUS_APP:
+        if m := p.search(cleaned):
+            return "focus_app", {"app": _clean_entity(m.group("app"))}
+    for p in MOUSE_CLICK:
+        if m := p.search(cleaned):
+            return "mouse_click", {"target": _clean_entity(m.group("target"))}
+    return None
+
+
 CREATE_FOLDER = [
     re.compile(r"\b(?:create|make|new)\s+(?:a\s+)?folder(?:\s+(?:named|called)\s+(?P<name>.+))?$", re.IGNORECASE),
     re.compile(r"^(?P<name>.+?)\s+(?:naam\s+ka\s+)?folder\s+(?:create|bana)\s*(?:karo|kar do|kardo|do|o)?$", re.IGNORECASE),
@@ -131,7 +225,12 @@ FILLER_PREFIX = re.compile(
 PRONOUNS = {"isko", "isey", "ise", "usko", "usey", "use", "ye", "yeh", "wo", "woh", "it", "this", "that", "inko",
              "unko", "اسے", "اس کو", "इसे", "इसको", "उसे"}
 
-FILLER_SUFFIX =re.compile(r"(?:\s+(?:for me|please|plz|mere liye|mera|jaldi|zara|now|abhi))+$", re.IGNORECASE)
+FILLER_SUFFIX = re.compile(
+    r"(?:\s+(?:for me|please|plz|mere liye|mera|jaldi|zara|now|abhi))+$"
+    # "WhatsApp wali window", "Chrome app", "Notepad ki window" -> the app name only
+    r"|(?:\s+(?:wali|wala|wale|ki|ka))?\s+(?:window|app|application)$",
+    re.IGNORECASE,
+)
 # "desktop par Projects" -> "Projects": a location phrase in front of a name is not part of the name.
 LOCATION_PREFIX = re.compile(
     r"^(?:(?:desktop|documents|downloads|pictures|music|videos|[a-z]:\\?|d drive|c drive)\s+(?:par|pe|mein|me|main|on|in)\s+)",
@@ -161,7 +260,9 @@ class RuleBasedProvider(AIProvider):
     async def understand(self, text: str, context: list[ConversationTurn] | None = None) -> Understanding:
         """Splits compound commands ("Chrome kholo aur RAM batao") when every part is understood."""
         cleaned = normalize(text, self._wake)
-        parts = [p for p in COMPOUND_SPLIT.split(cleaned) if p.strip()]
+        # Dictated text ("likho: main aur tum") must never be split into separate commands.
+        dictation = any(p.search(cleaned) for p in TYPE_TEXT)
+        parts = [] if dictation else [p for p in COMPOUND_SPLIT.split(cleaned) if p.strip()]
         if len(parts) > 1:
             intents = [await self.detect_intent(p) for p in parts]
             if all(i.name not in ("unknown", "greeting") for i in intents):
@@ -195,6 +296,13 @@ class RuleBasedProvider(AIProvider):
 
         if m := RUN_WORKFLOW.search(cleaned):
             return make("run_workflow", 0.8, workflow=(m.group("name") or m.group("name2")).lower())
+
+        if computer := _computer_intent(cleaned):
+            name, entities = computer
+            app = entities.get("app")
+            # "isko band karo" needs context, except words that mean "the current window".
+            vague = isinstance(app, str) and app.lower() in PRONOUNS and name not in ("window_control", "read_screen")
+            return make(name, 0.3 if vague else 0.85, **entities)
 
         for pattern in CREATE_FOLDER:
             if m := pattern.search(cleaned):

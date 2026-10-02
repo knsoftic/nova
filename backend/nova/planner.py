@@ -37,7 +37,16 @@ CAPABILITIES: dict[str, Capability] = {
     "system_info": Capability("System Agent", "read_system_info", "low", None, "System maloomat parhna"),
     "app_check": Capability("System Agent", "app_lookup", "low", None, "Application dhoondna"),
     "rescan_system": Capability("System Agent", "rescan", "low", None, "System dobara scan karna"),
-    "open_app": Capability("System Agent", "launch_app", "low", 6, "Application kholna"),
+    "open_app": Capability("System Agent", "launch_app", "low", None, "Application kholna"),
+    "focus_app": Capability("System Agent", "focus_window", "low", None, "Window saamne lana"),
+    "window_control": Capability("System Agent", "window_control", "low", None, "Window chhoti/bari karna"),
+    "read_screen": Capability("System Agent", "read_screen", "low", None, "Screen parhna"),
+    "screenshot": Capability("System Agent", "screenshot", "low", None, "Screenshot lena"),
+    # Changes things inside other apps (unsaved work, typed text): needs the user's permission.
+    "close_app": Capability("System Agent", "close_app", "medium", None, "Application band karna"),
+    "keyboard_shortcut": Capability("System Agent", "keyboard_shortcut", "medium", None, "Keyboard shortcut dabana"),
+    "type_text": Capability("System Agent", "type_text", "medium", None, "Text type karna"),
+    "mouse_click": Capability("System Agent", "mouse_click", "medium", None, "Mouse se click karna"),
     "web_search": Capability("Browser Agent", "web_search", "low", 8, "Web par search karna"),
     "create_folder": Capability("File Agent", "create_folder", "medium", 8, "Folder banana"),
     "change_setting": Capability("System Agent", "change_setting", "medium", 8, "Setting badalna"),
@@ -77,6 +86,16 @@ class Plan(BaseModel):
         ]
 
 
+# Shortcuts that only read or select (nothing is changed or lost) are low risk.
+LOW_RISK_SHORTCUTS = {"copy", "select_all", "find", "escape"}
+
+
+def risk_for(intent: Intent, cap: Capability) -> Risk:
+    if intent.name == "keyboard_shortcut" and intent.entities.get("keys") in LOW_RISK_SHORTCUTS:
+        return "low"
+    return cap.risk
+
+
 def build_plan(understanding: Understanding) -> Plan:
     intents = understanding.intents
     # A greeting/unknown next to real requests adds nothing to the plan.
@@ -87,9 +106,10 @@ def build_plan(understanding: Understanding) -> Plan:
     steps: list[PlanStep] = []
     for n, intent in enumerate(intents, start=1):
         cap = CAPABILITIES.get(intent.name, CAPABILITIES["unknown"])
+        risk = risk_for(intent, cap)
         if cap.available_from_phase is not None:
             status: StepStatus = "unavailable"
-        elif cap.risk != "low":
+        elif risk != "low":
             # No medium/high-risk action may run before the Permission Engine exists.
             status = "needs_permission"
         else:
@@ -100,7 +120,7 @@ def build_plan(understanding: Understanding) -> Plan:
                 intent=intent,
                 agent=cap.agent,
                 action=cap.action,
-                risk=cap.risk,
+                risk=risk,
                 description=cap.description,
                 status=status,
                 available_from_phase=cap.available_from_phase,

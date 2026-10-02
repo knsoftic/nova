@@ -16,7 +16,16 @@ import httpx
 from pydantic import BaseModel
 
 from ..language import detect_language
-from .base import KNOWN_INTENTS, SYSTEM_TOPICS, AIProvider, ConversationTurn, Intent, Understanding
+from .base import (
+    KNOWN_INTENTS,
+    SHORTCUT_NAMES,
+    SYSTEM_TOPICS,
+    WINDOW_ACTIONS,
+    AIProvider,
+    ConversationTurn,
+    Intent,
+    Understanding,
+)
 
 log = logging.getLogger("nova.ai.ollama")
 
@@ -42,6 +51,17 @@ Intent names:
 - rescan_system: asks to scan / rescan the system.
 - change_setting: asks to change any Windows or app setting (default browser, volume, wifi, ...). Field "setting_request" with a short English description.
 - run_workflow: asks to start a named routine such as "work start karo". Field "workflow".
+- close_app: close/quit an application or window. Field "app" ("" = the current window).
+- focus_app: switch to / bring forward an already open app ("Chrome pe jao"). Field "app".
+- window_control: minimize, maximize or restore a window, or show the desktop. Field "window_action"
+  (minimize | maximize | restore | show_desktop) and "app" ("" = the current window).
+- read_screen: asks what is on the screen / in a window, or to read it. Field "app" ("" = current window).
+- screenshot: take a screenshot.
+- keyboard_shortcut: copy, paste, cut, undo, redo, select all, save, new tab, close tab, find, refresh,
+  press enter/escape. Field "keys" (copy | paste | cut | undo | redo | select_all | save | new_tab |
+  close_tab | find | refresh | enter | escape).
+- type_text: type/write given text into the current window. Field "text" with the exact text to type.
+- mouse_click: click a named button/link on screen. Field "target" (its label).
 - unknown: unclear or not covered.
 
 Rules:
@@ -59,6 +79,7 @@ Rules:
 Examples:
 "Chrome kholo" -> {"intents":[{"name":"open_app","app":"Chrome"}],"answer":""}
 "VS Code open karo aur RAM batao" -> {"intents":[{"name":"open_app","app":"VS Code"},{"name":"system_info","topic":"ram"}],"answer":""}
+"likho: Kal subah 9 baje call hai" -> {"intents":[{"name":"type_text","text":"Kal subah 9 baje call hai"}],"answer":""}
 "chai aur coffee mein kya farq hai" -> {"intents":[{"name":"chat"}],"answer":"Coffee mein caffeine zyada hoti hai aur chai mein kam. Dono patton/beejon se bante hain lekin zaiqa alag hota hai."}
 """
 
@@ -82,6 +103,10 @@ def _schema() -> dict[str, Any]:
                         "topic": {"type": "string", "enum": ["", *SYSTEM_TOPICS]},
                         "setting_request": text,
                         "workflow": text,
+                        "window_action": {"type": "string", "enum": ["", *WINDOW_ACTIONS]},
+                        "keys": {"type": "string", "enum": ["", *SHORTCUT_NAMES]},
+                        "text": text,
+                        "target": text,
                     },
                     "required": ["name"],
                 },
@@ -100,6 +125,17 @@ ENTITY_FIELDS: dict[str, tuple[str, str]] = {
     "create_folder": ("folder_name", "folder_name"),
     "change_setting": ("setting_request", "request"),
     "run_workflow": ("workflow", "workflow"),
+    "close_app": ("app", "app"),
+    "focus_app": ("app", "app"),
+    "read_screen": ("app", "app"),
+    "type_text": ("text", "text"),
+    "mouse_click": ("target", "target"),
+}
+
+# Enum-valued fields: anything outside the allowed set is dropped.
+ENUM_FIELDS: dict[str, tuple[str, str, tuple[str, ...]]] = {
+    "window_control": ("window_action", "action", WINDOW_ACTIONS),
+    "keyboard_shortcut": ("keys", "keys", SHORTCUT_NAMES),
 }
 
 
@@ -128,10 +164,24 @@ def parse_model_output(raw: str, language: str, provider: str) -> tuple[list[Int
             continue
         name = item["name"]
         entities: dict[str, Any] = {}
-        if name in ENTITY_FIELDS:
+        if name == "type_text":
+            # Dictated text is typed exactly as given (whitespace kept), only length-limited.
+            if isinstance(item.get("text"), str) and item["text"].strip():
+                entities["text"] = item["text"].strip()[:2000]
+        elif name in ENTITY_FIELDS:
             field, key = ENTITY_FIELDS[name]
             if value := _clip(item.get(field)):
                 entities[key] = value
+        if name in ENUM_FIELDS:
+            field, key, allowed = ENUM_FIELDS[name]
+            if item.get(field) in allowed:
+                entities[key] = item[field]
+            elif name == "keyboard_shortcut":
+                continue  # a shortcut without a known key combination is not actionable
+            else:
+                entities[key] = "minimize"
+            if name == "window_control" and (app := _clip(item.get("app"))):
+                entities["app"] = app
         if name == "system_info":
             topic = item.get("topic")
             entities["topic"] = topic if topic in SYSTEM_TOPICS and topic else "summary"

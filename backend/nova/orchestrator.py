@@ -1,13 +1,14 @@
-"""AI Orchestrator: command -> understand (AI brain) -> plan -> agents -> response.
+"""AI Orchestrator: command -> understand (AI brain) -> plan -> agents -> verify -> response.
 
-Only low-risk, read-only System Agent actions execute so far. Steps whose agent does not exist yet
-or that need permission are planned and reported, never executed, and responses never claim
-otherwise. The Permission Engine (Phase 7) and verification of state-changing actions plug in at
-_run_step.
+Low-risk actions run (read-only system info; opening, focusing and arranging windows; reading the
+screen) and are verified afterwards. Steps whose agent does not exist yet, or that need permission
+(medium/high risk), are planned and reported but never executed; responses never claim otherwise.
+The Permission Engine (Phase 7) plugs in at _run_step.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from collections import deque
@@ -17,6 +18,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from .agents import system_agent
+from .agents.computer import ComputerAgent
 from .ai.base import ConversationTurn, Intent
 from .ai.manager import ProviderManager
 from .db import Database
@@ -24,12 +26,19 @@ from .discovery.models import LiveStats, SystemProfile
 from .discovery.service import DiscoveryService
 from .events import EventBus, EventType, NovaEvent, NovaState
 from .planner import Plan, PlanStep, build_plan
-from .responses import FALLBACK_NOTES, PENDING_CAPABILITY_PHASE, build_error_response, build_response
+from .responses import (
+    FALLBACK_NOTES,
+    build_error_response,
+    build_permission_response,
+    build_response,
+)
 
 log = logging.getLogger("nova.orchestrator")
 
 ORCHESTRATOR = "Orchestrator"
-SYSTEM_INTENTS = {"system_info", "app_check", "rescan_system", "open_app"}
+SYSTEM_INTENTS = {"system_info", "app_check", "rescan_system"}
+CONTROL_INTENTS = {"open_app", "focus_app", "window_control", "read_screen", "screenshot", "keyboard_shortcut",
+                   "close_app", "type_text", "mouse_click"}
 CONTEXT_TURNS = 4  # short-term context for the AI brain; long-term memory is Phase 9
 
 
@@ -52,6 +61,7 @@ class AgentOutcome:
     agent: str
     action: str
     executed: bool
+    verification: str = "not_applicable"  # passed | failed | unverified | not_applicable
 
 
 class Orchestrator:
@@ -62,12 +72,14 @@ class Orchestrator:
         providers: ProviderManager,
         assistant_name: str,
         discovery: DiscoveryService,
+        computer: ComputerAgent | None = None,
     ) -> None:
         self.bus = bus
         self.db = db
         self.providers = providers
         self.assistant_name = assistant_name
         self.discovery = discovery
+        self.computer = computer
         self.state = NovaState.IDLE
         self.voice_active = False  # UI microphone is open (level meter only until Phase 5 adds STT)
         self.context: deque[ConversationTurn] = deque(maxlen=CONTEXT_TURNS)
@@ -203,6 +215,15 @@ class Orchestrator:
         if intent.name in SYSTEM_INTENTS and step.status in ("ready", "unavailable"):
             # open_app is "unavailable" for launching, but the System Agent can still say whether it exists.
             outcome = await self._run_system_agent(task_id, intent)
+        elif intent.name in CONTROL_INTENTS and step.status == "ready":
+            if self.computer is None:
+                outcome = AgentOutcome("Computer control is PC par available nahi.", step.agent, step.action, False)
+            else:
+                outcome = await self._run_computer(task_id, step)
+        elif step.status == "needs_permission":
+            # Medium/high risk: never executed without the user's permission (Permission Engine, Phase 7).
+            outcome = AgentOutcome(build_permission_response(intent, step.description), step.agent, step.action,
+                                   executed=False)
         else:
             outcome = AgentOutcome(build_response(intent, self.assistant_name, plan.answer), step.agent,
                                    step.action, executed=False)
@@ -226,7 +247,7 @@ class Orchestrator:
             permission_status="required_pending" if step.status == "needs_permission" else "not_required",
             execution_status=execution,
             # Read-only lookups change nothing on the PC, so there is no state to verify afterwards.
-            verification_status="not_applicable",
+            verification_status=outcome.verification,
             final_result=f"step {step.id}/{len(plan.steps)} · risk {step.risk} · {plan.provider}",
         )
         await self.bus.publish(
@@ -239,6 +260,33 @@ class Orchestrator:
             )
         )
         return outcome
+
+    async def _run_computer(self, task_id: str, step: PlanStep) -> AgentOutcome:
+        """Run a computer-control action and report its verification (spec: never assume success)."""
+        assert self.computer is not None
+        if step.intent.name in ("open_app", "focus_app", "window_control", "close_app"):
+            await self._ensure_profile(task_id)  # app names are resolved through the discovered catalog
+        await self.set_state(NovaState.WORKING, task_id)
+        await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
+                                         message=f"{step.description}..."))
+        result = await asyncio.to_thread(self.computer.run, step.intent)
+        if result.executed:
+            await self.bus.publish(NovaEvent(type=EventType.ACTION_EXECUTED, task_id=task_id, agent=step.agent,
+                                             message=f"Action: {result.action}", data={"action": result.action}))
+        if result.verification in ("passed", "failed"):
+            await self.set_state(NovaState.VERIFYING, task_id)
+            await self.bus.publish(NovaEvent(type=EventType.VERIFICATION_STARTED, task_id=task_id, agent=step.agent,
+                                             message="Nateeja verify kar raha hai"))
+            passed = result.verification == "passed"
+            await self.bus.publish(
+                NovaEvent(type=EventType.VERIFICATION_PASSED if passed else EventType.VERIFICATION_FAILED,
+                          task_id=task_id, agent=step.agent,
+                          message=("Verify ho gaya" if passed else "Verify nahi ho saka") +
+                                  (f": {result.detail}" if result.detail else ""),
+                          data={"action": result.action})
+            )
+        return AgentOutcome(result.response, step.agent, result.action, executed=result.executed,
+                            verification=result.verification)
 
     def _compose(self, plan: Plan, outcomes: list[AgentOutcome]) -> str:
         if len(outcomes) == 1:
@@ -269,12 +317,6 @@ class Orchestrator:
 
         profile = await self._ensure_profile(task_id)
         app = str(intent.entities.get("app") or "")
-
-        if intent.name == "open_app":
-            if not app:
-                return AgentOutcome("Kaun si application kholni hai?", agent, "app_lookup", executed=False)
-            response = system_agent.describe_open_app(app, profile, PENDING_CAPABILITY_PHASE["open_app"])
-            return AgentOutcome(response, agent, "app_lookup", executed=False)  # nothing was launched
 
         if profile is None:
             return AgentOutcome("System scan abhi mukammal nahi ho saka. Thori der baad dobara poochiye.",

@@ -23,6 +23,7 @@ from .db import Database
 from .discovery import DiscoveryService, LiveStats, SystemProfile, find_app
 from .events import EventBus, EventType, NovaEvent
 from .orchestrator import CommandResult, Orchestrator
+from .agents.computer import ComputerAgent, Desktop
 from .voice import SpeechToText, TextToSpeech, VoiceService, VoiceSession
 from .user_settings import (
     UserSettings,
@@ -86,6 +87,7 @@ def create_app(
     ollama_transport: httpx.AsyncBaseTransport | None = None,
     stt: SpeechToText | None = None,
     tts: TextToSpeech | None = None,
+    desktop: Desktop | None = None,
 ) -> FastAPI:
     """`scanner`/`stats`/`ollama_transport`/`stt`/`tts` replace real collectors, Ollama and voice models (tests)."""
     settings = settings or load_settings()
@@ -111,7 +113,8 @@ def create_app(
         app.state.bus = bus
         app.state.providers = providers
         app.state.discovery = discovery
-        app.state.orchestrator = Orchestrator(bus, db, providers, assistant_name, discovery)
+        computer = ComputerAgent(desktop or Desktop(), lambda: discovery.profile, settings.data_dir / "screenshots")
+        app.state.orchestrator = Orchestrator(bus, db, providers, assistant_name, discovery, computer)
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
         voice = VoiceService(
@@ -173,7 +176,7 @@ def create_app(
             "capabilities": {
                 "voice": app.state.voice.stt.model_downloaded() and app.state.voice.tts.is_available(),
                 "system_discovery": True,
-                "computer_control": False,
+                "computer_control": True,
                 "permission_engine": False,
             },
         }

@@ -71,6 +71,11 @@ receive report reported response responses returned rights risk risky roman rule
 settings simple so speaker standard start state stats status stay step steps storage studio system task test
 text that the threads total turns type understand understood urdu usage use user verification version visual
 web which whose window windows work workflow yet alaikum assalam found returns
+afterwards arranging assume before but click computer control focusing grant high info its keyboard medium mouse
+opening plugs reading screen screenshot shortcut spec success tab verified verify buttons tabs clipboard
+command select cut paste redo undo refresh enter escape minimize maximize normal size desktop focus launch
+exactly text typed for access arrange current every fake goes load name nothing ocr real reports resolve save
+second shortcuts substitute switch tests this through update was taskbar
 """.split())
 
 
@@ -78,7 +83,7 @@ def test_every_template_word_is_covered():
     """New Roman Urdu words in replies must be added to the lexicon, or the voice mispronounces them."""
     root = pathlib.Path(__file__).resolve().parent.parent / "nova"
     missing = set()
-    for f in ["responses.py", "agents/system_agent.py", "orchestrator.py", "planner.py"]:
+    for f in ["responses.py", "agents/system_agent.py", "agents/computer.py", "orchestrator.py", "planner.py"]:
         for node in ast.walk(ast.parse((root / f).read_text(encoding="utf-8"))):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and " " in node.value:
                 for w in re.findall(r"[A-Za-z']+", node.value):

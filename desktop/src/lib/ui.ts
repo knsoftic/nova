@@ -20,7 +20,7 @@ export interface AgentInfo {
 
 export const AGENTS: AgentInfo[] = [
   { name: "Orchestrator", description: "Command samajhna aur route karna", phase: null },
-  { name: "System Agent", description: "System maloomat (read-only). Windows actions Phase 8 mein", phase: null },
+  { name: "System Agent", description: "System maloomat, apps kholna, windows, screen parhna", phase: null },
   { name: "Browser Agent", description: "Browser, search, websites", phase: 8 },
   { name: "File Agent", description: "Files aur folders", phase: 8 },
   { name: "Coding Agent", description: "VS Code, projects, errors", phase: 8 },

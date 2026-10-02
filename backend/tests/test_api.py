@@ -15,16 +15,17 @@ def test_status_reports_honest_capabilities(client):
     assert data["assistant_name"] == "NOVA"
     assert data["state"] == "IDLE"
     assert data["capabilities"]["system_discovery"] is True
-    assert not data["capabilities"]["computer_control"]
+    assert data["capabilities"]["computer_control"] is True
+    assert not data["capabilities"]["permission_engine"]
 
 
-def test_command_responds_in_roman_urdu_without_claiming_execution(client):
+def test_open_app_is_executed_and_reported_in_roman_urdu(client):
     r = client.post("/api/command", json={"text": "Open Chrome"})
     assert r.status_code == 200
     body = r.json()
     assert body["intent"]["name"] == "open_app"
-    assert body["executed"] is False
-    assert "koi action nahi kiya gaya" in body["response"]
+    assert body["executed"] is True
+    assert "Google Chrome khul gaya hai" in body["response"]
 
 
 def test_command_validation(client):
@@ -60,10 +61,10 @@ def test_websocket_event_flow(client):
     types = [e["type"] for e in seen]
     assert types.index("TASK_STARTED") < types.index("INTENT_DETECTED") < types.index("TASK_COMPLETED")
     states = [e["data"]["state"] for e in seen if e["type"] == "STATE_CHANGED"]
-    assert states == ["THINKING", "PLANNING", "WORKING", "COMPLETED", "IDLE"]
+    assert states == ["THINKING", "PLANNING", "WORKING", "VERIFYING", "COMPLETED", "IDLE"]
+    assert types.index("ACTION_EXECUTED") < types.index("VERIFICATION_STARTED") < types.index("VERIFICATION_PASSED")
     response = next(e for e in seen if e["type"] == "NOVA_RESPONSE")
-    assert "Visual Studio Code is PC par installed hai" in response["message"]
-    assert "koi action nahi kiya gaya" in response["message"]
+    assert "Visual Studio Code khul gaya hai" in response["message"]
 
 
 def test_websocket_rejects_foreign_origin(client):

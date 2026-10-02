@@ -184,13 +184,15 @@ def intent(name, **entities):
 
 
 def test_plan_statuses_and_risk():
-    plan = build_plan(Understanding(intents=[intent("system_info", topic="ram"), intent("open_app", app="Chrome"),
-                                             intent("create_folder")], provider="test"))
+    plan = build_plan(Understanding(intents=[intent("system_info", topic="ram"), intent("web_search", query="x"),
+                                             intent("create_folder"), intent("open_app", app="Chrome")],
+                                    provider="test"))
     by_intent = {s.intent.name: s for s in plan.steps}
     assert by_intent["system_info"].status == "ready" and by_intent["system_info"].risk == "low"
-    assert by_intent["open_app"].status == "unavailable" and by_intent["open_app"].available_from_phase == 6
+    assert by_intent["web_search"].status == "unavailable" and by_intent["web_search"].available_from_phase == 8
     assert by_intent["create_folder"].risk == "medium" and by_intent["create_folder"].status != "ready"
-    assert [s.id for s in plan.steps] == [1, 2, 3]
+    assert by_intent["open_app"].status == "ready" and by_intent["open_app"].risk == "low"
+    assert [s.id for s in plan.steps] == [1, 2, 3, 4]
 
 
 def test_plan_drops_greeting_next_to_real_request():
@@ -233,10 +235,11 @@ def test_compound_command_plans_and_runs_each_step(ai_client, fake_ollama):
     assert types.count("STEP_COMPLETED") == 2
     response = next(e for e in events if e["type"] == "NOVA_RESPONSE")["message"]
     assert response.startswith("Aapne 2 kaam bataye:")
-    assert "1. Visual Studio Code is PC par installed hai" in response
+    assert "1. Visual Studio Code khul gaya hai" in response
     assert "2. RAM: total 16 GB" in response
     rows = ai_client.get("/api/activity?limit=2").json()
-    assert {r["execution_status"] for r in rows} == {"success", "not_available_yet"}
+    assert {r["execution_status"] for r in rows} == {"success"}
+    assert {r["verification_status"] for r in rows} == {"passed", "not_applicable"}
 
 
 def test_fallback_note_shown_for_unclear_text_without_model(client):

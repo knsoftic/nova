@@ -2,7 +2,7 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 10 (Emotion/Behavior layer)**. NOVA listens (push-to-talk or wake word), understands
+Current status: **Phase 11 (Testing & Logs)**. NOVA listens (push-to-talk or wake word), understands
 Urdu / Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in
 an offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
 afterwards). Risky actions — typing, clicking, pasting, closing apps — run only after the user says yes
@@ -15,8 +15,8 @@ sends WhatsApp messages and emails to contacts the user saved (always asking fir
 simple designs. It remembers what the user asks it to (never silently), keeps a searchable conversation history
 for a chosen number of days, and learns workflows such as "work start karo". It estimates how the user is
 communicating (hurried, frustrated, confused - always shown as an estimate), adapts its tone, and learns which
-apps the user opens together to suggest workflows. See [LOGS.md](LOGS.md) for development history and approval
-status.
+apps the user opens together to suggest workflows. An Admin panel runs self-tests, tracks bugs and records the
+administrator's approvals in LOGS.md. See [LOGS.md](LOGS.md) for development history and approval status.
 
 ## Voice (offline)
 
@@ -147,6 +147,35 @@ Everything here is local; the estimate is never stored, and every part can be sw
   When the same things are opened together on 3+ days NOVA asks once: "Inka 'subah' workflow bana doon?" - saved
   only on "haan"; "nahi" is remembered and not asked again.
 
+## Testing, bugs and approvals
+
+- **Admin tab:** every phase from LOGS.md with its lifecycle (Implemented → Automated test → Verified → Admin test →
+  Admin approved), its manual test steps from this README, and **Test Feature**, **Approve**, **Report Problem**,
+  **Retest**. *Approve* (after "Haan, approve") writes `Approved (..., admin ne NOVA Admin panel se approve kiya)`
+  into that phase's LOGS.md entry - it is refused while the phase has bugs that are not closed. NOVA never approves
+  anything by itself.
+- **Bug tracking:** problems the admin reports, crashes while handling a command (one bug per place in the code,
+  repeats counted, a closed bug reopens if it happens again) and failed self-test checks. Open → fixed → retest →
+  closed (or reopened); phase bugs are also listed in LOGS.md under "Admin bugs".
+- **Self-test:** safe checks per phase (database, data folder, system profile, rules brain, local AI, voice models,
+  windows, permission rules, browser, folders, dev tools, Windows settings, WhatsApp/Outlook, image tools, memory,
+  behavior layer, LOGS.md, secret redaction). A quick run happens quietly 25 s after every start (only problems are
+  shown); the full run (local AI answer, Urdu voice) is in the Admin tab.
+- **Error handling:** a safe, low-risk action that nobody had to approve (open an app/website/project/folder,
+  window, a fixed volume/brightness) is retried once when its verification fails; if it still fails NOVA explains
+  and asks "Kya main ek dafa aur koshish karoon?". Sending, deleting, typing, clicking or anything approved is
+  never repeated by itself.
+- **LOGS.md system activity:** once a day, a counts-only line (commands, done, failed, permission questions, bugs,
+  self-tests) under "System activity (rozana khulasa)" - never the user's words, file names or messages.
+- **Activity Log filters:** failed, unverified, permission, refused, tests, admin; search by task, action or id.
+- **All automated checks in one command** (pyflakes, backend tests, frontend tests, typecheck, build):
+
+```bash
+.venv\Scripts\python.exe scripts\check_all.py
+```
+
+(from `backend/`)
+
 ## Layout
 
 ```
@@ -164,6 +193,7 @@ nova/
 │   │   ├── design/         Design Agent: image tools and template designs (Pillow)
 │   │   ├── memory/         Memory Agent: short-term memory, facts, history search/retention, workflows
 │   │   ├── behavior/       Behavior Layer: estimate (words, context, voice), tone, habits, routine suggestions
+│   │   ├── admin/          self-test, bug tracking, approvals, LOGS.md/README.md upkeep
 │   │   ├── files/          allowed folders, search, documents, Recycle Bin, verified file operations + undo
 │   │   ├── coding/         Coding Agent: projects, allowed commands, error parsing, checked code edits
 │   │   ├── browser/        Browser Agent + Playwright controller (NOVA's own Chrome profile)
@@ -253,6 +283,25 @@ Environment variables (backend):
 | `NOVA_ASSISTANT_NAME` | `NOVA` | Assistant name |
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
+
+## Admin manual test (Phase 11, approved)
+
+1. `desktop/` mein `npm start`. Beech mein naya **Admin** tab. ~25 second baad Live Activity mein self-test ki
+   line sirf tab aaye jab koi masla ho (aur Admin tab par ● nishan).
+2. **Self-test:** Admin → "Poora test chalayein" (1-2 minute, local AI aur Urdu awaaz samet) → har check theek /
+   kami / nakaam ke sath. Activity Log → filter "Tests" mein record.
+3. **Feature:** kisi phase (maslan Phase 8C) ko kholein → manual test steps nazar aayen → **Test Feature** → us phase
+   ke checks.
+4. **Report Problem → fix → retest → approve:** Phase 11 kholein → **Report Problem** (maslan "test bug") → Bugs
+   mein #N "khula", LOGS.md mein Phase 11 ke neeche "Admin bugs" aur "Problem report hua". **Approve** dabayein →
+   inkaar ("bug band nahi"). Bug par "Fix ho gaya" → **Retest** → "Retest theek — band karein".
+5. **Approve (asli approval):** sab theek ho to Phase 11 par **Approve → Haan, approve** → LOGS.md mein "Approved
+   (... Admin panel se)" (git diff mein nazar aayega). Chahein to approval chat mein bhi de sakte hain.
+6. **Error handling:** koi app jo der se khulti hai — NOVA verify na kar sake to ek dafa khud dobara koshish kare;
+   phir bhi na ho to "Kya main ek dafa aur koshish karoon?" (Haan/Nahi).
+7. **Activity Log:** filters (Nakaam, Verify nahi hua, Ijazat ke sawal, Tests, Admin) aur search.
+8. Kal NOVA chalane par LOGS.md ke aakhir mein "System activity (rozana khulasa)" mein aaj ki sirf ginti wali line.
+9. Terminal mein `backend/` se `.venv\Scripts\python.exe scripts\check_all.py` → sab hisse "THEEK".
 
 ## Admin manual test (Phase 10, approved)
 

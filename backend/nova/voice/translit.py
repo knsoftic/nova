@@ -147,6 +147,10 @@ LEXICON: dict[str, str] = {
     "mutabiq": "مطابق", "naraazgi": "ناراضگی", "oonchi": "اونچی", "pur": "پر", "seedha": "سیدھا",
     "seekhega": "سیکھے گا", "sukoon": "سکون", "tafseel": "تفصیل", "tar": "تر", "tez": "تیز", "thakan": "تھکن",
     "uljhan": "الجھن", "zor": "زور",
+    # Phase 11: admin, tests, bugs
+    "bani": "بنی", "chhup": "چھپ", "chhupaya": "چھپایا", "chhupaye": "چھپائے", "ijazatein": "اجازتیں",
+    "likhe": "لکھے", "masle": "مسئلے", "nakaam": "ناکام", "parha": "پڑھا", "pasand": "پسند", "pehchan": "پہچان",
+    "poochi": "پوچھی", "qaide": "قاعدے", "samajhta": "سمجھتا",
 }
 # "ki" appears twice above (possessive and "did"); both are written the same in Urdu.
 

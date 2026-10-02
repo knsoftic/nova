@@ -40,7 +40,71 @@ export type EventType =
   | "WAKE_WORD_DETECTED"
   | "NOVA_SPEAK"
   | "MEMORY_CHANGED"
-  | "BEHAVIOR_ESTIMATED";
+  | "BEHAVIOR_ESTIMATED"
+  | "SELF_TEST"
+  | "BUG_LOGGED"
+  | "ADMIN_DECISION"
+  | "RETRY";
+
+export interface SelfTestResult {
+  id: string;
+  phase: string;
+  name: string;
+  status: "pass" | "info" | "warn" | "fail";
+  detail: string;
+  ms: number;
+}
+
+export interface TestRun {
+  id: number;
+  scope: string;
+  passed: number;
+  warned: number;
+  failed: number;
+  results: SelfTestResult[];
+  started_at?: string;
+}
+
+export type BugStatus = "open" | "fixed" | "closed" | "reopened";
+
+export interface Bug {
+  id: number;
+  created_at: string;
+  updated_at: string;
+  phase: string | null;
+  title: string;
+  details: string | null;
+  source: "admin" | "automatic" | "self_test";
+  status: BugStatus;
+  occurrences: number;
+  task_id: string | null;
+  history: { at: string; status: string; by: string; note: string }[];
+}
+
+/** A development phase from LOGS.md with its lifecycle (spec: Implemented -> ... -> Admin approved). */
+export interface AdminFeature {
+  phase: string;
+  title: string;
+  status: string;
+  admin_test: string;
+  admin_approval: string;
+  approved: boolean;
+  automated_test: boolean;
+  self_test: { ran: boolean; ok: boolean; failed: number; results: SelfTestResult[] };
+  steps: string[];
+  bugs_active: number;
+  bugs_total: number;
+  stage: "implemented" | "automated_test" | "verified" | "admin_tested" | "approved" | "problem";
+}
+
+export interface DaySummary {
+  date: string;
+  counts: Record<string, number>;
+  line: string;
+  logs_md: boolean;
+}
+
+export type ActivityKind = "" | "failed" | "unverified" | "permission" | "denied" | "tests" | "admin";
 
 export type AiMode = "hybrid" | "llm" | "rules";
 

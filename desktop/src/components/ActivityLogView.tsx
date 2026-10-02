@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { ActivityRecord } from "../lib/types";
+import type { ActivityKind, ActivityRecord } from "../lib/types";
 
 const STATUS_TONE: Record<string, string> = {
   success: "text-emerald-300",
@@ -9,6 +9,9 @@ const STATUS_TONE: Record<string, string> = {
   failed: "text-red-300",
   denied: "text-red-300",
   intent_only: "text-slate-400",
+  problem: "text-red-300",
+  retry: "text-amber-300",
+  not_required: "text-slate-500",
   pending: "text-amber-300",
 };
 
@@ -16,32 +19,77 @@ function Status({ value }: { value: string }) {
   return <span className={STATUS_TONE[value] ?? "text-slate-300"}>{value.replaceAll("_", " ")}</span>;
 }
 
-/** The persisted, structured activity log from SQLite (spec section 30). */
+const FILTERS: { value: ActivityKind; label: string }[] = [
+  { value: "", label: "Sab" },
+  { value: "failed", label: "Nakaam / errors" },
+  { value: "unverified", label: "Verify nahi hua" },
+  { value: "permission", label: "Ijazat ke sawal" },
+  { value: "denied", label: "Inkaar" },
+  { value: "tests", label: "Tests" },
+  { value: "admin", label: "Admin" },
+];
+
+/** The persisted, structured activity log from SQLite (spec section 30), with filters. */
 export function ActivityLogView({ revision }: { revision: number }) {
   const [rows, setRows] = useState<ActivityRecord[] | null>(null);
   const [error, setError] = useState(false);
+  const [kind, setKind] = useState<ActivityKind>("");
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     let cancelled = false;
-    api
-      .activity(200)
-      .then((r) => {
-        if (cancelled) return;
-        setRows(r);
-        setError(false);
-      })
-      .catch(() => !cancelled && setError(true));
+    const timer = window.setTimeout(() => {
+      api
+        .activity(200, kind, query.trim())
+        .then((r) => {
+          if (cancelled) return;
+          setRows(r);
+          setError(false);
+        })
+        .catch(() => !cancelled && setError(true));
+    }, 150);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [revision]);
+  }, [revision, kind, query]);
+
+  const filters = (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        className="rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-slate-100"
+        value={kind}
+        onChange={(e) => setKind(e.target.value as ActivityKind)}
+      >
+        {FILTERS.map((f) => (
+          <option key={f.value} value={f.value}>
+            {f.label}
+          </option>
+        ))}
+      </select>
+      <input
+        className="min-w-40 flex-1 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-xs text-slate-100"
+        placeholder="Dhoondein (task, action, nateeja ya task id)"
+        value={query}
+        maxLength={100}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+    </div>
+  );
 
   if (error) return <p className="text-center text-sm text-red-300">Activity log load nahi ho saka.</p>;
   if (!rows) return <p className="text-center text-sm text-slate-400">Load ho raha hai...</p>;
-  if (rows.length === 0) return <p className="text-center text-sm text-slate-400">Abhi tak koi record nahi.</p>;
+  if (rows.length === 0)
+    return (
+      <div className="flex w-full flex-col gap-2">
+        {filters}
+        <p className="text-center text-sm text-slate-400">{kind || query ? "Is filter mein kuch nahi." : "Abhi tak koi record nahi."}</p>
+      </div>
+    );
 
   return (
     <div className="flex w-full flex-col gap-2">
+      {filters}
       <p className="text-xs text-slate-400">
         Aakhri {rows.length} records. Passwords/tokens record hone se pehle chhupa diye jate hain.
       </p>

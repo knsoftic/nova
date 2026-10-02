@@ -5,6 +5,7 @@ import { AgentPanel } from "./components/AgentPanel";
 import { CommandBar } from "./components/CommandBar";
 import { Conversation } from "./components/Conversation";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { AdminView } from "./components/AdminView";
 import { MemoryView } from "./components/MemoryView";
 import { MIC_LABEL, MicControl } from "./components/MicControl";
 import { NovaCore } from "./components/NovaCore";
@@ -19,13 +20,14 @@ import { useNova } from "./lib/useNova";
 import { useSpeechPlayer } from "./lib/useSpeechPlayer";
 import { useVoice, type ListenMode } from "./lib/useVoice";
 
-type CenterView = "conversation" | "system" | "log" | "memory";
+type CenterView = "conversation" | "system" | "log" | "memory" | "admin";
 
 const VIEWS: { id: CenterView; label: string }[] = [
   { id: "conversation", label: "Conversation" },
   { id: "system", label: "System Profile" },
   { id: "log", label: "Activity Log" },
   { id: "memory", label: "Memory" },
+  { id: "admin", label: "Admin" },
 ];
 
 const PREVIEW_MS = 4000;
@@ -138,6 +140,11 @@ export default function App() {
 
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
+  const { clearAdminAlert } = nova;
+  useEffect(() => {
+    if (view === "admin") clearAdminAlert();
+  }, [view, nova.adminRevision, clearAdminAlert]);
+
   const shownState = previewState ?? nova.state;
   const estimate = estimateText(nova.estimate);
 
@@ -186,6 +193,7 @@ export default function App() {
               >
                 {v.label}
                 {v.id === "system" && nova.scanning && <span className="ml-2 animate-pulse text-amber-300">●</span>}
+                {v.id === "admin" && nova.adminAlert && <span className="ml-2 text-amber-300" title="Self-test ya bug">●</span>}
               </button>
             ))}
           </nav>
@@ -220,6 +228,10 @@ export default function App() {
               ) : view === "system" ? (
                 <ErrorBoundary label="System Profile">
                   <SystemProfileView revision={nova.profileRevision} scanning={nova.scanning} />
+                </ErrorBoundary>
+              ) : view === "admin" ? (
+                <ErrorBoundary label="Admin">
+                  <AdminView revision={nova.adminRevision} />
                 </ErrorBoundary>
               ) : view === "memory" ? (
                 <ErrorBoundary label="Memory">

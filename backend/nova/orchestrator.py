@@ -13,7 +13,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from pydantic import BaseModel
 
@@ -64,6 +64,10 @@ CONTROL_INTENTS = {"open_app", "focus_app", "window_control", "read_screen", "sc
 BROWSER_INTENTS = {"open_website", "web_search", "read_page", "browser_nav", "browser_click", "browser_type",
                    "download"}
 RESEARCH_INTENTS = {"research", "web_answer"}
+# Safe to try once more by itself when verification fails: opening, showing, reading, a fixed level (spec 32).
+# Sending, deleting, typing, clicking or anything the user had to approve is never repeated on its own.
+SAFE_RETRY = {"open_app", "focus_app", "window_control", "open_website", "read_page", "open_project", "open_file",
+              "change_setting"}
 
 
 class CommandResult(BaseModel):
@@ -135,6 +139,8 @@ class Orchestrator:
         self.short_term = short_term or (memory.short_term if memory is not None else ShortTermMemory())
         # Behavior layer: an estimate of how the user is communicating (RAM only) -> NOVA's tone; habits.
         self.behavior = behavior
+        # Set by the app: a crash while handling a command becomes a bug in the bug tracker (Phase 11).
+        self.on_crash: Callable[[BaseException, str], Awaitable[Any]] | None = None
         if behavior is not None:
             self.short_term.on_clear(behavior.estimator.forget_mood)
 
@@ -247,7 +253,12 @@ class Orchestrator:
 
             await self._prepare_steps(task_id, plan)
             await self._seek_permission(task_id, plan, source)
-            outcomes = [await self._run_step(task_id, step, plan) for step in plan.steps]
+            outcomes = []
+            for step in plan.steps:
+                outcome = await self._run_step(task_id, step, plan)
+                if self._may_retry(step, outcome):
+                    outcome = await self._retry_step(task_id, step, plan)
+                outcomes.append(outcome)
         except Exception as exc:  # provider/agent failures must never crash the backend
             log.exception("Command handling failed")
             return await self._fail(task_id, text, source, exc)
@@ -303,7 +314,8 @@ class Orchestrator:
                 agent=ORCHESTRATOR,
                 message=response,
                 data={"response": response, "source": source, "awaiting_answer": awaiting,
-                      "quick_replies": ["Haan", "Nahi"] if awaiting and asked.kind in ("remember", "routine") else [],
+                      "quick_replies": ["Haan", "Nahi"] if awaiting and asked.kind in ("remember", "routine", "retry")
+                      else [],
                       **data},
             )
         )
@@ -817,7 +829,32 @@ class Orchestrator:
         except Exception:
             return None
 
+    def _may_retry(self, step: PlanStep, outcome: AgentOutcome) -> bool:
+        """Error handling (spec 32): only a safe, low-risk action that nobody had to approve is retried by itself."""
+        return (outcome.verification == "failed" and step.intent.name in SAFE_RETRY and step.risk == "low"
+                and step.permission is None)
+
+    async def _retry_step(self, task_id: str, step: PlanStep, plan: Plan) -> AgentOutcome:
+        await self.bus.publish(NovaEvent(type=EventType.RETRY, task_id=task_id, agent=ORCHESTRATOR,
+                                         message=f"Verify nahi hua — ek dafa dobara koshish: {step.description}"))
+        step.status, step.result = "ready", None
+        second = await self._run_step(task_id, step, plan)
+        if second.verification != "failed":
+            second.response += " (Pehli koshish verify nahi hui thi; dobara karne par ho gaya.)"
+            return second
+        step.status = "failed"
+        if self.short_term.pending is None:  # explain and ask - never a third try on its own
+            question = "Dobara koshish bhi kaam nahi aayi. Kya main ek dafa aur koshish karoon? (haan/nahi)"
+            self.short_term.ask("retry", question, {"intents": [step.intent.model_dump()]}, ttl_s=180)
+            second.response += f"\n{question}"
+        return second
+
     async def _fail(self, task_id: str, text: str, source: str, exc: Exception) -> CommandResult:
+        if self.on_crash is not None:
+            try:
+                await self.on_crash(exc, task_id)
+            except Exception:  # logging a bug must never hide the original failure
+                log.exception("Could not log the crash as a bug")
         response = build_error_response()
         self.short_term.add_turn(text, response, command=False, outcome="failed")
         self.db.add_conversation(

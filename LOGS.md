@@ -678,3 +678,58 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 10 commit `b02e8d0`, `main` mein merge `4e4e05f`.
+
+---
+
+### Task: Phase 11 — Testing & Logs (automated testing, verification, admin testing, LOGS.md, bug tracking, approval system)
+
+Status: Complete (branch `phase-11-testing-logs`, approval ke baad `main` mein merge)
+
+Admin ke faisle (is phase ke shuru mein): Admin panel ka **Approve LOGS.md mein likhe** (commit/merge phir bhi chat se), LOGS.md mein **rozana khulasa sirf ginti**, error par **mehfooz kaam 1 dafa khud** phir poochna, self-test **start par tez + button par poora**.
+
+Kaam:
+- **Admin panel (naya "Admin" tab):** LOGS.md ke har phase ka lifecycle (Implemented → Automated test → Verified → Admin test → Admin approved; problem ho to wapas fix par), README se manual test steps, aur buttons **Test Feature / Approve / Report Problem / Retest** (spec 28).
+- **Approval system:** Approve sirf admin ke click + "Haan, approve" par; LOGS.md mein usi phase ka "Admin Test: Complete" aur "Admin Approval: Approved (date, admin ne NOVA Admin panel se approve kiya)" likha jata hai — baqi text bilkul nahi badalta (atomic write). Jis phase ke bug band nahi us ki approval inkaar. Har faisla `approvals` table aur activity log (admin_status) mein. NOVA khud kabhi approve nahi karta.
+- **Bug tracking:** admin ki report, command handle karte waqt **crash khud bug** (code ki jagah ke hisaab se aik bug, dobara ho to ginti barhti, band bug dobara khulta), aur **nakaam self-test check** bhi bug. Status: khula → fix → retest → band (ya dobara khula), poori history. Phase ke bug LOGS.md mein us phase ke neeche "Admin bugs:". Bug ke text se secrets chhupaye jate hain.
+- **Automated testing:**
+  - App ke andar **self-test**: 21 mehfooz checks phase ke hisaab se (database, data folder, system profile, rules brain, local AI tayyar + jawab, awaaz ke models + Urdu awaaz, windows, permission ke qaide, browser, web search, folders, coding tools, Windows settings, WhatsApp/Outlook, tasveer tools, memory, behavior layer, LOGS.md, secrets ka chhupna). Start ke 25 second baad chupchaap tez checks — sirf masla ho to Live Activity aur Admin tab par ● ; poora test (local AI + awaaz) Admin tab se. Har run `test_runs` aur activity log (test_status) mein.
+  - Developer ke liye ek command: `scripts/check_all.py` — pyflakes, backend tests, frontend tests, typecheck, build; Roman Urdu khulasa.
+- **Verification + error handling (spec 32):** mehfooz, low-risk kaam jis ki ijazat nahi li gayi thi (app/website/project/folder kholna, window, volume/brightness ka tay level) verify na ho to **ek dafa khud dobara** + verify; phir bhi na ho to wajah ke sath "Kya main ek dafa aur koshish karoon? (haan/nahi)". Bhejna, mitana, type/click ya ijazat wala kaam kabhi khud dobara nahi.
+- **LOGS.md system activity:** din mein ek dafa (agle din) "System activity (rozana khulasa)" mein **sirf ginti** — commands, kitne hue, nakaam, ijazat, bugs, self-tests. User ke alfaaz, file names, messages kabhi nahi.
+- **Activity Log:** filters (Nakaam/errors, Verify nahi hua, Ijazat ke sawal, Inkaar, Tests, Admin) aur search; runtime kaamon ka admin_status ab "not_required" ki jagah sahi.
+
+Test:
+- Backend automated tests: 601/601 pass (13 naye + ek awaaz ka regression test) — LOGS.md parhna/likhna (sirf admin wali lines badalti hain), rozana khulasa ek hi dafa, self-test (checks, record, nakaam check → aik bug), problem → fix → retest → approve (khule bug par inkaar, pakka kiye baghair 422, pehle se approved 409), approved phase par problem → approval wapas Pending, LOGS.md na ho to kuch nahi likha jata, crash → aik bug (dobara → ginti barhi, band bug dobara khula), mehfooz kaam 1 dafa khud + phir sawal (haan/nahi), ijazat wala kaam kabhi khud dobara nahi, khulase mein sirf ginti (alfaaz nahi), activity filters, start ka self-test chupchaap.
+- Frontend: 19/19 tests, typecheck aur build successful.
+- `scripts/check_all.py` khud: pyflakes, backend 601, frontend 19, typecheck, build — sab THEEK (pehli dafa chala to ek bekaar f-string pakri).
+- **Is PC par asli test:** 
+  - Start ke 25s baad self-test chupchaap chala: 17 theek, 2 info (Brave key nahi, Outlook set nahi) — koi masla nahi, is liye koi alert nahi.
+  - Poora self-test (18s): 19 theek, 2 info, 0 nakaam — local AI ne "Chrome kholo" 13.8s mein sahi samjha, Urdu awaaz bani, volume parha, 171 apps, LOGS.md ke 13 tasks.
+  - "Test Feature" Phase 8C aur 11 — sirf unhi phases ke checks.
+  - **Approval flow alag backend par** (apna data folder aur LOGS.md ki **copy**): Phase 11 par Report Problem → bug #1 khula → Approve inkaar (409, "bug band nahi") → Fix ho gaya → Retest (2 theek) → band → Approve → copy mein "Admin bugs: - #1 (band, ...)" aur "Approved (2026-10-02, admin ne NOVA Admin panel se approve kiya)". **Asli LOGS.md ko haath nahi lagaya** (check kiya).
+  - UI: Admin tab — self-test card, aaj ki ginti, har phase ke lifecycle chips (1–10 approved, 11 verified), Phase 11 ke 9 steps, Test Feature/Approve/Report Problem/Retest; Live Activity mein self-test ki lines; Activity Log ka "Tests" filter.
+  - Electron app: window, backend aur Admin API (13 phases) theek; band karne par backend band.
+  - Retry aur crash bug asli PC par jaan bujh kar nahi karwaye (app ko zabardasti fail karna mehfooz nahi) — automated tests mein cover hain.
+
+Bugs jo test ke dauran mile aur fix kiye gaye:
+- **Self-test ne pakra (Phase 10 ka bug):** awaaz ki raftaar/pitch naapne mein "sab se halki 20% awaaz = kamre ka shor" maana jata tha; push-to-talk ke segment mein khamoshi kam ho to awaaz hi shor samjhi jati aur kuch nahi naapa jata — ab sab se oonchi awaaz ke muqable mein (regression test).
+- `check_all.py` ne pakra: ek test mein bekaar f-string.
+- Rozana khulasa start par foran likha jata to tests mein race — ab self-test ki tarah thori der baad.
+
+Maloom hadood (limitations):
+- Approval LOGS.md mein likhi jati hai; commit/merge aap ke chat mein kehne par hi (git NOVA khud nahi chalata).
+- Crash bugs sirf command handle karte waqt ke; UI (Electron) ke andar ke errors abhi yahan nahi aate.
+- Self-test mehfooz hai — asli app kholna, message bhejna waghera nahi karta; un ke liye manual test steps hain.
+- Rozana khulasa sirf jab NOVA chalaya jaye (band PC par nahi likha jata; agli dafa pichle din likh deta hai).
+
+Verification:
+- Approve/problem/bug status ke baad LOGS.md dobara parh kar check (tests); self-test ke har check ka nateeja; retry ke baad dobara verify.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

@@ -38,7 +38,7 @@ def test_command_is_logged_and_redacted(client):
     convo = client.get("/api/conversations").json()[0]
     assert "hunter2" not in convo["user_text"]
     activity = client.get("/api/activity").json()[0]
-    assert activity["admin_status"] == "pending"
+    assert activity["admin_status"] == "not_required"  # nothing for the admin to approve in a command
     assert activity["execution_status"] == "responded"  # words only, nothing executed
     for field in ("date", "time", "task_id", "agent", "permission_status", "verification_status"):
         assert activity[field]

@@ -1,6 +1,12 @@
 import type {
+  ActivityKind,
   ActivityRecord,
+  AdminFeature,
   AiStatus,
+  Bug,
+  BugStatus,
+  DaySummary,
+  TestRun,
   Contact,
   FileRoot,
   HabitPatterns,
@@ -51,7 +57,25 @@ export const api = {
   live: () => request<LiveStats>("/api/system/live"),
   settings: () => request<UserSettings>("/api/settings"),
   updateSettings: (patch: Partial<UserSettings>) => request<UserSettings>("/api/settings", json("PUT", patch)),
-  activity: (limit = 200) => request<ActivityRecord[]>(`/api/activity?limit=${limit}`),
+  activity: (limit = 200, kind: ActivityKind = "", q = "") =>
+    request<ActivityRecord[]>(`/api/activity?limit=${limit}${kind ? `&kind=${kind}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+  adminFeatures: () => request<AdminFeature[]>("/api/admin/features"),
+  testFeature: (phase: string) => request<TestRun>(`/api/admin/features/${encodeURIComponent(phase)}/test`, { method: "POST" }),
+  approveFeature: (phase: string, note = "") =>
+    request<{ phase: string; admin_approval: string }>(
+      `/api/admin/features/${encodeURIComponent(phase)}/approve`,
+      json("POST", { confirm: true, note }),
+    ),
+  reportProblem: (phase: string, title: string, details: string) =>
+    request<Bug>(`/api/admin/features/${encodeURIComponent(phase)}/problem`, json("POST", { title, details })),
+  retestFeature: (phase: string) => request<TestRun>(`/api/admin/features/${encodeURIComponent(phase)}/retest`, { method: "POST" }),
+  bugs: (status: "" | "active" | BugStatus = "") => request<Bug[]>(`/api/admin/bugs${status ? `?status=${status}` : ""}`),
+  newBug: (title: string, details: string) => request<Bug>("/api/admin/bugs", json("POST", { title, details })),
+  setBugStatus: (id: number, status: BugStatus, note = "") =>
+    request<Bug>(`/api/admin/bugs/${id}`, json("PUT", { status, note })),
+  runSelfTest: (scope = "full") => request<TestRun>("/api/admin/selftest", json("POST", { scope })),
+  lastSelfTest: () => request<TestRun | null>("/api/admin/selftest/last"),
+  adminSummary: () => request<DaySummary>("/api/admin/summary"),
   pendingPermissions: () => request<PermissionRequest[]>("/api/permissions/pending"),
   decidePermission: (id: string, approved: boolean, remember: boolean) =>
     request<{ ok: boolean }>(`/api/permissions/${encodeURIComponent(id)}/decision`, json("POST", { approved, remember })),

@@ -71,6 +71,9 @@ def test_voice_features_from_audio():
     assert v is not None and abs(v.pitch_hz - 200) < 10 and 1.8 < v.voiced_s < 2.2
     assert v.rate_wps == round(4 / v.voiced_s, 2) and -17 < v.loudness_db < -13
     assert voice_features(bytes(32000), "kuch") is None  # silence
+    # A push-to-talk segment with almost no silence: the voice must not be taken for background noise.
+    tight = voice_features(bytes(1600) + speech + bytes(1600), "mera system check karo")
+    assert tight is not None and abs(tight.pitch_hz - 200) < 10 and tight.voiced_s > 1.8
 
 
 # ------------------------------------------------------------------ estimate

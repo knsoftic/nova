@@ -29,7 +29,37 @@ export const AGENTS: AgentInfo[] = [
   { name: "Communication Agent", description: "WhatsApp aur email (har dafa ijazat se)", phase: null },
   { name: "Memory Agent", description: "Aap ki batai baatein, history aur workflows (sab isi PC par)", phase: null },
   { name: "Behavior Layer", description: "Andaz ka andaza (sirf andaza), jawab ka andaz, aadatein", phase: null },
+  { name: "Admin", description: "Self-test, bugs aur approvals (LOGS.md)", phase: null },
 ];
+
+/** The feature lifecycle from the spec (section 28), in order. "problem" sends a feature back to fixing. */
+export const LIFECYCLE: { id: string; label: string }[] = [
+  { id: "implemented", label: "Implemented" },
+  { id: "automated_test", label: "Automated test" },
+  { id: "verified", label: "Verified" },
+  { id: "admin_tested", label: "Admin test" },
+  { id: "approved", label: "Admin approved" },
+];
+
+/** How far along the lifecycle a stage is (problem = back at the start). */
+export function lifecycleIndex(stage: string): number {
+  if (stage === "problem") return 0;
+  return Math.max(0, LIFECYCLE.findIndex((s) => s.id === stage));
+}
+
+export const CHECK_TONE: Record<string, string> = {
+  pass: "text-emerald-300",
+  info: "text-sky-300",
+  warn: "text-amber-300",
+  fail: "text-red-300",
+};
+
+export const BUG_WORDS: Record<string, string> = {
+  open: "khula",
+  fixed: "fix hua — retest baqi",
+  closed: "band",
+  reopened: "dobara khula",
+};
 
 /** "shayad jaldi mein" -> "Andaza: shayad jaldi mein" plus the reasons, for the badge under the avatar. */
 export function estimateText(e: { label: string; reasons: string[] } | null): { text: string; title: string } | null {

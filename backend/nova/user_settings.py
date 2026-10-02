@@ -19,6 +19,9 @@ class UserSettings(BaseModel):
     startup_mode: Literal["silent", "active"] = "active"  # takes effect with Windows startup (Phase 12)
     ai_mode: Literal["hybrid", "llm", "rules"] = "hybrid"
     ai_model: str = Field(default="qwen3:4b", min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._:/\-]+$")
+    stt_language: Literal["ur", "hi", "en", "auto"] = "ur"
+    tts_voice: str = Field(default="ur_PK-fasih-medium", max_length=80, pattern=r"^[A-Za-z0-9_\-]+$")
+    speak_responses: Literal["voice_only", "always", "never"] = "voice_only"
 
     @field_validator("assistant_name", "wake_word")
     @classmethod
@@ -37,6 +40,9 @@ class UserSettingsUpdate(BaseModel):
     startup_mode: Literal["silent", "active"] | None = None
     ai_mode: Literal["hybrid", "llm", "rules"] | None = None
     ai_model: str | None = None
+    stt_language: Literal["ur", "hi", "en", "auto"] | None = None
+    tts_voice: str | None = None
+    speak_responses: Literal["voice_only", "always", "never"] | None = None
 
 
 def load_user_settings(db: Database, default_name: str = "NOVA") -> UserSettings:

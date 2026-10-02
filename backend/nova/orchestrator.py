@@ -177,7 +177,7 @@ class Orchestrator:
                 agent=ORCHESTRATOR,
                 message=response,
                 data={"response": response, "intent": primary.name, "steps": plan.summary(),
-                      "provider": plan.provider},
+                      "provider": plan.provider, "source": source},
             )
         )
         await self.bus.publish(

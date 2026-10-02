@@ -123,6 +123,10 @@ def test_recommend_low_ram_and_no_devices():
         ("kya photoshop installed hai", "app_check", {"app": "photoshop"}),
         ("is Telegram installed", "app_check", {"app": "Telegram"}),
         ("Chrome ko default browser bana do", "change_setting", {"request": "Chrome ko default browser bana do"}),
+        # Whisper's Urdu-script spellings of English words (from real voice tests).
+        ("آر ایم کتنی فیہ ہے؟", "system_info", {"topic": "ram"}),
+        ("وندوز کا ویشن بتاؤ۔", "system_info", {"topic": "windows"}),
+        ("میرا سسٹم چیک کرو۔", "system_info", {"topic": "summary"}),
         ("system dobara scan karo", "rescan_system", {}),
     ],
 )

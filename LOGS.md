@@ -188,3 +188,57 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 4 commit `2fb5eb3`, `main` mein merge `cb88629`.
+
+---
+
+### Task: Phase 5 — Voice
+
+Status: Complete (branch `phase-5-voice`, approval ke baad `main` mein merge)
+
+Kaam:
+- **Downloads (admin ki ijazat se):** Whisper `small` (~480 MB, sun'ne ke liye) aur do offline Urdu (Pakistan) Piper voices — `ur_PK-fasih` (mard) aur `ur_PK-aegis_female` (khatoon), ~61 MB har ek. Sab `data/models/` mein (git se bahar). Doosre PC ke liye `scripts/download_voice_models.py`.
+- **Awaaz pehchanna (STT):** faster-whisper, CPU int8, Urdu default (Hindi/English/Auto bhi). App ka mic audio 16 kHz mein backend ko jata hai (sirf isi PC par); backend khud pehchanta hai kab bolna shuru/khatam hua.
+- **Wake word:** transcript se pehchana jata hai, is liye Settings wala koi bhi naam/jumla chalta hai ("Hey NOVA", "Suno Zara"). Urdu/Hindi script aur Whisper ki ghalat spellings ("ہی نووا", "کی نووا", "نووت") bhi samajh aati hain. Sirf "Hey NOVA" kehne par NOVA "Ji, farmaiye?" bolta hai aur 8 second tak bina wake word command leta hai.
+- **Do tareeqe:** mic button = push-to-talk (ek command, phir mic band). "Continuous listening" on ho to mic khula rehta hai aur sirf wake word ke baad wali baat command banti hai.
+- **Privacy:** audio kahin save nahi hota. Continuous mode mein bina wake word wali baatein na dikhai jati hain, na log hoti hain, na save hoti hain (test se verify).
+- **Urdu awaaz (TTS):** Piper Urdu voice. Test se pata chala ke yeh voice Roman Urdu ko English ki tarah parhti hai, is liye `translit.py` banaya — NOVA ke Roman Urdu jawab bolne se pehle Urdu script mein badalte hain (English alfaaz jaise Chrome/RAM English hi rehte hain). Test check karta hai ke NOVA ke har jawab ka har Urdu lafz lexicon mein ho.
+- Lamba jawab (jaise poori system report) ~18 second tak bola jata hai, phir "baqi tafseel screen par hai".
+- NOVA apni awaaz khud nahi sunta: bolte waqt mic ki awaaz ignore hoti hai.
+- **UI:** mic button ke modes ("Mic: Bolein" / "Mic: On · Hey NOVA"), bolte waqt avatar "SPEAKING", awaaz se di gayi command chat mein, Settings mein Awaaz section (zaban, awaaz, kab bolna hai, "🔊 Awaaz test karein").
+- Rules ab Whisper ki Urdu spellings bhi samajhte hain ("آر ایم" = RAM, "وندوز" = Windows) — is se voice command 16s se ~3s ho gayi.
+- Electron: sirf audio permission, autoplay jawab ke liye, CSP mein sirf NOVA backend se audio.
+
+Test:
+- Backend automated tests: 179/179 pass (44 naye): segmenter, wake word (asli Whisper outputs se), Roman Urdu→Urdu, push-to-talk, continuous (wake ke sath/baghair), follow-up, mute while speaking, model missing, speak modes, validation.
+- Frontend: 10/10 tests, typecheck aur build successful.
+- **Asli models ke sath end-to-end (`scripts/voice_loopback.py`):** NOVA ki khatoon awaaz ne "user" bankar commands boli, mic jaisa stream kiya gaya:
+  - "Hey NOVA, mera system check karo" → suna "میرا سسٹم چیک کرو" → report + Urdu awaaz, ~4.3s mein jawab tayyar.
+  - "RAM kitni free hai" → suna "آر ایم کتنی فیح ہے؟" → sahi jawab, ~2.8s.
+  - "aaj mausam bohat achha hai" (continuous, bina wake word) → kuch nahi kiya (sahi).
+- Browser: Awaaz test — Urdu awaaz chali (4.9s), avatar SPEAKING, phir wapas normal.
+- Electron (asli app ke andar check): audio worklet `file://` se load, CSP NOVA ki awaaz allow karti hai, mic permission granted, band karne par backend band.
+
+Bugs / masail jo test ke dauran mile aur fix kiye gaye:
+- Whisper "Hey" ko "ہی"/"کی" likhta hai aur "NOVA" ko kabhi "نووت" — wake word nahi pakra jata tha. Fix + tests.
+- Hindi "नोवा" Python ke `\w` se toot jata tha — tokenizer badla.
+- Custom wake word "Suno Zara" mein "Suno" ko naam samjha ja raha tha — fix.
+- Poori system report 45 second boli ja rahi thi — ab ~18 second + "baqi screen par".
+- Voice commands LLM par ja kar 10-16s le rahi thin — Urdu-script spellings rules mein add, ab ~3s.
+- Phase 4 mein App.tsx ki ek line kharab encoding ke sath commit hui thi ("●" ki jagah "â—") — theek ki.
+
+Maloom hadood (limitations):
+- Asli insani awaaz se test sirf admin kar sakta hai (browser pane mein mic block hai). Synthetic awaaz se ~80% wake word pakra gaya; asli awaaz behtar honi chahiye — admin feedback zaroori.
+- Whisper small CPU par ~2.7s leta hai; Urdu ki kuch alfaaz ghalat sun sakta hai.
+- Urdu awaaz Roman Urdu ke naye/anjaan alfaaz ko kabhi English ki tarah bol sakti hai — admin jo alfaaz batayenge woh lexicon mein add honge.
+
+Verification:
+- Har awaaz wali command activity log mein `source = voice` ke sath; read-only kaam par `verification_status = not_applicable`.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

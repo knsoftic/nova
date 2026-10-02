@@ -32,7 +32,11 @@ export type EventType =
   | "PLAN_CREATED"
   | "STEP_COMPLETED"
   | "AI_FALLBACK"
-  | "AI_STATUS";
+  | "AI_STATUS"
+  | "VOICE_STATUS"
+  | "VOICE_TRANSCRIBED"
+  | "WAKE_WORD_DETECTED"
+  | "NOVA_SPEAK";
 
 export type AiMode = "hybrid" | "llm" | "rules";
 
@@ -43,6 +47,9 @@ export interface UserSettings {
   startup_mode: "silent" | "active";
   ai_mode: AiMode;
   ai_model: string;
+  stt_language: "ur" | "hi" | "en" | "auto";
+  tts_voice: string;
+  speak_responses: "voice_only" | "always" | "never";
 }
 
 export interface AiStatus {
@@ -184,6 +191,16 @@ export interface ChatMessage {
   /** For NOVA replies: who understood the command and the steps that were planned. */
   provider?: string;
   steps?: PlanStepSummary[];
+  /** User message that came from speech recognition. */
+  voice?: boolean;
+}
+
+export interface VoiceStatus {
+  stt: { model: string; language: string; downloaded: boolean; loaded: boolean; error: string | null };
+  tts: { voice: string; available: boolean; voices: { id: string; label: string }[] };
+  speak_responses: "voice_only" | "always" | "never";
+  continuous_listening: boolean;
+  wake_word: string;
 }
 
 declare global {

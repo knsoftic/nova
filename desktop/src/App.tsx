@@ -13,6 +13,8 @@ import { SystemProfileView } from "./components/SystemProfileView";
 import type { NovaState } from "./lib/types";
 import { useMicrophone } from "./lib/useMicrophone";
 import { useNova } from "./lib/useNova";
+import { useSpeechPlayer } from "./lib/useSpeechPlayer";
+import { useVoice, type ListenMode } from "./lib/useVoice";
 
 type CenterView = "conversation" | "system" | "log";
 
@@ -32,24 +34,70 @@ export default function App() {
   const [agentFilter, setAgentFilter] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<NovaState | null>(null);
   const previewTimer = useRef<number | undefined>(undefined);
+  // Set when the user switches the mic off (or it failed), so continuous listening does not restart it.
+  const userStopped = useRef(false);
 
-  const { sendVoiceState } = nova;
-  // Keep the backend's LISTENING state in sync with the real microphone (incl. device unplugged).
+  const { stop: stopMic } = mic;
+  const voice = useVoice(
+    useCallback(() => {
+      // The server ends a push-to-talk turn after one utterance; in continuous mode "done" means an error.
+      stopMic();
+    }, [stopMic]),
+  );
+  const player = useSpeechPlayer(nova.lastSpeech, nova.sendPlayback);
+  const continuous = nova.settings?.continuous_listening ?? false;
+  const wakeWord = nova.settings?.wake_word ?? "Hey NOVA";
+
+  const { start: startMic } = mic;
+  const { start: startVoice, stop: stopVoice, sendPcm, markListening } = voice;
+
+  const startListening = useCallback(
+    async (mode: ListenMode) => {
+      if (!(await startMic(sendPcm))) {
+        userStopped.current = true;
+        return;
+      }
+      if (!(await startVoice(mode))) {
+        userStopped.current = true;
+        stopMic();
+      }
+    },
+    [startMic, startVoice, sendPcm, stopMic],
+  );
+
+  const stopListening = useCallback(() => {
+    stopVoice();
+    stopMic();
+  }, [stopVoice, stopMic]);
+
+  // Continuous listening: keep the mic open and wait for the wake word, unless the user switched it off.
   useEffect(() => {
-    sendVoiceState(mic.status === "on");
-  }, [mic.status, sendVoiceState]);
+    if (nova.connection !== "connected") return;
+    if (continuous && mic.status === "off" && !userStopped.current) void startListening("continuous");
+    if (!continuous && voice.mode === "continuous" && mic.status === "on") stopListening();
+  }, [nova.connection, continuous, mic.status, voice.mode, startListening, stopListening]);
 
   // Never leave the microphone open when the backend is gone.
-  const { stop: stopMic } = mic;
   useEffect(() => {
-    if (nova.connection !== "connected") stopMic();
-  }, [nova.connection, stopMic]);
+    if (nova.connection !== "connected") stopListening();
+  }, [nova.connection, stopListening]);
+
+  // After a continuous-mode command, NOVA returns to LISTENING: show "waiting" again.
+  useEffect(() => {
+    if (nova.state === "LISTENING") markListening();
+  }, [nova.state, markListening]);
 
   useEffect(() => () => window.clearTimeout(previewTimer.current), []);
 
   const toggleMic = () => {
-    if (mic.status === "on") mic.stop();
-    else void mic.start();
+    if (mic.status === "on") {
+      userStopped.current = true;
+      stopListening();
+    } else {
+      userStopped.current = false;
+      player.stop(); // speaking over NOVA interrupts it
+      void startListening(continuous ? "continuous" : "ptt");
+    }
   };
 
   const send = (text: string) => {
@@ -68,12 +116,24 @@ export default function App() {
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   const shownState = previewState ?? nova.state;
-  const voiceNote =
-    mic.status === "on"
-      ? "Mic on hai â€” abhi sirf awaaz ka level dikhaya ja raha hai; awaaz se command Phase 5 mein aayegi. Audio na save hota hai na kahin bheja jata hai."
-      : ["denied", "unavailable", "error"].includes(mic.status)
-        ? MIC_LABEL[mic.status].hint
-        : null;
+
+  let voiceNote: string | null = null;
+  if (voice.error) voiceNote = voice.error;
+  else if (["denied", "unavailable", "error"].includes(mic.status)) voiceNote = MIC_LABEL[mic.status].hint;
+  else if (player.speaking) voiceNote = "Bol raha hoon... (mic button dabane se ruk jayega)";
+  else if (mic.status === "on") {
+    voiceNote =
+      voice.phase === "hearing"
+        ? "Sun raha hoon..."
+        : voice.phase === "processing"
+          ? "Samajh raha hoon..."
+          : voice.mode === "continuous"
+            ? `"${wakeWord}" keh kar command dein. Doosri baatein na save hoti hain na dikhai jati hain.`
+            : "Bolein — khamosh hote hi command bhej di jayegi.";
+  }
+
+  const micLabel =
+    mic.status !== "on" ? undefined : voice.mode === "continuous" ? `Mic: On · ${wakeWord}` : "Mic: Bolein";
 
   return (
     <div className="flex h-screen flex-col gap-4 p-4">
@@ -82,6 +142,7 @@ export default function App() {
         connection={nova.connection}
         version={nova.version}
         micStatus={mic.status}
+        micLabel={micLabel}
         aiStatus={nova.aiStatus}
         onOpenSettings={() => setSettingsOpen(true)}
       />
@@ -100,7 +161,7 @@ export default function App() {
                 }`}
               >
                 {v.label}
-                {v.id === "system" && nova.scanning && <span className="ml-2 animate-pulse text-amber-300">â—</span>}
+                {v.id === "system" && nova.scanning && <span className="ml-2 animate-pulse text-amber-300">●</span>}
               </button>
             ))}
           </nav>
@@ -111,6 +172,7 @@ export default function App() {
                 name={nova.assistantName}
                 level={shownState === "LISTENING" ? mic.level : 0}
                 preview={previewState !== null}
+                speaking={player.speaking && previewState === null}
               />
               <div className="min-h-0 w-full max-w-2xl flex-1 overflow-y-auto px-2 pb-2" data-scroll-container>
                 <ErrorBoundary label="Conversation">
@@ -149,6 +211,7 @@ export default function App() {
         mic={
           <MicControl
             status={mic.status}
+            label={micLabel}
             deviceLabel={mic.deviceLabel}
             analyserRef={mic.analyserRef}
             onToggle={toggleMic}

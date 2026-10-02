@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Callable
 
 import httpx
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ValidationError
@@ -22,6 +23,7 @@ from .db import Database
 from .discovery import DiscoveryService, LiveStats, SystemProfile, find_app
 from .events import EventBus, EventType, NovaEvent
 from .orchestrator import CommandResult, Orchestrator
+from .voice import SpeechToText, TextToSpeech, VoiceService, VoiceSession
 from .user_settings import (
     UserSettings,
     UserSettingsUpdate,
@@ -33,6 +35,7 @@ from .user_settings import (
 log = logging.getLogger("nova")
 
 MAX_COMMAND_LENGTH = 2000
+MAX_AUDIO_FRAME_BYTES = 64_000  # 2 s of 16 kHz int16 per frame is far more than the UI sends
 
 
 async def _background_scan(discovery: DiscoveryService) -> None:
@@ -67,6 +70,10 @@ async def _prepare_ai(providers: ProviderManager, bus: EventBus) -> None:
                                 data=await providers.status()))
 
 
+class SpeakRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=600)
+
+
 class CommandRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_COMMAND_LENGTH)
     source: str = Field(default="text", pattern="^(text|voice)$")
@@ -77,8 +84,10 @@ def create_app(
     scanner: Callable[[], SystemProfile] | None = None,
     stats: Callable[[], LiveStats] | None = None,
     ollama_transport: httpx.AsyncBaseTransport | None = None,
+    stt: SpeechToText | None = None,
+    tts: TextToSpeech | None = None,
 ) -> FastAPI:
-    """`scanner`/`stats`/`ollama_transport` replace the real Windows collectors and Ollama (tests)."""
+    """`scanner`/`stats`/`ollama_transport`/`stt`/`tts` replace real collectors, Ollama and voice models (tests)."""
     settings = settings or load_settings()
 
     @asynccontextmanager
@@ -105,6 +114,16 @@ def create_app(
         app.state.orchestrator = Orchestrator(bus, db, providers, assistant_name, discovery)
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
+        voice = VoiceService(
+            bus,
+            app.state.orchestrator,
+            stt or SpeechToText(settings.models_dir / "whisper", settings.stt_model, user_settings.stt_language),
+            tts or TextToSpeech(settings.models_dir / "piper", user_settings.tts_voice),
+            settings=lambda: app.state.user_settings,
+        )
+        voice.apply_settings(user_settings)
+        voice.start_listener()
+        app.state.voice = voice
         await bus.publish(
             NovaEvent(type=EventType.SYSTEM_READY, agent="Orchestrator", message=f"{assistant_name} online hai")
         )
@@ -113,7 +132,7 @@ def create_app(
         startup_scan: asyncio.Task[Any] | None = None
         if settings.discovery_on_startup:
             startup_scan = asyncio.create_task(_background_scan(discovery))
-        app.state.background = {asyncio.create_task(_prepare_ai(providers, bus))}
+        app.state.background = {asyncio.create_task(_prepare_ai(providers, bus)), asyncio.create_task(voice.prepare())}
         if startup_scan:
             app.state.background.add(startup_scan)
         log.info("NOVA backend ready on %s:%s", settings.host, settings.port)
@@ -125,6 +144,7 @@ def create_app(
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
+            await voice.shutdown()
             db.close()
 
     app = FastAPI(title="NOVA Backend", version=__version__, lifespan=lifespan)
@@ -151,7 +171,7 @@ def create_app(
             "version": __version__,
             "ai": await app.state.providers.status(),
             "capabilities": {
-                "voice": False,
+                "voice": app.state.voice.stt.model_downloaded() and app.state.voice.tts.is_available(),
                 "system_discovery": True,
                 "computer_control": False,
                 "permission_engine": False,
@@ -172,6 +192,7 @@ def create_app(
         save_user_settings(app.state.db, new)
         app.state.user_settings = new
         orchestrator().apply_settings(new.assistant_name, new.wake_word)
+        app.state.voice.apply_settings(new)
         changed = sorted(k for k, v in update.model_dump(exclude_none=True).items())
         if {"ai_mode", "ai_model"} & set(changed):
             app.state.providers.configure(mode=new.ai_mode, model=new.ai_model)
@@ -192,6 +213,25 @@ def create_app(
     @app.get("/api/ai/status")
     async def ai_status(refresh: bool = False) -> dict[str, Any]:
         return await app.state.providers.status(refresh=refresh)
+
+    @app.get("/api/voice/status")
+    async def voice_status() -> dict[str, Any]:
+        return app.state.voice.status()
+
+    @app.post("/api/voice/speak")
+    async def voice_speak(req: SpeakRequest) -> dict[str, Any]:
+        """Speak a line through the Urdu voice (used by the 'Awaaz test' button)."""
+        voice: VoiceService = app.state.voice
+        if not voice.tts.is_available():
+            raise HTTPException(status_code=409, detail="Urdu voice download nahi hui")
+        return {"speech_id": await voice.speak(req.text)}
+
+    @app.get("/api/voice/speech/{speech_id}")
+    async def voice_speech(speech_id: str) -> Response:
+        wav = app.state.voice.get_speech(speech_id)
+        if wav is None:
+            raise HTTPException(status_code=404, detail="Speech expired")
+        return Response(content=wav, media_type="audio/wav", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/system/profile")
     async def system_profile() -> dict[str, Any]:
@@ -231,14 +271,47 @@ def create_app(
     async def conversations(limit: int = 50) -> list[dict[str, Any]]:
         return app.state.db.list_conversations(max(1, min(limit, 500)))
 
-    @app.websocket("/ws")
-    async def websocket_endpoint(ws: WebSocket) -> None:
+    async def accept_ui_socket(ws: WebSocket) -> bool:
         origin = ws.headers.get("origin")
         # Browsers always send Origin on WebSocket upgrades; reject web pages that are not NOVA's UI.
         if origin is not None and origin not in settings.allowed_origins:
             await ws.close(code=1008)
-            return
+            return False
         await ws.accept()
+        return True
+
+    @app.websocket("/ws/voice")
+    async def voice_socket(ws: WebSocket) -> None:
+        """Microphone stream: JSON control messages + binary 16 kHz mono int16 PCM frames."""
+        if not await accept_ui_socket(ws):
+            return
+        session = VoiceSession(app.state.voice, ws.send_json)
+        try:
+            while True:
+                msg = await ws.receive()
+                if msg["type"] == "websocket.disconnect":
+                    break
+                if (pcm := msg.get("bytes")) is not None:
+                    await session.feed(pcm[:MAX_AUDIO_FRAME_BYTES])
+                    continue
+                try:
+                    control = json.loads(msg.get("text") or "{}")
+                except ValueError:
+                    continue
+                kind = control.get("type")
+                if kind == "start":
+                    await session.start("continuous" if control.get("mode") == "continuous" else "ptt")
+                elif kind == "stop":
+                    await session.stop()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await session.close()
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(ws: WebSocket) -> None:
+        if not await accept_ui_socket(ws):
+            return
         bus: EventBus = app.state.bus
         queue = bus.subscribe()
         orch = orchestrator()
@@ -280,6 +353,9 @@ def create_app(
                 elif kind == "voice_state":
                     client_opened_mic = bool(msg.get("active"))
                     await orch.set_voice_active(client_opened_mic)
+                elif kind == "playback":
+                    # NOVA's voice is playing in the UI: stop listening so it does not hear itself.
+                    app.state.voice.set_playback(bool(msg.get("active")))
                 else:
                     await ws.send_json({"type": "ERROR", "message": "Unknown message type"})
         except (WebSocketDisconnect, ValueError):

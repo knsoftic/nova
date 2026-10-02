@@ -11,6 +11,8 @@ function productionCsp(): Plugin {
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     `connect-src 'self' http://${BACKEND} ws://${BACKEND}`,
+    // NOVA's spoken replies are WAV files served by the local backend.
+    `media-src 'self' http://${BACKEND}`,
   ].join("; ");
   return {
     name: "nova-production-csp",

@@ -21,6 +21,8 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // NOVA speaks replies to voice commands without a click in between.
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
 

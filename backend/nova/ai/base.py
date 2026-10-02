@@ -20,8 +20,21 @@ KNOWN_INTENTS = (
     "rescan_system",
     "change_setting",
     "run_workflow",
+    # computer control (Phase 6)
+    "close_app",
+    "focus_app",
+    "window_control",
+    "read_screen",
+    "screenshot",
+    "keyboard_shortcut",
+    "type_text",
+    "mouse_click",
     "unknown",
 )
+
+WINDOW_ACTIONS = ("minimize", "maximize", "restore", "show_desktop")
+SHORTCUT_NAMES = ("copy", "paste", "cut", "undo", "redo", "select_all", "save", "new_tab", "close_tab", "find",
+                  "refresh", "enter", "escape")
 
 SYSTEM_TOPICS = (
     "summary", "cpu", "ram", "gpu", "storage", "windows", "devices", "displays",

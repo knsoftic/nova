@@ -13,7 +13,7 @@ const STEP_BADGE: Record<PlanStepSummary["status"], { icon: string; tone: string
 
 function stepNote(s: PlanStepSummary): string {
   if (s.status === "unavailable" && s.available_from_phase) return `Phase ${s.available_from_phase} mein`;
-  if (s.status === "needs_permission") return "permission chahiye";
+  if (s.status === "needs_permission") return "ijazat chahiye (Phase 7)";
   if (s.status === "done") return "ho gaya";
   return s.status;
 }

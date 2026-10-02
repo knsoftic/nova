@@ -92,6 +92,13 @@ LEXICON: dict[str, str] = {
     "thaka": "تھکا", "thake": "تھکے", "sawaal": "سوال", "ilm": "علم", "seekh": "سیکھ", "padhai": "پڑھائی",
     "ummeed": "امید", "mubarak": "مبارک", "behtar": "بہتر", "behtareen": "بہترین", "kaafi": "کافی",
     "zaroorat": "ضرورت", "matlab": "مطلب", "yaani": "یعنی", "misaal": "مثال", "maslan": "مثلاً",
+    # computer control replies (Phase 6)
+    "dabana": "دبانا", "dabaya": "دبایا", "dabao": "دباؤ", "doosre": "دوسرے", "doosra": "دوسرا", "karega": "کرے گا",
+    "lana": "لانا", "la": "لا", "nateeja": "نتیجہ", "pooch": "پوچھ", "saamne": "سامنے", "samne": "سامنے",
+    "tabdeeli": "تبدیلی", "chhoti": "چھوٹی", "bari": "بڑی", "jagah": "جگہ", "tasdeeq": "تصدیق", "badla": "بدلا",
+    "nazar": "نظر", "saaf": "صاف", "tak": "تک", "lein": "لیں", "le": "لے", "shayad": "شاید", "chalane": "چلانے",
+    "sakoon": "سکوں", "uski": "اس کی", "use": "اسے", "aayi": "آئی", "dikha": "دکھا", "jise": "جسے",
+    "kahein": "کہیں", "khol": "کھول", "lane": "لانے", "likha": "لکھا", "likhne": "لکھنے", "parhne": "پڑھنے",
 }
 # "ki" appears twice above (possessive and "did"); both are written the same in Urdu.
 

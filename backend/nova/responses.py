@@ -67,5 +67,21 @@ def build_response(intent: Intent, assistant_name: str, answer: str | None = Non
             return "Maaf kijiye, main ye command abhi samajh nahi saka. Dobara thore mukhtalif alfaaz mein bataiye."
 
 
+def build_permission_response(intent: Intent, description: str) -> str:
+    """For medium/high-risk steps, which never run before the user can grant permission."""
+    e = intent.entities
+    detail = {
+        "type_text": f": \"{str(e.get('text', ''))[:40]}\"" if e.get("text") else "",
+        "close_app": f": {e['app']}" if e.get("app") else "",
+        "mouse_click": f": \"{e['target']}\"" if e.get("target") else "",
+        "keyboard_shortcut": f": {e['keys']}" if e.get("keys") else "",
+    }.get(intent.name, "")
+    return (
+        f"Ye kaam ({description}{detail}) aap ke doosre apps mein tabdeeli karta hai, is liye pehle aap ki ijazat "
+        f"zaroori hai. Permission Engine Phase {PERMISSION_ENGINE_PHASE} mein aayega — tab NOVA aap se pooch kar "
+        "ye karega. Abhi kuch nahi kiya gaya."
+    )
+
+
 def build_error_response() -> str:
     return "Maaf kijiye, command process karte waqt masla aa gaya. Detail activity log mein hai."

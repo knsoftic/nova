@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nova.config import Settings
+from nova.control.windows import WindowInfo
 from nova.discovery.models import (
     AppEntry,
     AudioDevice,
@@ -95,16 +96,103 @@ class FakeOllama:
         return httpx.MockTransport(self.handler)
 
 
-def build_client(tmp_path, ollama: FakeOllama | None = None):
+class FakeDesktop:
+    """Stand-in for the Windows desktop: tests never open, focus or type into real windows."""
+
+    def __init__(self):
+        self.windows: list[WindowInfo] = [
+            WindowInfo(hwnd=101, title="Inbox - Google Chrome", pid=11, process="chrome.exe",
+                       class_name="Chrome_WidgetWin_1", minimized=False, maximized=False),
+            WindowInfo(hwnd=102, title="notes.txt - Notepad", pid=12, process="Notepad.exe",
+                       class_name="Notepad", minimized=False, maximized=False),
+        ]
+        self.calls: list[tuple] = []
+        self.launch_outcome = "opened"
+        self.focus_ok = True
+        self.clipboard = 1
+        self.copy_changes_clipboard = True
+
+    def list_windows(self):
+        return list(self.windows)
+
+    def last_user_window(self):
+        return self.windows[0] if self.windows else None
+
+    def find_windows(self, name, executable=None):
+        from nova.control.windows import window_matches
+
+        return [w for w in self.windows if window_matches(w, name, executable)]
+
+    def focus(self, hwnd, timeout=2.0):
+        self.calls.append(("focus", hwnd))
+        return self.focus_ok
+
+    def set_state(self, hwnd, action):
+        self.calls.append(("set_state", hwnd, action))
+        return True
+
+    def request_close(self, hwnd):
+        self.calls.append(("close", hwnd))
+
+    def window_exists(self, hwnd):
+        return any(w.hwnd == hwnd for w in self.windows)
+
+    def launch(self, app, **_):
+        from nova.control.launcher import LaunchResult
+
+        self.calls.append(("launch", app.name))
+        if self.launch_outcome == "opened":
+            self.windows.insert(0, WindowInfo(hwnd=200 + len(self.calls), title=app.name, pid=99,
+                                              process="app.exe", class_name="X", minimized=False, maximized=False))
+            return LaunchResult("opened", app.name, 0.8)
+        return LaunchResult(self.launch_outcome, seconds=15.0)
+
+    def read_window(self, hwnd, title, process):
+        from nova.control.screen import ScreenReading, UiElement
+
+        self.calls.append(("read", hwnd))
+        return ScreenReading(window_title=title, process=process,
+                             text_lines=["Inbox", "Meeting at 5 pm", "ok"],
+                             elements=[UiElement("button", "Compose", 10, 10), UiElement("edit", "Search mail", 50, 10)])
+
+    def save_screenshot(self, directory):
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / "NOVA_test.png"
+        path.write_bytes(b"\x89PNG fake")
+        self.calls.append(("screenshot", str(path)))
+        return path
+
+    def hotkey(self, name):
+        self.calls.append(("hotkey", name))
+        if name in ("copy", "cut") and self.copy_changes_clipboard:
+            self.clipboard += 1
+        return True
+
+    def clipboard_sequence(self):
+        return self.clipboard
+
+
+def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDesktop | None = None):
     ollama = ollama or FakeOllama(models=[])  # reachable but no model: rules only, deterministic
     app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False), scanner=make_profile,
-                     stats=fake_stats, ollama_transport=ollama.transport)
+                     stats=fake_stats, ollama_transport=ollama.transport, desktop=desktop or FakeDesktop())
     return TestClient(app)
 
 
 @pytest.fixture
 def client(tmp_path):
     with build_client(tmp_path) as c:
+        yield c
+
+
+@pytest.fixture
+def desktop():
+    return FakeDesktop()
+
+
+@pytest.fixture
+def control_client(tmp_path, desktop):
+    with build_client(tmp_path, desktop=desktop) as c:
         yield c
 
 

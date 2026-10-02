@@ -28,6 +28,7 @@ const CATEGORY: Record<Exclude<ActivityFilter, "all">, EventType[]> = {
     "PERMISSION_REQUIRED",
     "VERIFICATION_STARTED",
     "VERIFICATION_PASSED",
+    "VERIFICATION_FAILED",
   ],
   system: [
     "SYSTEM_READY",
@@ -39,7 +40,7 @@ const CATEGORY: Record<Exclude<ActivityFilter, "all">, EventType[]> = {
     "AI_STATUS",
     "AI_FALLBACK",
   ],
-  errors: ["TASK_FAILED", "DISCOVERY_FAILED"],
+  errors: ["TASK_FAILED", "DISCOVERY_FAILED", "VERIFICATION_FAILED"],
 };
 
 export function matchesActivity(event: NovaEvent, filter: ActivityFilter, agent: string | null = null): boolean {

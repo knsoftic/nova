@@ -10,6 +10,8 @@ const TONE: Partial<Record<EventType, string>> = {
   DISCOVERY_COMPLETED: "text-emerald-400",
   PERMISSION_REQUIRED: "text-orange-400",
   VERIFICATION_PASSED: "text-emerald-400",
+  VERIFICATION_FAILED: "text-red-400",
+  ACTION_EXECUTED: "text-amber-300",
   NOVA_RESPONSE: "text-sky-300",
   NOVA_LISTENING: "text-emerald-300",
   SYSTEM_READY: "text-emerald-400",

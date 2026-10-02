@@ -242,3 +242,49 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 5 commit `7cd6878`, `main` mein merge `419ba78`.
+
+---
+
+### Task: Phase 6 — Computer Control
+
+Status: Complete (branch `phase-6-computer-control`, approval ke baad `main` mein merge)
+
+Kaam:
+- **Application kholna (asli):** sirf System Discovery wali apps khul sakti hain (Start menu AppID ya discovered exe se) — user ya AI model se aaya koi path/command kabhi nahi chalta. Kholne ke baad **verification**: nayi window nazar aaye to "khul gaya", pehle se khuli ho to "saamne la diya", 15 second mein window na aaye to imandari se batata hai.
+- **Windows:** kisi app par jana (focus), minimize, maximize, restore, desktop dikhana — har ek ke baad state check hoti hai. "Ye window" ka matlab: aap ki pichli window (NOVA ki apni nahi).
+- **Screen samajhna:** Windows UI Automation (buttons/fields ke asli naam) + Windows ka built-in OCR (likha hua text). Window doosri windows ke peeche bhi ho to parh leta hai. Sab local.
+- **Screenshot:** `data/screenshots/` mein, file ban'ne ki verification.
+- **Keyboard/mouse (SendInput):** copy (clipboard badla ya nahi — verify), aur paste, type, click, close, save waghera. Copy/select-all low risk — chalte hain. **Paste, type, click, app band karna, save: medium risk — banaye aur test kiye gaye, lekin Permission Engine (Phase 7) tak locked.** Test se verify ke locked commands par desktop ko haath bhi nahi lagaya jata, aur AI model ko dhoka de kar bhi lock nahi tootta.
+- Naye commands (Roman Urdu/English/Urdu/Hindi): "Chrome pe jao", "Chrome minimize karo", "desktop dikhao", "screen par kya hai", "screenshot lo", "copy karo", "likho: ...", "OK par click karo", "Chrome band karo". "likho: ..." ka text kabhi commands mein nahi toot'ta (maslan "likho: Chrome kholo aur RAM batao" sirf likhega).
+- Naye events: VERIFICATION_STARTED / PASSED / FAILED; avatar VERIFYING state; activity log mein asli verification status.
+
+Test:
+- Backend automated tests: 234/234 pass (55 naye) — fake desktop par: launch + verify, unverified ka imandar jawab, na-installed app, focus fail, window control, screen read, screenshot, copy + clipboard check, locked actions (desktop untouched), AI model se lock bypass ki koshish, input events (Urdu Unicode typing), window matching, launcher logic.
+- Frontend: 10/10 tests, build successful.
+- **Is PC par asli test (Calculator — bezarar):** kholna 0.8s mein verify, minimize/focus/maximize/restore sab verify, screen read 0.7s, screenshot, "band karo"/"type karo" locked, Telegram "nahi mila". Test ke baad Calculator band aur screenshot delete kiya.
+- AI brain eval (36 commands, 10 naye computer-control): hybrid 36/36 (ek ghalti fix ke baad), LLM-only 35/36 → prompt fix ke baad wo case bhi sahi.
+- Browser UI: compound "Calculator kholo aur RAM batao" ✓✓, "Calculator band karo" 🔒.
+- Electron app: asli backend se Calculator khula aur verify hua.
+
+Bugs jo test ke dauran mile aur fix kiye gaye:
+- 64-bit Windows handles ctypes mein overflow ho rahe thay (window capture) — sahi types diye.
+- "WhatsApp wali window" mein "wali window" app ke naam mein shamil ho raha tha — fix.
+- AI model "likho: ..." ko sawal samajh raha tha — prompt mein misaal.
+- Naye Urdu alfaaz ka awaaz test (lexicon coverage) ne computer agent ke jawabon ke anjaan alfaaz pakray — add kiye.
+
+Maloom hadood (limitations):
+- Windows administrator (elevated) apps mein NOVA type/click nahi kar sakta (Windows ki hifazat).
+- Windows OCR sirf English text parhta hai (is PC par sirf English OCR language hai); Urdu text screen se nahi parha jata.
+- Kuch apps (jaise Claude/Electron apps) apne buttons accessibility mein kam dikhati hain — un par OCR kaam aata hai.
+
+Verification:
+- Har action ka verification status activity log mein (passed / failed / unverified / not_applicable).
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

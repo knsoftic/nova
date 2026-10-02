@@ -2,8 +2,9 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 1 (Foundation)**. NOVA understands commands and replies in Roman Urdu, but does not
-execute computer actions yet. See [LOGS.md](LOGS.md) for development history and approval status.
+Current status: **Phase 2 (System Discovery)**. NOVA understands commands, replies in Roman Urdu, scans the
+PC (hardware, Windows, devices, installed apps, browsers) and answers system questions. It does not launch apps
+or change anything on the PC yet. See [LOGS.md](LOGS.md) for development history and approval status.
 
 ## Layout
 
@@ -12,7 +13,9 @@ nova/
 ├── backend/            Python FastAPI backend (127.0.0.1:8765)
 │   ├── nova/
 │   │   ├── main.py         REST API + WebSocket /ws
-│   │   ├── orchestrator.py command → intent → response pipeline
+│   │   ├── orchestrator.py command → intent → agent → response pipeline
+│   │   ├── discovery/      system scan: probe.ps1, Windows collectors, app catalog, self-configuration
+│   │   ├── agents/         System Agent (read-only)
 │   │   ├── events.py       event types, NOVA states, event bus
 │   │   ├── ai/             AI Provider Manager + rule-based provider
 │   │   ├── language.py     Urdu / Hindi / Roman Urdu / English detection
@@ -89,8 +92,22 @@ Environment variables (backend):
 | `NOVA_DATA_DIR` | `<repo>/data` | SQLite location |
 | `NOVA_ASSISTANT_NAME` | `NOVA` | Assistant name |
 | `NOVA_AI_PROVIDER` | `rule_based` | Active AI provider |
+| `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
 
-## Admin manual test (Phase 1)
+## Admin manual test (Phase 2)
+
+1. `desktop/` mein `npm start` chalayein. Right panel mein "System scan shuru" aur kuch second baad "System scan mukammal — N applications mili" aana chahiye.
+2. Center mein **System Profile** tab kholein. Check karein ke CPU, RAM, GPU, storage, Windows version, mic/speaker/camera, browsers aur default browser aapke PC ke mutabiq sahi hain. Installed applications mein kisi app ko search karein.
+3. "Dobara scan karo" button dabayein — scan dobara hona chahiye.
+4. **Conversation** tab mein ye commands bhejein:
+   - `mera system check karo` → puri system report
+   - `RAM check karo`, `Windows ka version batao`, `storage check karo`
+   - `kya photoshop installed hai` aur `kya telegram installed hai` (jo installed nahi)
+   - `WhatsApp kholo` → "installed hai", lekin open **nahi** hona chahiye
+   - `Chrome ko default browser bana do` → koi setting change **nahi** honi chahiye
+5. Sab theek ho to approve karein, warna problem batayein.
+
+## Admin manual test (Phase 1, approved)
 
 1. `desktop/` mein `npm start` chalayein. NOVA window khulni chahiye aur upar "Backend connected" nazar aana chahiye.
 2. Ye commands bhej kar dekhein:

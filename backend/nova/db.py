@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS activity_log (
     final_result TEXT
 );
 
+CREATE TABLE IF NOT EXISTS system_profile (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    profile_json TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_activity_task ON activity_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at);
 """
@@ -157,3 +163,18 @@ class Database:
 
     def list_activity(self, limit: int = 100) -> list[dict[str, Any]]:
         return self._query("SELECT * FROM activity_log ORDER BY id DESC LIMIT ?", (limit,))
+
+    # system profile (latest few kept for comparison)
+    def save_system_profile(self, profile_json: str, keep: int = 5) -> None:
+        self._execute(
+            "INSERT INTO system_profile(created_at, profile_json) VALUES (?, ?)",
+            (datetime.now().isoformat(timespec="seconds"), profile_json),
+        )
+        self._execute(
+            "DELETE FROM system_profile WHERE id NOT IN (SELECT id FROM system_profile ORDER BY id DESC LIMIT ?)",
+            (keep,),
+        )
+
+    def latest_system_profile(self) -> str | None:
+        rows = self._query("SELECT profile_json FROM system_profile ORDER BY id DESC LIMIT 1")
+        return rows[0]["profile_json"] if rows else None

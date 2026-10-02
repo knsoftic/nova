@@ -1,7 +1,13 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 export function CommandBar({ onSend, disabled }: { onSend: (text: string) => boolean; disabled: boolean }) {
   const [text, setText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // autoFocus only applies at mount, when the input is usually still disabled (backend connecting).
+  useEffect(() => {
+    if (!disabled) inputRef.current?.focus();
+  }, [disabled]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -21,6 +27,7 @@ export function CommandBar({ onSend, disabled }: { onSend: (text: string) => boo
         Mic: Off
       </button>
       <input
+        ref={inputRef}
         value={text}
         onChange={(e) => setText(e.target.value)}
         maxLength={2000}
@@ -28,7 +35,6 @@ export function CommandBar({ onSend, disabled }: { onSend: (text: string) => boo
         disabled={disabled}
         className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-4 py-2 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-sky-500/60 disabled:opacity-50"
         aria-label="NOVA command"
-        autoFocus
       />
       <button
         type="submit"

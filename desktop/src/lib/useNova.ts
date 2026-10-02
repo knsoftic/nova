@@ -18,6 +18,9 @@ export function useNova() {
   const [version, setVersion] = useState<string | null>(null);
   const [events, setEvents] = useState<NovaEvent[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [scanning, setScanning] = useState(false);
+  // Bumped after every finished scan so profile views know to refetch.
+  const [profileRevision, setProfileRevision] = useState(0);
 
   const wsRef = useRef<WebSocket | null>(null);
   const holdUntil = useRef(0);
@@ -55,6 +58,11 @@ export function useNova() {
         return;
       }
       setEvents((prev) => [msg, ...prev].slice(0, MAX_EVENTS));
+      if (msg.type === "DISCOVERY_STARTED") setScanning(true);
+      if (msg.type === "DISCOVERY_COMPLETED" || msg.type === "DISCOVERY_FAILED") {
+        setScanning(false);
+        setProfileRevision((n) => n + 1);
+      }
       if (msg.type === "NOVA_RESPONSE" || msg.type === "TASK_FAILED") {
         const text = msg.message ?? "";
         setMessages((prev) =>
@@ -125,5 +133,5 @@ export function useNova() {
     return true;
   }, []);
 
-  return { connection, state, assistantName, version, events, messages, sendCommand };
+  return { connection, state, assistantName, version, events, messages, sendCommand, scanning, profileRevision };
 }

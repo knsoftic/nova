@@ -14,7 +14,8 @@ def test_status_reports_honest_capabilities(client):
     data = client.get("/api/status").json()
     assert data["assistant_name"] == "NOVA"
     assert data["state"] == "IDLE"
-    assert not any(data["capabilities"].values())
+    assert data["capabilities"]["system_discovery"] is True
+    assert not data["capabilities"]["computer_control"]
 
 
 def test_command_responds_in_roman_urdu_without_claiming_execution(client):
@@ -59,9 +60,10 @@ def test_websocket_event_flow(client):
     types = [e["type"] for e in seen]
     assert types.index("TASK_STARTED") < types.index("INTENT_DETECTED") < types.index("TASK_COMPLETED")
     states = [e["data"]["state"] for e in seen if e["type"] == "STATE_CHANGED"]
-    assert states == ["THINKING", "COMPLETED", "IDLE"]
+    assert states == ["THINKING", "WORKING", "COMPLETED", "IDLE"]
     response = next(e for e in seen if e["type"] == "NOVA_RESPONSE")
-    assert "VS Code" in response["message"]
+    assert "Visual Studio Code is PC par installed hai" in response["message"]
+    assert "koi action nahi kiya gaya" in response["message"]
 
 
 def test_websocket_rejects_foreign_origin(client):

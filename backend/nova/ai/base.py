@@ -9,7 +9,9 @@ from pydantic import BaseModel, Field
 
 
 class Intent(BaseModel):
-    name: str  # greeting | help | open_app | web_search | system_info | create_folder | unknown
+    # greeting | help | open_app | app_check | web_search | create_folder | system_info
+    # | rescan_system | change_setting | run_workflow | unknown
+    name: str
     confidence: float = 0.0
     language: str = "unknown"
     entities: dict[str, Any] = Field(default_factory=dict)

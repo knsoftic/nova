@@ -1,4 +1,4 @@
-import type { ActivityRecord, LiveStats, SystemProfile, UserSettings } from "./types";
+import type { ActivityRecord, AiStatus, LiveStats, SystemProfile, UserSettings } from "./types";
 
 export const API_BASE = import.meta.env.VITE_NOVA_API_URL ?? "http://127.0.0.1:8765";
 
@@ -34,6 +34,7 @@ export const api = {
   settings: () => request<UserSettings>("/api/settings"),
   updateSettings: (patch: Partial<UserSettings>) => request<UserSettings>("/api/settings", json("PUT", patch)),
   activity: (limit = 200) => request<ActivityRecord[]>(`/api/activity?limit=${limit}`),
+  aiStatus: (refresh = false) => request<AiStatus>(`/api/ai/status${refresh ? "?refresh=true" : ""}`),
 };
 
 /** Turns a FastAPI 422 body into {field: message} for form display. */

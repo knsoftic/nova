@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage, ConnectionStatus, NovaEvent, NovaState, ServerMessage, UserSettings } from "./types";
+import { api } from "./api";
+import type {
+  AiStatus,
+  ChatMessage,
+  ConnectionStatus,
+  NovaEvent,
+  NovaState,
+  PlanStepSummary,
+  ServerMessage,
+  UserSettings,
+} from "./types";
 
 export const BACKEND_WS_URL = import.meta.env.VITE_NOVA_WS_URL ?? "ws://127.0.0.1:8765/ws";
 
@@ -24,6 +34,7 @@ export function useNova() {
   // Bumped when something lands in the persisted activity log.
   const [activityRevision, setActivityRevision] = useState(0);
   const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   // Whether this window's microphone is open; re-announced to the backend after reconnects.
   const voiceActiveRef = useRef(false);
 
@@ -54,6 +65,7 @@ export function useNova() {
         setVersion(msg.data.version);
         setSettings(msg.data.settings);
         setState(msg.data.state);
+        api.aiStatus().then(setAiStatus).catch(() => undefined);
         setEvents(msg.data.history.filter((e) => e.type !== "STATE_CHANGED").reverse());
         return;
       }
@@ -77,12 +89,22 @@ export function useNova() {
         setScanning(false);
         setProfileRevision((n) => n + 1);
       }
+      if (msg.type === "AI_STATUS") setAiStatus(msg.data as unknown as AiStatus);
       if (msg.type === "NOVA_RESPONSE" || msg.type === "TASK_FAILED") {
         const text = msg.message ?? "";
+        const data = msg.data as { provider?: string; steps?: PlanStepSummary[] };
         setMessages((prev) =>
           [
             ...prev,
-            { id: nextId(), role: "nova" as const, text, timestamp: msg.timestamp, failed: msg.type === "TASK_FAILED" },
+            {
+              id: nextId(),
+              role: "nova" as const,
+              text,
+              timestamp: msg.timestamp,
+              failed: msg.type === "TASK_FAILED",
+              provider: data.provider,
+              steps: data.steps,
+            },
           ].slice(-MAX_MESSAGES),
         );
       }
@@ -156,6 +178,14 @@ export function useNova() {
 
   const clearEvents = useCallback(() => setEvents([]), []);
 
+  const refreshAiStatus = useCallback(async () => {
+    try {
+      setAiStatus(await api.aiStatus(true));
+    } catch {
+      /* backend offline: keep the last known status */
+    }
+  }, []);
+
   return {
     connection,
     state,
@@ -170,5 +200,7 @@ export function useNova() {
     profileRevision,
     activityRevision,
     settings,
+    aiStatus,
+    refreshAiStatus,
   };
 }

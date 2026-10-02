@@ -1,35 +1,46 @@
-"""AI Orchestrator: command -> intent -> agent -> response (future phases add plan, permission, verify).
+"""AI Orchestrator: command -> understand (AI brain) -> plan -> agents -> response.
 
-Only read-only System Agent actions execute in Phase 2. Nothing else is executed, and responses
-never claim otherwise.
+Only low-risk, read-only System Agent actions execute so far. Steps whose agent does not exist yet
+or that need permission are planned and reported, never executed, and responses never claim
+otherwise. The Permission Engine (Phase 7) and verification of state-changing actions plug in at
+_run_step.
 """
 
 from __future__ import annotations
 
 import logging
 import uuid
+from collections import deque
 from dataclasses import dataclass
+from typing import Any
 
 from pydantic import BaseModel
 
 from .agents import system_agent
-from .ai.base import Intent
+from .ai.base import ConversationTurn, Intent
 from .ai.manager import ProviderManager
 from .db import Database
 from .discovery.models import LiveStats, SystemProfile
 from .discovery.service import DiscoveryService
 from .events import EventBus, EventType, NovaEvent, NovaState
-from .responses import PENDING_CAPABILITY_PHASE, build_error_response, build_response
+from .planner import Plan, PlanStep, build_plan
+from .responses import FALLBACK_NOTES, PENDING_CAPABILITY_PHASE, build_error_response, build_response
 
 log = logging.getLogger("nova.orchestrator")
 
 ORCHESTRATOR = "Orchestrator"
 SYSTEM_INTENTS = {"system_info", "app_check", "rescan_system", "open_app"}
+CONTEXT_TURNS = 4  # short-term context for the AI brain; long-term memory is Phase 9
 
 
 class CommandResult(BaseModel):
     task_id: str
-    intent: Intent | None
+    intent: Intent | None  # first intent (kept for simple clients)
+    intents: list[Intent] = []
+    plan: list[dict[str, Any]] = []
+    provider: str | None = None
+    latency_ms: int | None = None
+    fallback_reason: str | None = None
     response: str
     status: str  # understood | not_understood | failed
     executed: bool = False  # True only when an agent actually performed a (read-only) action
@@ -59,6 +70,7 @@ class Orchestrator:
         self.discovery = discovery
         self.state = NovaState.IDLE
         self.voice_active = False  # UI microphone is open (level meter only until Phase 5 adds STT)
+        self.context: deque[ConversationTurn] = deque(maxlen=CONTEXT_TURNS)
 
     @property
     def rest_state(self) -> NovaState:
@@ -108,53 +120,64 @@ class Orchestrator:
         )
 
         try:
-            intent = await self.providers.detect_intent(text)
+            understanding = await self.providers.understand(text, list(self.context))
+            names = ", ".join(i.name for i in understanding.intents)
             await self.bus.publish(
                 NovaEvent(
                     type=EventType.INTENT_DETECTED,
                     task_id=task_id,
                     agent=ORCHESTRATOR,
-                    message=f"Intent: {intent.name} ({intent.language})",
-                    data=intent.model_dump(),
+                    message=f"Intent: {names} ({understanding.intents[0].language}) · {understanding.provider} · "
+                            f"{understanding.latency_ms} ms",
+                    data=understanding.model_dump(),
                 )
             )
-            if intent.name in SYSTEM_INTENTS:
-                outcome = await self._run_system_agent(task_id, intent)
-            else:
-                outcome = AgentOutcome(build_response(intent, self.assistant_name), ORCHESTRATOR,
-                                       "intent_detection", executed=False)
+            if understanding.fallback_reason:
+                await self.bus.publish(
+                    NovaEvent(type=EventType.AI_FALLBACK, task_id=task_id, agent=ORCHESTRATOR,
+                              message=FALLBACK_NOTES.get(understanding.fallback_reason, "Rules fallback"),
+                              data={"reason": understanding.fallback_reason})
+                )
+
+            await self.set_state(NovaState.PLANNING, task_id)
+            plan = build_plan(understanding)
+            await self.bus.publish(
+                NovaEvent(
+                    type=EventType.PLAN_CREATED,
+                    task_id=task_id,
+                    agent=ORCHESTRATOR,
+                    message="Plan: " + " → ".join(f"{s.id}. {s.description}" for s in plan.steps),
+                    data={"plan_id": plan.id, "steps": plan.summary()},
+                )
+            )
+
+            outcomes = [await self._run_step(task_id, step, plan) for step in plan.steps]
         except Exception as exc:  # provider/agent failures must never crash the backend
             log.exception("Command handling failed")
             return await self._fail(task_id, text, source, exc)
 
-        status = "not_understood" if intent.name == "unknown" else "understood"
+        response = self._compose(plan, outcomes)
+        primary = plan.steps[0].intent
+        status = "not_understood" if all(s.intent.name == "unknown" for s in plan.steps) else "understood"
         self.db.add_conversation(
             task_id=task_id,
             source=source,
             user_text=text,
-            detected_language=intent.language,
-            intent=intent.name,
-            response=outcome.response,
+            detected_language=primary.language,
+            intent=",".join(s.intent.name for s in plan.steps),
+            response=response,
             status=status,
         )
-        self.db.add_activity(
-            task_id=task_id,
-            task_name=f"command:{intent.name}",
-            agent=outcome.agent,
-            action=outcome.action,
-            execution_status="success" if outcome.executed else "intent_only",
-            # Read-only lookups change nothing on the PC, so there is no state to verify afterwards.
-            verification_status="not_applicable",
-            final_result=status,
-        )
+        self.context.append(ConversationTurn(user=text[:500], assistant=response[:500]))
 
         await self.bus.publish(
             NovaEvent(
                 type=EventType.NOVA_RESPONSE,
                 task_id=task_id,
                 agent=ORCHESTRATOR,
-                message=outcome.response,
-                data={"response": outcome.response, "intent": intent.name},
+                message=response,
+                data={"response": response, "intent": primary.name, "steps": plan.summary(),
+                      "provider": plan.provider},
             )
         )
         await self.bus.publish(
@@ -162,8 +185,72 @@ class Orchestrator:
         )
         await self.set_state(NovaState.COMPLETED, task_id)
         await self.set_state(self.rest_state)
-        return CommandResult(task_id=task_id, intent=intent, response=outcome.response, status=status,
-                             executed=outcome.executed)
+        return CommandResult(
+            task_id=task_id,
+            intent=primary,
+            intents=[s.intent for s in plan.steps],
+            plan=plan.summary(),
+            provider=plan.provider,
+            latency_ms=understanding.latency_ms,
+            fallback_reason=plan.fallback_reason,
+            response=response,
+            status=status,
+            executed=any(o.executed for o in outcomes),
+        )
+
+    async def _run_step(self, task_id: str, step: PlanStep, plan: Plan) -> AgentOutcome:
+        intent = step.intent
+        if intent.name in SYSTEM_INTENTS and step.status in ("ready", "unavailable"):
+            # open_app is "unavailable" for launching, but the System Agent can still say whether it exists.
+            outcome = await self._run_system_agent(task_id, intent)
+        else:
+            outcome = AgentOutcome(build_response(intent, self.assistant_name, plan.answer), step.agent,
+                                   step.action, executed=False)
+            if intent.name == "chat" and plan.answer:
+                # The answer was written by the local model; only words, nothing executed on the PC.
+                outcome = AgentOutcome(outcome.response, ORCHESTRATOR, "answer_question", executed=False)
+
+        step.result = outcome.response
+        if step.status == "ready":
+            step.status = "done"
+        execution = {
+            "done": "success" if outcome.executed else "responded",
+            "unavailable": "not_available_yet",
+            "needs_permission": "blocked_needs_permission",
+        }.get(step.status, step.status)
+        self.db.add_activity(
+            task_id=task_id,
+            task_name=f"command:{intent.name}",
+            agent=outcome.agent,
+            action=outcome.action,
+            permission_status="required_pending" if step.status == "needs_permission" else "not_required",
+            execution_status=execution,
+            # Read-only lookups change nothing on the PC, so there is no state to verify afterwards.
+            verification_status="not_applicable",
+            final_result=f"step {step.id}/{len(plan.steps)} · risk {step.risk} · {plan.provider}",
+        )
+        await self.bus.publish(
+            NovaEvent(
+                type=EventType.STEP_COMPLETED,
+                task_id=task_id,
+                agent=outcome.agent,
+                message=f"Step {step.id}: {step.description} — {execution.replace('_', ' ')}",
+                data={"step": step.id, "status": step.status, "execution": execution, "risk": step.risk},
+            )
+        )
+        return outcome
+
+    def _compose(self, plan: Plan, outcomes: list[AgentOutcome]) -> str:
+        if len(outcomes) == 1:
+            text = outcomes[0].response
+        else:
+            lines = [f"Aapne {len(outcomes)} kaam bataye:"]
+            lines += [f"{n}. {o.response}" for n, o in enumerate(outcomes, start=1)]
+            text = "\n".join(lines)
+        # Mention the fallback only when it could have changed the answer (unclear text or a question).
+        if plan.fallback_reason and plan.steps[0].intent.name in ("unknown", "chat"):
+            text += f"\n({FALLBACK_NOTES.get(plan.fallback_reason, '')})"
+        return text
 
     async def _run_system_agent(self, task_id: str, intent: Intent) -> AgentOutcome:
         agent = system_agent.NAME
@@ -184,6 +271,8 @@ class Orchestrator:
         app = str(intent.entities.get("app") or "")
 
         if intent.name == "open_app":
+            if not app:
+                return AgentOutcome("Kaun si application kholni hai?", agent, "app_lookup", executed=False)
             response = system_agent.describe_open_app(app, profile, PENDING_CAPABILITY_PHASE["open_app"])
             return AgentOutcome(response, agent, "app_lookup", executed=False)  # nothing was launched
 
@@ -192,6 +281,8 @@ class Orchestrator:
                                 agent, "read_profile", executed=False)
 
         if intent.name == "app_check":
+            if not app:
+                return AgentOutcome("Kaun si application check karni hai?", agent, "app_lookup", executed=False)
             response, _found = system_agent.describe_app(app, profile)
             return await self._executed(task_id, agent, "app_lookup", response)
 

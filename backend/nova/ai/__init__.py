@@ -1,4 +1,4 @@
-from .base import AIProvider, Intent
-from .manager import ProviderManager
+from .base import AIProvider, ConversationTurn, Intent, Understanding
+from .manager import AI_MODES, ProviderManager
 
-__all__ = ["AIProvider", "Intent", "ProviderManager"]
+__all__ = ["AI_MODES", "AIProvider", "ConversationTurn", "Intent", "ProviderManager", "Understanding"]

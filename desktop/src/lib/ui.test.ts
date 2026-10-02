@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { matchesActivity } from "./activityFilter";
 import { computeLevel, smoothLevel } from "./audio";
 import { emptyHistory, navigateHistory, pushHistory } from "./commandHistory";
-import type { EventType, NovaEvent } from "./types";
-import { formatBytes, formatDuration } from "./ui";
+import type { AiStatus, EventType, NovaEvent } from "./types";
+import { aiLabel, formatBytes, formatDuration, providerLabel } from "./ui";
 
 const ev = (type: EventType, agent: string | null = "Orchestrator"): NovaEvent => ({
   type,
@@ -76,6 +76,32 @@ describe("audio level", () => {
   it("rises fast and falls slowly", () => {
     expect(smoothLevel(0, 1)).toBeCloseTo(0.6);
     expect(smoothLevel(1, 0)).toBeCloseTo(0.85);
+  });
+});
+
+describe("AI labels", () => {
+  const status = (over: Partial<AiStatus>): AiStatus => ({
+    mode: "hybrid",
+    model: "qwen3:4b",
+    model_ready: true,
+    llm_in_use: true,
+    ollama: { reachable: true, version: "0.35.0", models: ["qwen3:4b"], error: null },
+    last_provider: null,
+    last_latency_ms: null,
+    ...over,
+  });
+
+  it("describes the active brain honestly", () => {
+    expect(aiLabel(null).text).toBe("AI: ...");
+    expect(aiLabel(status({}))).toEqual({ text: "AI: qwen3:4b (hybrid)", ok: true });
+    expect(aiLabel(status({ mode: "rules" })).text).toBe("AI: sirf rules");
+    expect(aiLabel(status({ model_ready: false }))).toEqual({ text: "AI: rules (model offline)", ok: false });
+  });
+
+  it("shortens provider names", () => {
+    expect(providerLabel("ollama:qwen3:4b")).toBe("qwen3:4b");
+    expect(providerLabel("rule_based")).toBe("rules");
+    expect(providerLabel(undefined)).toBeNull();
   });
 });
 

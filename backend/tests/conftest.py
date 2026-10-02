@@ -1,3 +1,6 @@
+import json
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -59,8 +62,58 @@ def fake_stats() -> LiveStats:
                      uptime_seconds=3600)
 
 
+class FakeOllama:
+    """In-process stand-in for the Ollama HTTP API. Tests never talk to a real model."""
+
+    def __init__(self, models=(), reachable=True):
+        self.models = list(models)
+        self.reachable = reachable
+        self.reply = None  # callable(user_text) -> dict | str (raw content) ; raise to simulate errors
+        self.chat_requests = []
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        if not self.reachable:
+            raise httpx.ConnectError("connection refused", request=request)
+        path = request.url.path
+        if path == "/api/version":
+            return httpx.Response(200, json={"version": "0.35.0"})
+        if path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": m} for m in self.models]})
+        if path == "/api/generate":
+            return httpx.Response(200, json={"done": True})
+        if path == "/api/chat":
+            body = json.loads(request.content)
+            self.chat_requests.append(body)
+            user_text = body["messages"][-1]["content"]
+            out = self.reply(user_text) if self.reply else {"intents": [{"name": "unknown"}], "answer": ""}
+            content = out if isinstance(out, str) else json.dumps(out)
+            return httpx.Response(200, json={"message": {"role": "assistant", "content": content}})
+        return httpx.Response(404)
+
+    @property
+    def transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self.handler)
+
+
+def build_client(tmp_path, ollama: FakeOllama | None = None):
+    ollama = ollama or FakeOllama(models=[])  # reachable but no model: rules only, deterministic
+    app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False), scanner=make_profile,
+                     stats=fake_stats, ollama_transport=ollama.transport)
+    return TestClient(app)
+
+
 @pytest.fixture
 def client(tmp_path):
-    app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False), scanner=make_profile, stats=fake_stats)
-    with TestClient(app) as c:
+    with build_client(tmp_path) as c:
+        yield c
+
+
+@pytest.fixture
+def fake_ollama():
+    return FakeOllama(models=["qwen3:4b"])
+
+
+@pytest.fixture
+def ai_client(tmp_path, fake_ollama):
+    with build_client(tmp_path, fake_ollama) as c:
         yield c

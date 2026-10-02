@@ -1,13 +1,39 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, fieldErrors } from "../lib/api";
-import type { NovaState, UserSettings } from "../lib/types";
+import type { AiMode, AiStatus, NovaState, UserSettings } from "../lib/types";
 import { STATE_META } from "../lib/ui";
 
 interface Props {
   open: boolean;
   settings: UserSettings | null;
+  aiStatus: AiStatus | null;
+  onRefreshAi: () => void;
   onClose: () => void;
   onPreviewState: (state: NovaState) => void;
+}
+
+const AI_MODES: { value: AiMode; label: string; hint: string }[] = [
+  { value: "hybrid", label: "Hybrid (tajweez)", hint: "Seedhi commands rules se fauran, sawal aur mushkil jumle local AI se." },
+  { value: "llm", label: "Sirf local AI", hint: "Har command AI model samjhega — zyada samajhdar, lekin CPU par slow." },
+  { value: "rules", label: "Sirf rules", hint: "AI model istemal nahi hoga. Sab se tez, lekin sawalon ke jawab nahi." },
+];
+
+function AiStatusLine({ status }: { status: AiStatus | null }) {
+  if (!status) return <span className="text-xs text-slate-500">Status maloom nahi.</span>;
+  if (!status.ollama.reachable)
+    return <span className="text-xs text-amber-300">Ollama nahi chal raha — NOVA rules se kaam karega.</span>;
+  if (!status.model_ready)
+    return (
+      <span className="text-xs text-amber-300">
+        Model "{status.model}" install nahi. Terminal mein chalayein: ollama pull {status.model}
+      </span>
+    );
+  return (
+    <span className="text-xs text-emerald-300">
+      Ollama {status.ollama.version} · {status.model} tayyar
+      {status.last_latency_ms !== null && ` · aakhri jawab ${(status.last_latency_ms / 1000).toFixed(1)}s`}
+    </span>
+  );
 }
 
 function Field({ label, hint, error, children }: { label: string; hint?: string; error?: string; children: ReactNode }) {
@@ -23,7 +49,7 @@ function Field({ label, hint, error, children }: { label: string; hint?: string;
 const inputClass =
   "rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/60";
 
-export function SettingsDrawer({ open, settings, onClose, onPreviewState }: Props) {
+export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose, onPreviewState }: Props) {
   const [draft, setDraft] = useState<UserSettings | null>(settings);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -155,6 +181,46 @@ export function SettingsDrawer({ open, settings, onClose, onPreviewState }: Prop
                 </label>
               ))}
               <span className="text-xs text-slate-500">Windows ke sath auto-start Phase 12 (installer) mein lagega.</span>
+            </fieldset>
+
+            <fieldset className="flex flex-col gap-2 border-t border-white/10 pt-4">
+              <legend className="mb-1 text-xs font-medium text-slate-300">AI brain (local, PC se bahar kuch nahi jata)</legend>
+              {AI_MODES.map((m) => (
+                <label key={m.value} className="flex items-start gap-2">
+                  <input
+                    type="radio"
+                    name="ai_mode"
+                    className="mt-1"
+                    checked={draft.ai_mode === m.value}
+                    onChange={() => set("ai_mode", m.value)}
+                  />
+                  <span className="flex flex-col">
+                    <span className="text-sm text-slate-200">{m.label}</span>
+                    <span className="text-xs text-slate-500">{m.hint}</span>
+                  </span>
+                </label>
+              ))}
+              <Field label="Model" error={errors.ai_model}>
+                <select
+                  className={inputClass}
+                  value={draft.ai_model}
+                  disabled={draft.ai_mode === "rules"}
+                  onChange={(e) => set("ai_model", e.target.value)}
+                >
+                  {[...new Set([draft.ai_model, ...(aiStatus?.ollama.models ?? [])])].map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                      {aiStatus && !aiStatus.ollama.models.includes(m) ? " (install nahi)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="flex items-center justify-between gap-2">
+                <AiStatusLine status={aiStatus} />
+                <button type="button" onClick={onRefreshAi} className="shrink-0 text-xs text-sky-300 hover:text-sky-200">
+                  Refresh
+                </button>
+              </div>
             </fieldset>
 
             {errors.form && <p className="text-xs text-red-300">{errors.form}</p>}

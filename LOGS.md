@@ -136,3 +136,55 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 3 commit `80d8c12`, `main` mein merge `27f25b7`.
+
+---
+
+### Task: Phase 4 — AI Brain
+
+Status: Complete (branch `phase-4-ai-brain`, approval ke baad `main` mein merge)
+
+Kaam:
+- **Local AI model:** admin ki ijazat se `qwen3:4b` (2.3 GB, Apache 2.0 license) Ollama se download kiya gaya. Sab kuch isi PC par chalta hai, internet par kuch nahi jata.
+- **Ollama provider:** model sirf ek fixed JSON schema mein jawab deta hai (intent ka naam aur fields). Model ka jawab sakhti se check hota hai — jo intent list mein nahi (maslan "delete_all_files") woh rad kar diya jata hai. Model khud koi action nahi chala sakta, aur risk level model se nahi, planner ki table se aata hai.
+- **AI Provider Manager — 3 modes:** Hybrid (default: seedhi commands rules se fauran, sawal/mushkil jumle model se), Sirf local AI, Sirf rules. Model na ho, slow ho, ya ghalat jawab de to khud rules par fallback, aur wajah batai jati hai.
+- **Task Planner:** ek jumle mein kai kaam ("VS Code open karo aur RAM batao") alag steps mein, har step ka agent, risk (low/medium/high) aur status (ready / Phase N mein / permission chahiye). Medium/high risk ka koi kaam Permission Engine (Phase 7) se pehle nahi chalega.
+- **Orchestrator:** THINKING → PLANNING → WORKING → COMPLETED. Har step alag activity log mein. Naye events: PLAN_CREATED, STEP_COMPLETED, AI_STATUS, AI_FALLBACK.
+- **Sawalon ke jawab:** general sawal ("Pakistan ka capital kya hai") ka chhota jawab Roman Urdu mein. UI mein "AI ka jawab — ghalti ho sakti hai" likha aata hai.
+- **Short-term context:** pichli 4 baatein model ko di jati hain, is liye "isko kholo" jaisi baat samajh aati hai (lambi memory Phase 9 mein).
+- **Rules behtar:** "zara", "please", "for me", "pehle", "desktop par" jaise fazool alfaaz naam se hatate hain; "zindagi kaisi chal rahi hai" ab system command nahi samjha jata; "isko/usko" model ko bheja jata hai.
+- **Warm-up:** startup par model load hota hai aur system prompt pehle se process hota hai taa ke pehli command tez ho.
+- **UI:** status bar mein AI status (maslan "AI: qwen3:4b (hybrid)"), Settings mein AI brain section (mode, model, Ollama status, Refresh), har jawab ke sath kis ne samjha (rules / qwen3:4b), aur kai steps wale jawab ke neeche steps ki list.
+- **Evaluation script:** `backend/scripts/eval_brain.py` — 26 asli commands (Urdu, Roman Urdu, Hindi, English, mix, compound, sawal, prompt-injection) par brain ko check karta hai.
+
+Test:
+- Backend automated tests: 135/135 pass (39 naye): modes, har qisam ka fallback (model nahi / Ollama band / ghalat JSON / na-maloom action / timeout), model output validation, context, planner risk/status, compound commands, API end-to-end. Tests asli model ki jagah fake Ollama use karte hain taa ke har dafa ek jaisa nateeja ho.
+- Frontend unit tests: 10/10 pass. Typecheck aur production build successful.
+- **Asli model evaluation (is PC par, CPU):**
+  - Sirf rules: 18/26 (69%) — sawal aur mushkil jumle nahi samajhta.
+  - Sirf local AI: 26/26 (100%), median 5.5s, CPU par.
+  - Hybrid (default): 26/26 (100%) — 19 commands rules se fauran (0 ms), sirf 7 model se (median 6.9s).
+- Browser UI test (asli model): sawal ka sahi jawab ~7s mein, compound plan steps ke sath, "isko kholo" se Photoshop samjha gaya.
+- Electron app: backend start, AI status ready, model se sawal ka jawab, band karne par backend band.
+
+Bugs / masail jo test ke dauran mile aur fix kiye gaye:
+- Model ne prompt ki misaal wala jawab hoobahoo copy kiya — misaal badli gayi.
+- Ek jawab bohat lamba ho kar 42s laga aur adhoora JSON fallback par gaya — jawab 2 jumlon tak mehdood aur `num_predict` cap.
+- Ek dafa model ne Urdu script mein ghalat jawab diya ("Karachi") — prompt mazboot kiya; ab sahi "Islamabad", Roman Urdu mein. Chhota model phir bhi ghalti kar sakta hai, is liye UI mein note.
+- Pehli command bohat slow (system prompt process) — warm-up mein ek asli request.
+- Rules ki ghaltiyan: "whatsapp for me", "desktop par Projects", "zara VS Code", "pehle chrome", "zindagi kaisi chal rahi hai" — sab fix aur tests add.
+
+Maloom hadood (limitations):
+- CPU par model ka jawab 5-15 second leta hai. Hybrid mode isi liye default hai.
+- 4B model chhota hai; facts mein ghalti ho sakti hai. Taza maloomat (mausam, khabrein) ke liye Research/Browser Agent Phase 8 mein.
+
+Verification:
+- Har command ka plan aur har step activity log mein; read-only steps par `verification_status = not_applicable`.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatMessage, ConnectionStatus, NovaEvent, NovaState, ServerMessage } from "./types";
+import type { ChatMessage, ConnectionStatus, NovaEvent, NovaState, ServerMessage, UserSettings } from "./types";
 
 export const BACKEND_WS_URL = import.meta.env.VITE_NOVA_WS_URL ?? "ws://127.0.0.1:8765/ws";
 
@@ -21,6 +21,11 @@ export function useNova() {
   const [scanning, setScanning] = useState(false);
   // Bumped after every finished scan so profile views know to refetch.
   const [profileRevision, setProfileRevision] = useState(0);
+  // Bumped when something lands in the persisted activity log.
+  const [activityRevision, setActivityRevision] = useState(0);
+  const [settings, setSettings] = useState<UserSettings | null>(null);
+  // Whether this window's microphone is open; re-announced to the backend after reconnects.
+  const voiceActiveRef = useRef(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const holdUntil = useRef(0);
@@ -34,8 +39,8 @@ export function useNova() {
       return;
     }
     const wait = holdUntil.current - Date.now();
-    if (next === "IDLE" && wait > 0) {
-      holdTimer.current = window.setTimeout(() => setState("IDLE"), wait);
+    if ((next === "IDLE" || next === "LISTENING") && wait > 0) {
+      holdTimer.current = window.setTimeout(() => setState(next), wait);
       return;
     }
     holdUntil.current = 0;
@@ -47,6 +52,7 @@ export function useNova() {
       if (msg.type === "HELLO") {
         setAssistantName(msg.data.assistant_name);
         setVersion(msg.data.version);
+        setSettings(msg.data.settings);
         setState(msg.data.state);
         setEvents(msg.data.history.filter((e) => e.type !== "STATE_CHANGED").reverse());
         return;
@@ -59,6 +65,14 @@ export function useNova() {
       }
       setEvents((prev) => [msg, ...prev].slice(0, MAX_EVENTS));
       if (msg.type === "DISCOVERY_STARTED") setScanning(true);
+      if (msg.type === "SETTINGS_CHANGED") {
+        const next = msg.data as unknown as UserSettings;
+        setSettings(next);
+        setAssistantName(next.assistant_name);
+      }
+      if (["TASK_COMPLETED", "TASK_FAILED", "DISCOVERY_COMPLETED", "DISCOVERY_FAILED", "SETTINGS_CHANGED"].includes(msg.type)) {
+        setActivityRevision((n) => n + 1);
+      }
       if (msg.type === "DISCOVERY_COMPLETED" || msg.type === "DISCOVERY_FAILED") {
         setScanning(false);
         setProfileRevision((n) => n + 1);
@@ -89,6 +103,7 @@ export function useNova() {
       ws.onopen = () => {
         retry = 0;
         setConnection("connected");
+        if (voiceActiveRef.current) ws.send(JSON.stringify({ type: "voice_state", active: true }));
         pingTimer = window.setInterval(() => ws.send(JSON.stringify({ type: "ping" })), 15_000);
       };
       ws.onmessage = (e) => {
@@ -133,5 +148,27 @@ export function useNova() {
     return true;
   }, []);
 
-  return { connection, state, assistantName, version, events, messages, sendCommand, scanning, profileRevision };
+  const sendVoiceState = useCallback((active: boolean) => {
+    voiceActiveRef.current = active;
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "voice_state", active }));
+  }, []);
+
+  const clearEvents = useCallback(() => setEvents([]), []);
+
+  return {
+    connection,
+    state,
+    assistantName,
+    version,
+    events,
+    messages,
+    sendCommand,
+    sendVoiceState,
+    clearEvents,
+    scanning,
+    profileRevision,
+    activityRevision,
+    settings,
+  };
 }

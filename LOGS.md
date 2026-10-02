@@ -95,3 +95,44 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 2 commit `62ad8c4`, `main` mein merge `7a62d98`.
+
+---
+
+### Task: Phase 3 — NOVA UI (Command Center)
+
+Status: Complete (branch `phase-3-nova-ui`, approval ke baad `main` mein merge)
+
+Kaam:
+- **Avatar:** 9 states ka alag alag andaaz — IDLE (aahista saans), LISTENING (gola mic ki awaaz ke sath bara-chhota, lehrein), THINKING (ghoomte nuqte), PLANNING (aahista nuqte), WORKING (tez rings), WAITING FOR PERMISSION (amber chamak + "?"), VERIFYING (radar sweep), COMPLETED (✓), ERROR (jhatka + "!"). Settings mein admin ke liye har state ka preview.
+- **Voice interface (UI):** asli microphone on/off button, live waveform aur level meter. Mic status hamesha nazar aata hai (Off / On / Blocked / Nahi mila / Error) — status bar aur command bar dono mein. Mic on hone par backend state LISTENING hoti hai; command ke baad wapas LISTENING. UI band ho jaye to mic state khud band hoti hai. Audio na save hota hai na kahin bheja jata hai. Awaaz pehchanna (speech-to-text) Phase 5 mein.
+- **Electron permissions:** sirf microphone (audio) ki ijazat, aur sirf NOVA ke apne page ko. Camera aur baqi permissions band.
+- **Settings:** assistant ka naam (configurable, Urdu naam bhi), wake word, continuous listening, Windows startup mode (silent/active). `GET/PUT /api/settings`, validation (Roman Urdu errors), SQLite mein save, restart ke baad bhi qaim. Naam/wake word fauran lagu — "Suno Zara, ..." jaisi command pehchani jati hai. Har change activity log mein (sirf badli hui fields).
+- **Activity:** right panel mein filters (Sab / Tasks / Agents / System / Errors), agent par click se us agent ki activity, "Saaf karein". Naya **Activity Log** tab — database ka structured log (Date, Time, Task, Agent, Action, Permission, Execution, Verification, Admin status, Result).
+- **Status bar:** live CPU/RAM, mic status, connection, Settings button.
+- **Command bar:** ↑/↓ pichli commands, Esc se saaf, Ctrl+K ya / se focus.
+- Chhoti window mein avatar khud chhota hota hai.
+
+Test:
+- Backend automated tests: 96/96 pass (14 naye: settings, validation, restart ke baad settings, Urdu naam, custom wake word, LISTENING state flow, disconnect par mic band).
+- Frontend unit tests (naya Vitest setup): 8/8 pass — command history, activity filter, audio level, formatting.
+- Typecheck aur production build successful.
+- Browser UI test: commands, ↑ history, Esc, settings rename (Zara) + wake word, ghalat naam par error, avatar previews (THINKING, WAITING FOR PERMISSION, COMPLETED), activity filter, Activity Log tab — sab sahi. Settings wapas NOVA kar di gayin.
+- Browser pane mein mic block hai, is liye wahan "Mic: Blocked" state test hui. **Asli mic (On + waveform) sirf Electron app mein test ho sakta hai — ye admin manual test mein hai.**
+- Electron app launch: backend start, settings sahi, band karne par backend band.
+
+Bugs jo test ke dauran mile aur fix kiye gaye:
+- Branch badalne par git ne files CRLF kar di thin, jis se kuch edits chupke se apply nahi huay (settings drawer "load ho rahi hain" par atka) — edits dobara kiye gaye aur `.gitattributes` (LF) add ki gayi.
+- Chhoti window mein conversation scroll hone par tabs nazron se ghayab ho jate thay — fix kiya.
+- Settings save karne par saari fields "changed" log hoti thin — ab sirf badli hui.
+
+Verification:
+- Settings save hone ke baad backend se dobara parh kar check ki gayin; activity log mein entry bani.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

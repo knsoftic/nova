@@ -58,12 +58,37 @@ class Orchestrator:
         self.assistant_name = assistant_name
         self.discovery = discovery
         self.state = NovaState.IDLE
+        self.voice_active = False  # UI microphone is open (level meter only until Phase 5 adds STT)
+
+    @property
+    def rest_state(self) -> NovaState:
+        return NovaState.LISTENING if self.voice_active else NovaState.IDLE
 
     async def set_state(self, state: NovaState, task_id: str | None = None) -> None:
         self.state = state
         await self.bus.publish(
             NovaEvent(type=EventType.STATE_CHANGED, task_id=task_id, data={"state": state.value})
         )
+
+    def apply_settings(self, assistant_name: str, wake_word: str) -> None:
+        self.assistant_name = assistant_name
+        self.providers.configure_wake(assistant_name, wake_word)
+
+    async def set_voice_active(self, active: bool) -> None:
+        if active == self.voice_active:
+            return
+        self.voice_active = active
+        await self.bus.publish(
+            NovaEvent(
+                type=EventType.NOVA_LISTENING,
+                agent=ORCHESTRATOR,
+                message="Microphone on (abhi sirf mic test, awaaz pehchanna Phase 5 mein)" if active else "Microphone off",
+                data={"active": active},
+            )
+        )
+        # Only switch the avatar when idle/listening; never interrupt a running task's state.
+        if self.state in (NovaState.IDLE, NovaState.LISTENING):
+            await self.set_state(self.rest_state)
 
     async def handle_command(self, text: str, source: str = "text") -> CommandResult:
         task_id = uuid.uuid4().hex[:12]
@@ -136,7 +161,7 @@ class Orchestrator:
             NovaEvent(type=EventType.TASK_COMPLETED, task_id=task_id, agent=ORCHESTRATOR, message="Task mukammal")
         )
         await self.set_state(NovaState.COMPLETED, task_id)
-        await self.set_state(NovaState.IDLE)
+        await self.set_state(self.rest_state)
         return CommandResult(task_id=task_id, intent=intent, response=outcome.response, status=status,
                              executed=outcome.executed)
 
@@ -211,5 +236,5 @@ class Orchestrator:
                       data={"error": type(exc).__name__})
         )
         await self.set_state(NovaState.ERROR, task_id)
-        await self.set_state(NovaState.IDLE)
+        await self.set_state(self.rest_state)
         return CommandResult(task_id=task_id, intent=None, response=response, status="failed")

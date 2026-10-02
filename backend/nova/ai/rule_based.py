@@ -11,7 +11,19 @@ import re
 from ..language import detect_language
 from .base import AIProvider, Intent
 
-WAKE_WORD = re.compile(r"^\s*(?:hey|hi|ok|ay|ae|اے|ہے)?\s*(?:nova|نووا|नोवा)[\s,!.:-]*", re.IGNORECASE)
+BUILTIN_NAMES = ("nova", "نووا", "नोवा")
+
+
+def build_wake_pattern(assistant_name: str = "NOVA", wake_word: str = "Hey NOVA") -> re.Pattern[str]:
+    """Matches the configured wake word, or '[hey] <name>', at the start of an utterance."""
+    names = sorted({re.escape(assistant_name), *BUILTIN_NAMES}, key=len, reverse=True)
+    return re.compile(
+        rf"^\s*(?:{re.escape(wake_word)}|(?:hey|hi|ok|ay|ae|اے|ہے)?\s*(?:{'|'.join(names)}))(?![\w])[\s,!.:-]*",
+        re.IGNORECASE,
+    )
+
+
+WAKE_WORD = build_wake_pattern()
 
 GREETING = re.compile(
     r"^(?:hello|hi|hey|salam|salaam|assalam[\s-]?o[\s-]?alaikum|aoa|namaste|namaskar|"
@@ -101,8 +113,8 @@ FOLDER_DETERMINERS = {"ye", "yeh", "is", "ek", "aik", "naya", "new", "this", "a"
 TRAILING_PUNCT =re.compile(r"[\s.!?۔،,]+$")
 
 
-def normalize(text: str) -> str:
-    text = WAKE_WORD.sub("", text.strip())
+def normalize(text: str, wake: re.Pattern[str] = WAKE_WORD) -> str:
+    text = wake.sub("", text.strip())
     return TRAILING_PUNCT.sub("", text).strip()
 
 
@@ -117,9 +129,15 @@ class RuleBasedProvider(AIProvider):
     name = "rule_based"
     is_local = True
 
+    def __init__(self) -> None:
+        self._wake = WAKE_WORD
+
+    def configure_wake(self, assistant_name: str, wake_word: str) -> None:
+        self._wake = build_wake_pattern(assistant_name, wake_word)
+
     async def detect_intent(self, text: str) -> Intent:
         language = detect_language(text)
-        cleaned = normalize(text)
+        cleaned = normalize(text, self._wake)
 
         def make(name: str, confidence: float, **entities: object) -> Intent:
             return Intent(

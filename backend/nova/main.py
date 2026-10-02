@@ -9,8 +9,9 @@ from contextlib import asynccontextmanager
 from typing import Any, Callable
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from . import __version__
 from .ai.manager import ProviderManager
@@ -19,6 +20,13 @@ from .db import Database
 from .discovery import DiscoveryService, LiveStats, SystemProfile, find_app
 from .events import EventBus, EventType, NovaEvent
 from .orchestrator import CommandResult, Orchestrator
+from .user_settings import (
+    UserSettings,
+    UserSettingsUpdate,
+    apply_update,
+    load_user_settings,
+    save_user_settings,
+)
 
 log = logging.getLogger("nova")
 
@@ -48,7 +56,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         db = Database(settings.db_path)
-        assistant_name = db.get_setting("assistant_name") or settings.assistant_name
+        user_settings = load_user_settings(db, default_name=settings.assistant_name)
+        assistant_name = user_settings.assistant_name
         bus = EventBus()
         providers = ProviderManager(active=db.get_setting("ai_provider") or settings.ai_provider)
         discovery_kwargs: dict[str, Any] = {}
@@ -62,6 +71,8 @@ def create_app(
         app.state.providers = providers
         app.state.discovery = discovery
         app.state.orchestrator = Orchestrator(bus, db, providers, assistant_name, discovery)
+        app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
+        app.state.user_settings = user_settings
         await bus.publish(
             NovaEvent(type=EventType.SYSTEM_READY, agent="Orchestrator", message=f"{assistant_name} online hai")
         )
@@ -84,7 +95,7 @@ def create_app(
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PUT"],
         allow_headers=["Content-Type"],
     )
 
@@ -110,6 +121,32 @@ def create_app(
                 "permission_engine": False,
             },
         }
+
+    @app.get("/api/settings", response_model=UserSettings)
+    async def get_settings() -> UserSettings:
+        return app.state.user_settings
+
+    @app.put("/api/settings", response_model=UserSettings)
+    async def update_settings(update: UserSettingsUpdate) -> UserSettings:
+        try:
+            new = apply_update(app.state.user_settings, update)
+        except ValidationError as exc:
+            # Re-raise as a request validation error so the client gets a 422 with field details.
+            raise RequestValidationError(exc.errors()) from exc
+        save_user_settings(app.state.db, new)
+        app.state.user_settings = new
+        orchestrator().apply_settings(new.assistant_name, new.wake_word)
+        changed = sorted(k for k, v in update.model_dump(exclude_none=True).items())
+        app.state.db.add_activity(
+            task_id="settings", task_name="update_settings", agent="Orchestrator", action="update_settings",
+            permission_status="user_initiated", execution_status="success", final_result=", ".join(changed),
+        )
+        await app.state.bus.publish(
+            NovaEvent(type=EventType.SETTINGS_CHANGED, agent="Orchestrator",
+                      message=f"Settings update: {', '.join(changed) or 'koi change nahi'}",
+                      data=new.model_dump())
+        )
+        return new
 
     @app.get("/api/system/profile")
     async def system_profile() -> dict[str, Any]:
@@ -167,6 +204,8 @@ def create_app(
                     "assistant_name": orch.assistant_name,
                     "state": orch.state.value,
                     "version": __version__,
+                    "voice_active": orch.voice_active,
+                    "settings": app.state.user_settings.model_dump(),
                     "history": [e.model_dump(mode="json") for e in bus.history()[-50:]],
                 },
             }
@@ -179,6 +218,7 @@ def create_app(
 
         forwarder = asyncio.create_task(forward_events())
         pending: set[asyncio.Task[Any]] = set()
+        client_opened_mic = False
         try:
             while True:
                 msg = await ws.receive_json()
@@ -192,12 +232,19 @@ def create_app(
                         task = asyncio.create_task(orch.handle_command(text, source))
                         pending.add(task)
                         task.add_done_callback(pending.discard)
+                elif kind == "voice_state":
+                    client_opened_mic = bool(msg.get("active"))
+                    await orch.set_voice_active(client_opened_mic)
                 else:
                     await ws.send_json({"type": "ERROR", "message": "Unknown message type"})
         except (WebSocketDisconnect, ValueError):
             pass
         finally:
             bus.unsubscribe(queue)
+            # The mic lives in the UI window; if that window goes away the mic is closed too.
+            if client_opened_mic:
+                with contextlib.suppress(Exception):
+                    await orch.set_voice_active(False)
             forwarder.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await forwarder

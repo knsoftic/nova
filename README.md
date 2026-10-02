@@ -2,9 +2,10 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 2 (System Discovery)**. NOVA understands commands, replies in Roman Urdu, scans the
-PC (hardware, Windows, devices, installed apps, browsers) and answers system questions. It does not launch apps
-or change anything on the PC yet. See [LOGS.md](LOGS.md) for development history and approval status.
+Current status: **Phase 3 (NOVA UI)**. NOVA understands commands, replies in Roman Urdu, scans the PC and answers
+system questions. The Command Center has a state-aware avatar, live mic meter, settings (name, wake word,
+listening, startup mode) and a persisted activity log. It does not launch apps, recognise speech, or change
+anything on the PC yet. See [LOGS.md](LOGS.md) for development history and approval status.
 
 ## Layout
 
@@ -20,6 +21,7 @@ nova/
 │   │   ├── ai/             AI Provider Manager + rule-based provider
 │   │   ├── language.py     Urdu / Hindi / Roman Urdu / English detection
 │   │   ├── responses.py    Roman Urdu response catalog
+│   │   ├── user_settings.py assistant name, wake word, listening, startup mode
 │   │   ├── db.py           SQLite (settings, conversations, activity_log)
 │   │   └── redaction.py    secret scrubbing before logging
 │   └── tests/
@@ -79,7 +81,11 @@ Backend alone: `backend\.venv\Scripts\python.exe -m nova` (from `backend/`).
 npm run typecheck
 ```
 
-(from `desktop/`)
+```bash
+npm test
+```
+
+(both from `desktop/`)
 
 ## Configuration
 
@@ -94,7 +100,23 @@ Environment variables (backend):
 | `NOVA_AI_PROVIDER` | `rule_based` | Active AI provider |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
 
-## Admin manual test (Phase 2)
+## Admin manual test (Phase 3)
+
+1. `desktop/` mein `npm start` chalayein. Upar status bar mein live CPU/RAM, "Mic: Off", "Backend connected" aur **⚙ Settings** nazar aana chahiye.
+2. **Mic** button dabayein. "Mic: On" (hara) hona chahiye, button ke sath waveform chalni chahiye, aur bolne par avatar ka gola awaaz ke sath bara-chhota hona chahiye (state LISTENING). Dobara dabayein — mic band, state IDLE. *(Abhi sirf mic test hai; awaaz se command Phase 5 mein.)*
+3. Mic on rakh kar koi text command bhejein — jawab ke baad avatar wapas LISTENING par aana chahiye.
+4. **⚙ Settings** kholein:
+   - Naam "Zara" aur wake word "Suno Zara" karke save karein — header aur avatar mein naam badalna chahiye. Phir `Suno Zara, Chrome open karo` bhejein — Chrome pehchana jana chahiye.
+   - Naam mein `<b>` likh kar save karein — Roman Urdu error aana chahiye.
+   - "Avatar states" mein har button daba kar 9 states dekhein (har ek 4 second).
+   - Aakhir mein naam wapas **NOVA** aur wake word **Hey NOVA** kar dein.
+5. Right panel mein filter (Sab / Tasks / Agents / System / Errors) aur left panel mein kisi agent par click karke uski activity dekhein. "Saaf karein" se list saaf honi chahiye.
+6. **Activity Log** tab mein records (waqt, task, agent, permission, execution, verification, admin status) nazar aane chahiye.
+7. Command box: `↑` se pichli command wapas aaye, `Esc` se saaf ho, `Ctrl+K` se focus ho.
+8. Window chhoti karke dekhein — tabs hamesha nazar aane chahiye.
+9. Sab theek ho to approve karein, warna problem batayein.
+
+## Admin manual test (Phase 2, approved)
 
 1. `desktop/` mein `npm start` chalayein. Right panel mein "System scan shuru" aur kuch second baad "System scan mukammal — N applications mili" aana chahiye.
 2. Center mein **System Profile** tab kholein. Check karein ke CPU, RAM, GPU, storage, Windows version, mic/speaker/camera, browsers aur default browser aapke PC ke mutabiq sahi hain. Installed applications mein kisi app ko search karein.

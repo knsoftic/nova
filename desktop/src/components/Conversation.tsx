@@ -4,8 +4,11 @@ import { formatTime } from "../lib/ui";
 
 export function Conversation({ messages, assistantName }: { messages: ChatMessage[]; assistantName: string }) {
   const endRef = useRef<HTMLDivElement>(null);
+  // Scroll only our own container: scrollIntoView would also scroll overflow-hidden ancestors and
+  // push the view tabs out of sight on short windows.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const scroller = endRef.current?.closest<HTMLElement>("[data-scroll-container]");
+    scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
   if (messages.length === 0) {

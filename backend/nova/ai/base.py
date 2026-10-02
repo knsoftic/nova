@@ -28,3 +28,6 @@ class AIProvider(ABC):
 
     async def is_available(self) -> bool:
         return True
+
+    def configure_wake(self, assistant_name: str, wake_word: str) -> None:
+        """Tell the provider which name/wake word prefixes to ignore. Optional."""

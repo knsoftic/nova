@@ -19,8 +19,11 @@ from pydantic import BaseModel
 from ..language import detect_language
 from .base import (
     BROWSER_NAV_ACTIONS,
+    CHANNELS,
     EDIT_ACTIONS,
+    IMAGE_OPERATIONS,
     KNOWN_INTENTS,
+    SETTING_NAMES,
     SHORTCUT_NAMES,
     SYSTEM_TOPICS,
     WINDOW_ACTIONS,
@@ -54,7 +57,10 @@ Intent names:
 - create_folder: create a folder. Field "folder_name" ("" if not given).
 - system_info: asks about this PC. Field "topic", one of: summary, cpu, ram, gpu, storage, windows, devices, displays, network, admin, browsers, apps, running.
 - rescan_system: asks to scan / rescan the system.
-- change_setting: asks to change any Windows or app setting (default browser, volume, wifi, ...). Field "setting_request" with a short English description.
+- change_setting: change a Windows setting. Fields "setting" (volume | mute | unmute | brightness | theme | wifi |
+  bluetooth | default_browser | other), "value" (e.g. "50", "kam", "zyada", "dark", "on", "off", a browser name)
+  and "setting_request" (a short English description, for "other").
+- open_settings: open a Windows Settings page. Field "page" (e.g. "display", "wallpaper", "update").
 - run_workflow: asks to start a named routine such as "work start karo". Field "workflow".
 - close_app: close/quit an application or window. Field "app" ("" = the current window).
 - focus_app: switch to / bring forward an already open app ("Chrome pe jao"). Field "app".
@@ -96,6 +102,19 @@ Code projects (field "project" = the project's name, "" for the current one):
   "dev server", "npm run lint", "install", "git status"). Starting an app ("VS Code chala do") is open_app.
 - explain_error: explain the last error, or the error text given in field "text". fix_error: fix that error in the code.
 - modify_code: change code in a file. Fields "target" (file name), "project", "instruction" (the change, in the user's words).
+Messages (only to contacts the user saved in NOVA; always asked before sending):
+- send_message: send or prepare a WhatsApp message or email. Fields "channel" (whatsapp | email), "recipient"
+  (name, number or email address), "text" (the exact words, when the user dictates them), "instruction" (what
+  the message should say, when NOVA should write it), "subject", "attachment" (file name), "draft_only" (true
+  when the user only wants it prepared, not sent).
+- save_contact: save someone for NOVA. Fields "contact_name", "phone", "email". list_contacts. delete_contact: field "contact_name".
+Design:
+- edit_image: change a picture. Fields "target" (image file), "operation" (resize | fit | convert | compress |
+  rotate | flip | grayscale | caption | watermark), "value" ("1080x1080", "instagram post", "png", "90", "50%",
+  or the caption/watermark text).
+- create_design: make a new design image. Fields "kind" (post | story | banner | thumbnail | poster | card ...),
+  "text" (the main words on it), "subtitle", "style" (colours, e.g. "neela").
+- open_with: open a file in a named app (Photoshop, Paint, Word, VS Code...). Fields "target", "app".
 - unknown: unclear or not covered.
 
 Rules:
@@ -122,6 +141,8 @@ Examples:
 "mere shop app project ke tests chala do" -> {"intents":[{"name":"run_tests","project":"shop app"}],"answer":""}
 "todo.md mein likho: kal bank jana hai" -> {"intents":[{"name":"edit_file","target":"todo.md","edit_action":"append","text":"kal bank jana hai"}],"answer":""}
 "kn app project ko VS Code mein khol do" -> {"intents":[{"name":"open_project","project":"kn app"}],"answer":""}
+"Bilal ko whatsapp par likho ke main 10 minute mein pohanch raha hoon" -> {"intents":[{"name":"send_message","channel":"whatsapp","recipient":"Bilal","text":"main 10 minute mein pohanch raha hoon"}],"answer":""}
+"screen ki roshni thori kam kar do" -> {"intents":[{"name":"change_setting","setting":"brightness","value":"kam"}],"answer":""}
 """
 
 
@@ -161,6 +182,21 @@ def _schema() -> dict[str, Any]:
                         "project": text,
                         "command": text,
                         "instruction": text,
+                        "setting": {"type": "string", "enum": ["", *SETTING_NAMES]},
+                        "value": text,
+                        "page": text,
+                        "channel": {"type": "string", "enum": ["", *CHANNELS]},
+                        "recipient": text,
+                        "subject": text,
+                        "attachment": text,
+                        "draft_only": {"type": "boolean"},
+                        "contact_name": text,
+                        "phone": text,
+                        "email": text,
+                        "operation": {"type": "string", "enum": ["", *IMAGE_OPERATIONS]},
+                        "kind": text,
+                        "subtitle": text,
+                        "style": text,
                     },
                     "required": ["name"],
                 },
@@ -178,7 +214,14 @@ ENTITY_FIELDS: dict[str, tuple[tuple[str, str], ...]] = {
     "app_check": (("app", "app"),),
     "web_search": (("query", "query"),),
     "create_folder": (("folder_name", "folder_name"), ("location", "location")),
-    "change_setting": (("setting_request", "request"),),
+    "change_setting": (("setting_request", "request"), ("value", "value")),
+    "open_settings": (("page", "page"),),
+    "send_message": (("recipient", "recipient"), ("subject", "subject"), ("attachment", "attachment")),
+    "save_contact": (("contact_name", "name"), ("phone", "phone"), ("email", "email")),
+    "delete_contact": (("contact_name", "name"),),
+    "edit_image": (*_FILE, ("value", "value")),
+    "create_design": (("kind", "kind"), ("subtitle", "subtitle"), ("style", "style")),
+    "open_with": (*_FILE, ("app", "app")),
     "run_workflow": (("workflow", "workflow"),),
     "close_app": (("app", "app"),),
     "focus_app": (("app", "app"),),
@@ -216,6 +259,8 @@ VERBATIM_FIELDS: dict[str, tuple[str, ...]] = {
     "edit_file": ("text", "old_text", "new_text"),
     "explain_error": ("text",),
     "modify_code": ("instruction",),
+    "send_message": ("text", "instruction"),
+    "create_design": ("text",),
 }
 
 # Enum-valued fields: anything outside the allowed set is dropped.
@@ -224,7 +269,11 @@ ENUM_FIELDS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "keyboard_shortcut": ("keys", "keys", SHORTCUT_NAMES),
     "browser_nav": ("nav_action", "action", BROWSER_NAV_ACTIONS),
     "edit_file": ("edit_action", "edit_action", EDIT_ACTIONS),
+    "change_setting": ("setting", "setting", SETTING_NAMES),
+    "send_message": ("channel", "channel", CHANNELS),
+    "edit_image": ("operation", "operation", IMAGE_OPERATIONS),
 }
+# Missing/invalid enum value -> this default; enums without a default are simply left out.
 ENUM_DEFAULTS = {"window_control": "minimize", "browser_nav": "scroll_down", "edit_file": "append"}
 
 
@@ -269,8 +318,10 @@ def parse_model_output(raw: str, language: str, provider: str) -> tuple[list[Int
                 continue  # a shortcut without a known key combination is not actionable
             elif name == "edit_file":
                 entities[key] = "replace" if entities.get("old_text") else "append"
-            else:
+            elif name in ENUM_DEFAULTS:
                 entities[key] = ENUM_DEFAULTS[name]
+        if name == "send_message" and item.get("draft_only") is True:
+            entities["draft_only"] = True
             if name == "window_control" and (app := _clip(item.get("app"))):
                 entities["app"] = app
         if name == "system_info":

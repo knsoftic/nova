@@ -1,12 +1,11 @@
 """Phase 7: Permission Engine - classification, asking, answering (UI/text/voice), memory, audit."""
 
-import asyncio
 import threading
 import time
 
 import pytest
 
-from conftest import FakeDesktop, FakeOllama, build_client
+from conftest import FakeDesktop, build_client
 from nova.permissions.engine import TargetContext, classify, parse_answer, scope_for
 
 

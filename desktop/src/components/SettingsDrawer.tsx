@@ -3,6 +3,7 @@ import { api, fieldErrors } from "../lib/api";
 import type {
   AiMode,
   AiStatus,
+  Contact,
   FileRoot,
   NovaState,
   PermissionRule,
@@ -10,7 +11,7 @@ import type {
   VoiceStatus,
   WebStatus,
 } from "../lib/types";
-import { STATE_META } from "../lib/ui";
+import { STATE_META, showPhone } from "../lib/ui";
 
 interface Props {
   open: boolean;
@@ -69,6 +70,103 @@ const STT_LANGUAGES: { value: UserSettings["stt_language"]; label: string }[] = 
 ];
 
 const TEST_SENTENCE = "Assalam-o-Alaikum! Main aapki awaaz test kar raha hoon. Kya aap mujhe saaf sun sakte hain?";
+
+/** People NOVA may message. NOVA never searches WhatsApp chats: only these numbers/emails (or typed ones) are used. */
+function Contacts({ open }: { open: boolean }) {
+  const [contacts, setContacts] = useState<Contact[] | null>(null);
+  const [form, setForm] = useState({ name: "", phone: "", email: "" });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const load = () => api.contacts().then(setContacts).catch(() => setContacts([]));
+  useEffect(() => {
+    if (open) void load();
+  }, [open]);
+
+  const add = async () => {
+    setErrors({});
+    try {
+      await api.addContact({
+        name: form.name.trim(),
+        ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
+        ...(form.email.trim() ? { email: form.email.trim() } : {}),
+      });
+      setForm({ name: "", phone: "", email: "" });
+      void load();
+    } catch (err) {
+      const fe = fieldErrors(err);
+      setErrors(Object.keys(fe).length ? fe : { form: "Contact save nahi hua." });
+    }
+  };
+
+  const remove = async (id: number) => {
+    await api.deleteContact(id).catch(() => undefined);
+    void load();
+  };
+
+  return (
+    <section className="flex flex-col gap-2 border-t border-white/10 pt-4">
+      <h3 className="text-xs font-medium text-slate-300">Contacts (WhatsApp / email ke liye)</h3>
+      <p className="text-xs text-slate-500">
+        NOVA sirf inhi ko (ya command mein likhe number/email ko) message bhejta hai — aap ki WhatsApp chats mein khud
+        nahi dhoondta. Har message bhejne se pehle poochta hai.
+      </p>
+      {contacts === null ? (
+        <span className="text-xs text-slate-500">Load ho rahe hain...</span>
+      ) : contacts.length === 0 ? (
+        <span className="text-xs text-slate-500">Abhi koi contact nahi.</span>
+      ) : (
+        <ul className="flex flex-col gap-1.5">
+          {contacts.map((c) => (
+            <li key={c.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/[0.03] px-3 py-2">
+              <span className="flex min-w-0 flex-col">
+                <span className="text-xs text-slate-200">{c.name}</span>
+                <span className="truncate font-mono text-[10px] text-slate-500">
+                  {[showPhone(c.phone), c.email].filter(Boolean).join(" · ")}
+                </span>
+              </span>
+              <button type="button" onClick={() => void remove(c.id)} className="shrink-0 text-xs text-red-300 hover:text-red-200">
+                Hatao
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="grid grid-cols-[1fr_1fr] gap-2">
+        <input
+          className={`${inputClass} col-span-2 text-xs`}
+          placeholder="Naam (maslan Ali)"
+          value={form.name}
+          maxLength={60}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+        />
+        <input
+          className={`${inputClass} font-mono text-xs`}
+          placeholder="0300 1234567"
+          value={form.phone}
+          maxLength={30}
+          onChange={(e) => setForm({ ...form, phone: e.target.value })}
+        />
+        <input
+          className={`${inputClass} text-xs`}
+          placeholder="email (ikhtiyari)"
+          value={form.email}
+          maxLength={120}
+          onChange={(e) => setForm({ ...form, email: e.target.value })}
+        />
+      </div>
+      {(errors.phone || errors.email || errors.name || errors.form) && (
+        <span className="text-xs text-red-300">{errors.phone || errors.email || errors.name || errors.form}</span>
+      )}
+      <button
+        type="button"
+        onClick={() => void add()}
+        disabled={!form.name.trim() || (!form.phone.trim() && !form.email.trim())}
+        className="self-start rounded-lg border border-sky-500/40 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-500/10 disabled:opacity-40"
+      >
+        Contact add karein
+      </button>
+    </section>
+  );
+}
 
 /** Approvals the user chose to remember ("don't ask again"), with a way to take them back. */
 function PermissionRules({ open }: { open: boolean }) {
@@ -649,6 +747,8 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
             </div>
           </form>
         )}
+
+        <Contacts open={open} />
 
         <PermissionRules open={open} />
 

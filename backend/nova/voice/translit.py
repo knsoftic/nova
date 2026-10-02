@@ -107,7 +107,7 @@ LEXICON: dict[str, str] = {
     "rehne": "رہنے", "jao": "جاؤ", "han": "ہاں", "haa": "ہاں", "jee": "جی", "kardo": "کر دو", "bhai": "بھائی",
     "nai": "نہیں",
     # browser + research replies (Phase 8A)
-    "aakhir": "آخر", "aisi": "ایسی", "baare": "بارے", "bare": "بارے", "banayi": "بنائی", "bharosemand": "بھروسہ مند",
+    "aakhir": "آخر", "aisi": "ایسی", "baare": "بارے", "banayi": "بنائی", "bharosemand": "بھروسہ مند",
     "daalein": "ڈالیں", "dhoond": "ڈھونڈ", "faislon": "فیصلوں", "jiski": "جس کی", "kabhi": "کبھی", "khaali": "خالی",
     "khabron": "خبروں", "khabrein": "خبریں", "khane": "خانے", "kholega": "کھولے گا", "kholein": "کھولیں",
     "khulasa": "خلاصہ", "lagega": "لگے گا", "layak": "لائق", "likhta": "لکھتا", "mojood": "موجود", "pichla": "پچھلا",
@@ -128,6 +128,11 @@ LEXICON: dict[str, str] = {
     "soch": "سوچ", "tajweez": "تجویز", "tarteeb": "ترتیب", "tasveer": "تصویر", "toot": "ٹوٹ", "un": "ان",
     "uska": "اس کا", "uske": "اس کے", "cheezein": "چیزیں", "batata": "بتاتا", "bhejta": "بھیجتا", "deta": "دیتا",
     "dhoondta": "ڈھونڈتا", "khatre": "خطرے", "leta": "لیتا", "julte": "جلتے",
+    # Phase 8C: settings, messages, design
+    "badlaav": "بدلاؤ", "badlo": "بدلو", "bhejne": "بھیجنے", "chahein": "چاہیں", "chalu": "چالو", "chun": "چن",
+    "dabayenge": "دبائیں گے", "dekhna": "دیکھنا", "dikhana": "دکھانا", "ghumao": "گھماؤ", "haroof": "حروف",
+    "hatana": "ہٹانا", "hona": "ہونا", "jayenge": "جائیں گے", "khulne": "کھلنے", "lag": "لگ", "lamba": "لمبا",
+    "paas": "پاس", "pakka": "پکا", "rang": "رنگ", "waisi": "ویسی", "yahi": "یہی",
 }
 # "ki" appears twice above (possessive and "did"); both are written the same in Urdu.
 

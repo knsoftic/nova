@@ -184,12 +184,12 @@ def intent(name, **entities):
 
 
 def test_plan_statuses_and_risk():
-    plan = build_plan(Understanding(intents=[intent("system_info", topic="ram"), intent("change_setting"),
+    plan = build_plan(Understanding(intents=[intent("system_info", topic="ram"), intent("run_workflow"),
                                              intent("delete_file"), intent("open_app", app="Chrome")],
                                     provider="test"))
     by_intent = {s.intent.name: s for s in plan.steps}
     assert by_intent["system_info"].status == "ready" and by_intent["system_info"].risk == "low"
-    assert by_intent["change_setting"].status == "unavailable" and by_intent["change_setting"].available_from_phase == 8
+    assert by_intent["run_workflow"].status == "unavailable" and by_intent["run_workflow"].available_from_phase == 9
     assert by_intent["delete_file"].risk == "medium" and by_intent["delete_file"].status == "needs_permission"
     assert by_intent["open_app"].status == "ready" and by_intent["open_app"].risk == "low"
     assert [s.id for s in plan.steps] == [1, 2, 3, 4]

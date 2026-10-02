@@ -23,7 +23,10 @@ from .agents.computer import ComputerAgent, ControlOutcome
 from .agents.file_agent import FILE_INTENTS, FileAgent
 from .agents.prepared import Prepared, Reply
 from .ai.base import ConversationTurn, Intent, Understanding
+from .agents.settings_agent import SETTINGS_INTENTS
 from .coding import CODING_INTENTS, CodingAgent
+from .communication import COMM_INTENTS
+from .design import DESIGN_INTENTS
 from .files import ScopeError
 from .browser.agent import BrowserAgent, download_is_executable, site_for
 from .browser.controller import ElementInfo
@@ -93,12 +96,22 @@ class Orchestrator:
         research: ResearchAgent | None = None,
         files: FileAgent | None = None,
         coding: CodingAgent | None = None,
+        settings_agent: Any = None,
+        communication: Any = None,
+        design: Any = None,
     ) -> None:
         self.permissions = permissions
         self.browser = browser
         self.research = research
         self.files = files
         self.coding = coding
+        # Agents with the common async protocol: prepare(intent, progress) -> Prepared | Reply,
+        # run(intent, prepared, approved, progress) -> ControlOutcome.
+        self.prepared_agents: dict[str, Any] = {}
+        for agent, intents in ((settings_agent, SETTINGS_INTENTS), (communication, COMM_INTENTS),
+                               (design, DESIGN_INTENTS)):
+            if agent is not None:
+                self.prepared_agents.update(dict.fromkeys(intents, agent))
         self.bus = bus
         self.db = db
         self.providers = providers
@@ -264,6 +277,8 @@ class Orchestrator:
             outcome = await self._run_file(task_id, step)
         elif intent.name in CODING_INTENTS and step.status == "ready" and self.coding is not None and step.prepared:
             outcome = await self._run_coding(task_id, step)
+        elif intent.name in self.prepared_agents and step.status == "ready" and step.prepared:
+            outcome = await self._run_prepared_agent(task_id, step)
         elif step.status == "skipped" and step.result:
             # The agent answered without acting: "kaun si file?", "nahi mila", "pehle errors check karo".
             outcome = AgentOutcome(step.result, step.agent, step.action, executed=False)
@@ -451,7 +466,8 @@ class Orchestrator:
     @staticmethod
     def _prepared_target(p: Prepared) -> TargetContext:
         return TargetContext(title=p.summary, scope_key=p.scope_key, preview=p.preview, count=p.count, size=p.size,
-                             executes_code=p.executes_code, network=p.network, always_ask=p.always_ask)
+                             executes_code=p.executes_code, network=p.network, always_ask=p.always_ask,
+                             min_risk=p.min_risk, agent_reasons=tuple(p.reasons))
 
     async def _prepare_steps(self, task_id: str, plan: Plan) -> None:
         """File/Coding steps: resolve exactly what will happen before anyone is asked. A step that turns out
@@ -462,12 +478,13 @@ class Orchestrator:
                 continue
             if name in FILE_INTENTS and self.files is not None:
                 result: Prepared | Reply = await asyncio.to_thread(self.files.prepare, step.intent)
-            elif name in CODING_INTENTS and self.coding is not None:
+            elif (name in CODING_INTENTS and self.coding is not None) or name in self.prepared_agents:
                 async def progress(message: str, agent: str = step.agent) -> None:
                     await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=agent,
                                                      message=message))
 
-                result = await self.coding.prepare(step.intent, progress)
+                agent = self.coding if name in CODING_INTENTS else self.prepared_agents[name]
+                result = await agent.prepare(step.intent, progress)
             else:
                 continue
             if isinstance(result, Reply):
@@ -514,6 +531,25 @@ class Orchestrator:
             result = await self.coding.run(step.intent, step.prepared, approved, progress)
         except (ScopeError, OSError) as exc:
             message = str(exc) if isinstance(exc, ScopeError) else f"Command nahi chal saki: {exc}"
+            result = ControlOutcome(message, step.action, False, "failed")
+        return await self._report(task_id, step, result)
+
+    async def _run_prepared_agent(self, task_id: str, step: PlanStep) -> AgentOutcome:
+        """System settings, Communication and Design agents: run exactly what was prepared (and approved)."""
+        agent = self.prepared_agents[step.intent.name]
+        await self.set_state(NovaState.WORKING, task_id)
+        await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
+                                         message=f"{step.description}: {step.prepared.summary}"))
+
+        async def progress(message: str) -> None:
+            await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=step.agent,
+                                             message=message))
+
+        approved = step.permission in ("approved", "rule")
+        try:
+            result = await agent.run(step.intent, step.prepared, approved, progress)
+        except (ScopeError, OSError) as exc:
+            message = str(exc) if isinstance(exc, ScopeError) else f"Windows ne ye kaam nahi karne diya: {exc}"
             result = ControlOutcome(message, step.action, False, "failed")
         return await self._report(task_id, step, result)
 

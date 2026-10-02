@@ -86,6 +86,15 @@ CREATE TABLE IF NOT EXISTS file_ops (
     undone INTEGER NOT NULL DEFAULT 0
 );
 
+-- People the Communication Agent may message (added by the user only; kept on this PC).
+CREATE TABLE IF NOT EXISTS contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    phone TEXT,
+    email TEXT,
+    created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_activity_task ON activity_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at);
 """
@@ -252,6 +261,23 @@ class Database:
 
     def mark_file_op_undone(self, op_id: int) -> None:
         self._execute("UPDATE file_ops SET undone = 1 WHERE id = ?", (op_id,))
+
+    # contacts (Communication Agent)
+    def save_contact(self, name: str, phone: str | None, email: str | None) -> dict[str, Any]:
+        """Add a contact, or fill in the number/email of an existing one (same name, any case)."""
+        self._execute(
+            "INSERT INTO contacts(name, phone, email, created_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET phone = COALESCE(excluded.phone, contacts.phone), "
+            "email = COALESCE(excluded.email, contacts.email)",
+            (name, phone, email, datetime.now().isoformat(timespec="seconds")),
+        )
+        return self._query("SELECT * FROM contacts WHERE name = ? COLLATE NOCASE", (name,))[0]
+
+    def list_contacts(self) -> list[dict[str, Any]]:
+        return self._query("SELECT * FROM contacts ORDER BY name COLLATE NOCASE")
+
+    def delete_contact(self, contact_id: int) -> bool:
+        return self._execute("DELETE FROM contacts WHERE id = ?", (contact_id,)).rowcount > 0
 
     # system profile (latest few kept for comparison)
     def save_system_profile(self, profile_json: str, keep: int = 5) -> None:

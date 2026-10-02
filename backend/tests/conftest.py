@@ -479,9 +479,124 @@ class FakeCoding:
                 "code_launcher": self.launch_code, "open_wait_s": 1.0}
 
 
+class FakeSettings:
+    """Windows settings stand-in: tests never change the real volume, theme or radios."""
+
+    def __init__(self):
+        self.state = {"volume": 40, "muted": False, "brightness": 70, "theme": "light", "wifi": "on", "bluetooth": "on"}
+        self.pages: list[str] = []
+        self.calls: list[tuple] = []
+
+    def volume(self):
+        return self.state["volume"]
+
+    def set_volume(self, v):
+        self.calls.append(("volume", v))
+        self.state["volume"], self.state["muted"] = v, False
+
+    def muted(self):
+        return self.state["muted"]
+
+    def set_mute(self, m):
+        self.calls.append(("mute", m))
+        self.state["muted"] = m
+
+    def brightness(self):
+        return self.state["brightness"]
+
+    def set_brightness(self, v):
+        self.calls.append(("brightness", v))
+        self.state["brightness"] = v
+
+    def theme(self):
+        return self.state["theme"]
+
+    def set_theme(self, t):
+        self.calls.append(("theme", t))
+        self.state["theme"] = t
+
+    def radio(self, kind):
+        return self.state[kind]
+
+    def set_radio(self, kind, on):
+        self.calls.append(("radio", kind, on))
+        self.state[kind] = "on" if on else "off"
+
+    def open_page(self, uri):
+        self.pages.append(uri)
+
+
+class FakeWhatsApp:
+    """WhatsApp stand-in: nothing is ever sent from tests."""
+
+    def __init__(self):
+        self.is_installed = True
+        self.opened: list[tuple[str, str]] = []
+        self.sent: list[tuple[str, str]] = []
+        self.composer_ok: bool | None = True
+        self.enter_ok = True
+        self.sent_ok: bool | None = True
+        self.window = WindowInfo(hwnd=700, title="WhatsApp", pid=70, process="WhatsApp.Root.exe",
+                                 class_name="WinUIDesktopWin32WindowClass", minimized=False, maximized=False)
+
+    def installed(self):
+        return self.is_installed
+
+    def open_chat(self, phone, text):
+        self.opened.append((phone, text))
+        return self.window
+
+    def composer_holds(self, window, text):
+        return self.composer_ok
+
+    def press_send(self, window):
+        if self.enter_ok:
+            self.sent.append(self.opened[-1])
+        return self.enter_ok
+
+    def sent_visible(self, window, text):
+        return self.sent_ok
+
+
+class FakeMailer:
+    def __init__(self):
+        self.ready = True
+        self.status = "sent"
+        self.sent: list[tuple] = []
+        self.drafts: list[tuple] = []
+        self.mailto: list[tuple] = []
+
+    def outlook_ready(self):
+        return self.ready
+
+    def send_outlook(self, to, subject, body, attachments):
+        self.sent.append((to, subject, body, [p.name for p in attachments]))
+        return self.status
+
+    def draft_outlook(self, to, subject, body, attachments):
+        self.drafts.append((to, subject, body))
+        return True
+
+    def open_mailto(self, to, subject, body):
+        self.mailto.append((to, subject, body))
+
+
+class FakeDesign:
+    def __init__(self):
+        self.opened: list = []
+        self.launched: list = []
+
+    def overrides(self):
+        return {"opener": self.opened.append, "launcher": lambda exe, path: self.launched.append((exe, path)),
+                "app_lookup": lambda exe: rf"C:\Apps\{exe}" if exe in ("Photoshop.exe", "mspaint.exe") else None,
+                "open_wait_s": 0.3}
+
+
 def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDesktop | None = None,
                  permission_timeout_s: float = 0.5, browser: FakeBrowser | None = None, web: FakeWeb | None = None,
-                 trash: FakeTrash | None = None, coding: FakeCoding | None = None, opened: list | None = None):
+                 trash: FakeTrash | None = None, coding: FakeCoding | None = None, opened: list | None = None,
+                 settings: FakeSettings | None = None, whatsapp: FakeWhatsApp | None = None,
+                 mailer: FakeMailer | None = None, design: FakeDesign | None = None):
     ollama = ollama or FakeOllama(models=[])  # reachable but no model: rules only, deterministic
     browser = browser or FakeBrowser()
     browser.downloads_dir = tmp_path / "Downloads" / "NOVA"
@@ -498,7 +613,10 @@ def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDeskto
                      file_overrides={"trash": trash or FakeTrash(files_root(tmp_path) / "_trash"),
                                      "can_trash": lambda p: True,
                                      "opener": lambda path, editor: opened.append(path), "open_wait_s": 0.5},
-                     coding_overrides=coding.overrides())
+                     coding_overrides=coding.overrides(),
+                     windows_settings=settings or FakeSettings(),
+                     comm_overrides={"whatsapp": whatsapp or FakeWhatsApp(), "mailer": mailer or FakeMailer()},
+                     design_overrides=(design or FakeDesign()).overrides())
     return TestClient(app)
 
 

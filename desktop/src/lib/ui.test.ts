@@ -3,7 +3,7 @@ import { matchesActivity } from "./activityFilter";
 import { computeLevel, smoothLevel } from "./audio";
 import { emptyHistory, navigateHistory, pushHistory } from "./commandHistory";
 import type { AiStatus, EventType, NovaEvent } from "./types";
-import { aiLabel, formatBytes, formatDuration, linkParts, messageBlocks, providerLabel } from "./ui";
+import { aiLabel, formatBytes, formatDuration, linkParts, messageBlocks, providerLabel, showPhone } from "./ui";
 
 const ev = (type: EventType, agent: string | null = "Orchestrator"): NovaEvent => ({
   type,
@@ -143,5 +143,13 @@ describe("messageBlocks", () => {
 
   it("leaves plain replies alone", () => {
     expect(messageBlocks("Folder bana diya.")).toEqual([{ code: false, text: "Folder bana diya." }]);
+  });
+});
+
+describe("showPhone", () => {
+  it("formats Pakistani numbers and keeps others international", () => {
+    expect(showPhone("923001234567")).toBe("+92 300 1234567");
+    expect(showPhone("971501234567")).toBe("+971501234567");
+    expect(showPhone(null)).toBe("");
   });
 });

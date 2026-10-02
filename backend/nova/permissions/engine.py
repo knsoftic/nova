@@ -61,6 +61,8 @@ class TargetContext:
     executes_code: bool = False
     network: bool = False
     always_ask: bool = False
+    min_risk: Risk = "low"  # the agent's judgement of the resolved action
+    agent_reasons: tuple[str, ...] = ()
 
 
 class PermissionItem(BaseModel):
@@ -138,6 +140,11 @@ def classify(intent: str, entities: dict[str, object], base_risk: Risk, target: 
         reasons.append("Wapas ho sakta hai: 'pichla file kaam undo karo'")
     if intent in ("fix_error", "modify_code"):
         reasons.insert(0, "Code ki tabdeeli neeche dikhai gayi hai; purani file ka backup rakha jayega")
+    if RISK_ORDER[target.min_risk] > RISK_ORDER[risk]:
+        risk = target.min_risk
+    reasons.extend(target.agent_reasons)
+    if intent == "send_message" and CREDENTIAL_TEXT.search(target.preview or ""):
+        escalate("high", "Message mein password/OTP/card jaisi maloomat lagti hai")
     if target.executes_code:
         escalate("medium", "Project ka apna code/scripts is PC par chalenge")
     if target.network:

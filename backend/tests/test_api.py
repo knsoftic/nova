@@ -38,7 +38,7 @@ def test_command_is_logged_and_redacted(client):
     assert "hunter2" not in convo["user_text"]
     activity = client.get("/api/activity").json()[0]
     assert activity["admin_status"] == "pending"
-    assert activity["execution_status"] == "intent_only"
+    assert activity["execution_status"] == "responded"  # words only, nothing executed
     for field in ("date", "time", "task_id", "agent", "permission_status", "verification_status"):
         assert activity[field]
 
@@ -60,7 +60,7 @@ def test_websocket_event_flow(client):
     types = [e["type"] for e in seen]
     assert types.index("TASK_STARTED") < types.index("INTENT_DETECTED") < types.index("TASK_COMPLETED")
     states = [e["data"]["state"] for e in seen if e["type"] == "STATE_CHANGED"]
-    assert states == ["THINKING", "WORKING", "COMPLETED", "IDLE"]
+    assert states == ["THINKING", "PLANNING", "WORKING", "COMPLETED", "IDLE"]
     response = next(e for e in seen if e["type"] == "NOVA_RESPONSE")
     assert "Visual Studio Code is PC par installed hai" in response["message"]
     assert "koi action nahi kiya gaya" in response["message"]

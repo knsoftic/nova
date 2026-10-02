@@ -17,6 +17,8 @@ class UserSettings(BaseModel):
     wake_word: str = Field(default="Hey NOVA", min_length=2, max_length=40)
     continuous_listening: bool = False  # takes effect when voice arrives (Phase 5)
     startup_mode: Literal["silent", "active"] = "active"  # takes effect with Windows startup (Phase 12)
+    ai_mode: Literal["hybrid", "llm", "rules"] = "hybrid"
+    ai_model: str = Field(default="qwen3:4b", min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._:/\-]+$")
 
     @field_validator("assistant_name", "wake_word")
     @classmethod
@@ -33,6 +35,8 @@ class UserSettingsUpdate(BaseModel):
     wake_word: str | None = None
     continuous_listening: bool | None = None
     startup_mode: Literal["silent", "active"] | None = None
+    ai_mode: Literal["hybrid", "llm", "rules"] | None = None
+    ai_model: str | None = None
 
 
 def load_user_settings(db: Database, default_name: str = "NOVA") -> UserSettings:

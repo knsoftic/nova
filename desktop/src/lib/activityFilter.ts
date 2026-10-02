@@ -11,7 +11,16 @@ export const ACTIVITY_FILTERS: { id: ActivityFilter; label: string }[] = [
 ];
 
 const CATEGORY: Record<Exclude<ActivityFilter, "all">, EventType[]> = {
-  tasks: ["TASK_STARTED", "NOVA_THINKING", "INTENT_DETECTED", "NOVA_RESPONSE", "TASK_COMPLETED", "TASK_FAILED"],
+  tasks: [
+    "TASK_STARTED",
+    "NOVA_THINKING",
+    "INTENT_DETECTED",
+    "PLAN_CREATED",
+    "STEP_COMPLETED",
+    "NOVA_RESPONSE",
+    "TASK_COMPLETED",
+    "TASK_FAILED",
+  ],
   agents: [
     "AGENT_STARTED",
     "AGENT_WORKING",
@@ -27,6 +36,8 @@ const CATEGORY: Record<Exclude<ActivityFilter, "all">, EventType[]> = {
     "DISCOVERY_FAILED",
     "SETTINGS_CHANGED",
     "NOVA_LISTENING",
+    "AI_STATUS",
+    "AI_FALLBACK",
   ],
   errors: ["TASK_FAILED", "DISCOVERY_FAILED"],
 };

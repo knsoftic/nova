@@ -70,7 +70,7 @@ export default function App() {
   const shownState = previewState ?? nova.state;
   const voiceNote =
     mic.status === "on"
-      ? "Mic on hai — abhi sirf awaaz ka level dikhaya ja raha hai; awaaz se command Phase 5 mein aayegi. Audio na save hota hai na kahin bheja jata hai."
+      ? "Mic on hai â€” abhi sirf awaaz ka level dikhaya ja raha hai; awaaz se command Phase 5 mein aayegi. Audio na save hota hai na kahin bheja jata hai."
       : ["denied", "unavailable", "error"].includes(mic.status)
         ? MIC_LABEL[mic.status].hint
         : null;
@@ -82,6 +82,7 @@ export default function App() {
         connection={nova.connection}
         version={nova.version}
         micStatus={mic.status}
+        aiStatus={nova.aiStatus}
         onOpenSettings={() => setSettingsOpen(true)}
       />
       <main className="grid min-h-0 flex-1 grid-cols-[260px_1fr_320px] gap-4">
@@ -99,7 +100,7 @@ export default function App() {
                 }`}
               >
                 {v.label}
-                {v.id === "system" && nova.scanning && <span className="ml-2 animate-pulse text-amber-300">●</span>}
+                {v.id === "system" && nova.scanning && <span className="ml-2 animate-pulse text-amber-300">â—</span>}
               </button>
             ))}
           </nav>
@@ -158,6 +159,8 @@ export default function App() {
       <SettingsDrawer
         open={settingsOpen}
         settings={nova.settings}
+        aiStatus={nova.aiStatus}
+        onRefreshAi={nova.refreshAiStatus}
         onClose={closeSettings}
         onPreviewState={preview}
       />

@@ -1,4 +1,4 @@
-import type { NovaState } from "./types";
+import type { AiStatus, NovaState } from "./types";
 
 export const STATE_META: Record<NovaState, { label: string; color: string }> = {
   IDLE: { label: "Tayyar hoon", color: "#38bdf8" },
@@ -28,6 +28,21 @@ export const AGENTS: AgentInfo[] = [
   { name: "Design Agent", description: "Design tools", phase: 8 },
   { name: "Communication Agent", description: "Messages (permission ke sath)", phase: 8 },
 ];
+
+/** Short label for who is understanding commands right now. */
+export function aiLabel(status: AiStatus | null): { text: string; ok: boolean } {
+  if (!status) return { text: "AI: ...", ok: true };
+  if (status.mode === "rules") return { text: "AI: sirf rules", ok: true };
+  if (status.model_ready) return { text: `AI: ${status.model} (${status.mode})`, ok: true };
+  return { text: "AI: rules (model offline)", ok: false };
+}
+
+/** "ollama:qwen3:4b" -> "qwen3:4b", "rule_based" -> "rules". */
+export function providerLabel(provider: string | undefined): string | null {
+  if (!provider) return null;
+  if (provider === "rule_based") return "rules";
+  return provider.replace(/^ollama:/, "");
+}
 
 export function formatBytes(n: number | null | undefined): string {
   if (!n) return "?";

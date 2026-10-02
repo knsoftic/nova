@@ -8,6 +8,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, Callable
 
+import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from . import __version__
 from .ai.manager import ProviderManager
+from .ai.ollama import OllamaProvider
 from .config import Settings, load_settings
 from .db import Database
 from .discovery import DiscoveryService, LiveStats, SystemProfile, find_app
@@ -40,6 +42,31 @@ async def _background_scan(discovery: DiscoveryService) -> None:
         pass
 
 
+async def _prepare_ai(providers: ProviderManager, bus: EventBus) -> None:
+    """Report whether the local model is usable and load it into memory so the first command is fast."""
+    if providers.mode == "rules":
+        await bus.publish(NovaEvent(type=EventType.AI_STATUS, agent="Orchestrator",
+                                    message="AI mode: sirf rules (local model istemal nahi ho raha)",
+                                    data=await providers.status(refresh=True)))
+        return
+    status = await providers.status(refresh=True)
+    if not status["model_ready"]:
+        reason = "Ollama nahi chal raha" if not status["ollama"]["reachable"] else f"model {status['model']} install nahi"
+        await bus.publish(NovaEvent(type=EventType.AI_STATUS, agent="Orchestrator",
+                                    message=f"AI model available nahi ({reason}) — rules se kaam ho raha hai",
+                                    data=status))
+        return
+    await bus.publish(NovaEvent(type=EventType.AI_STATUS, agent="Orchestrator",
+                                message=f"AI model {status['model']} load ho raha hai...", data=status))
+    try:
+        await providers.ollama.warm_up()
+        message = f"AI model tayyar: {status['model']} ({providers.mode})"
+    except httpx.HTTPError as exc:
+        message = f"AI model load nahi ho saka ({type(exc).__name__}) — rules fallback rahega"
+    await bus.publish(NovaEvent(type=EventType.AI_STATUS, agent="Orchestrator", message=message,
+                                data=await providers.status()))
+
+
 class CommandRequest(BaseModel):
     text: str = Field(min_length=1, max_length=MAX_COMMAND_LENGTH)
     source: str = Field(default="text", pattern="^(text|voice)$")
@@ -49,8 +76,9 @@ def create_app(
     settings: Settings | None = None,
     scanner: Callable[[], SystemProfile] | None = None,
     stats: Callable[[], LiveStats] | None = None,
+    ollama_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
-    """`scanner`/`stats` override the real Windows collectors (used by tests)."""
+    """`scanner`/`stats`/`ollama_transport` replace the real Windows collectors and Ollama (tests)."""
     settings = settings or load_settings()
 
     @asynccontextmanager
@@ -59,7 +87,11 @@ def create_app(
         user_settings = load_user_settings(db, default_name=settings.assistant_name)
         assistant_name = user_settings.assistant_name
         bus = EventBus()
-        providers = ProviderManager(active=db.get_setting("ai_provider") or settings.ai_provider)
+        providers = ProviderManager(
+            mode=user_settings.ai_mode,
+            ollama=OllamaProvider(model=user_settings.ai_model, base_url=settings.ollama_url,
+                                  transport=ollama_transport),
+        )
         discovery_kwargs: dict[str, Any] = {}
         if scanner:
             discovery_kwargs["scanner"] = scanner
@@ -81,14 +113,18 @@ def create_app(
         startup_scan: asyncio.Task[Any] | None = None
         if settings.discovery_on_startup:
             startup_scan = asyncio.create_task(_background_scan(discovery))
+        app.state.background = {asyncio.create_task(_prepare_ai(providers, bus))}
+        if startup_scan:
+            app.state.background.add(startup_scan)
         log.info("NOVA backend ready on %s:%s", settings.host, settings.port)
         try:
             yield
         finally:
-            if startup_scan and not startup_scan.done():
-                startup_scan.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await startup_scan
+            for task in app.state.background:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
             db.close()
 
     app = FastAPI(title="NOVA Backend", version=__version__, lifespan=lifespan)
@@ -113,7 +149,7 @@ def create_app(
             "assistant_name": orch.assistant_name,
             "state": orch.state.value,
             "version": __version__,
-            "ai_providers": app.state.providers.describe(),
+            "ai": await app.state.providers.status(),
             "capabilities": {
                 "voice": False,
                 "system_discovery": True,
@@ -137,6 +173,11 @@ def create_app(
         app.state.user_settings = new
         orchestrator().apply_settings(new.assistant_name, new.wake_word)
         changed = sorted(k for k, v in update.model_dump(exclude_none=True).items())
+        if {"ai_mode", "ai_model"} & set(changed):
+            app.state.providers.configure(mode=new.ai_mode, model=new.ai_model)
+            task = asyncio.create_task(_prepare_ai(app.state.providers, app.state.bus))
+            app.state.background.add(task)
+            task.add_done_callback(app.state.background.discard)
         app.state.db.add_activity(
             task_id="settings", task_name="update_settings", agent="Orchestrator", action="update_settings",
             permission_status="user_initiated", execution_status="success", final_result=", ".join(changed),
@@ -147,6 +188,10 @@ def create_app(
                       data=new.model_dump())
         )
         return new
+
+    @app.get("/api/ai/status")
+    async def ai_status(refresh: bool = False) -> dict[str, Any]:
+        return await app.state.providers.status(refresh=refresh)
 
     @app.get("/api/system/profile")
     async def system_profile() -> dict[str, Any]:

@@ -14,6 +14,9 @@ const TONE: Partial<Record<EventType, string>> = {
   NOVA_LISTENING: "text-emerald-300",
   SYSTEM_READY: "text-emerald-400",
   SETTINGS_CHANGED: "text-violet-300",
+  PLAN_CREATED: "text-indigo-300",
+  AI_STATUS: "text-violet-300",
+  AI_FALLBACK: "text-amber-300",
 };
 
 interface Props {

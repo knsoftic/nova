@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 
 from ..language import detect_language
-from .base import AIProvider, Intent
+from .base import AIProvider, ConversationTurn, Intent, Understanding
 
 BUILTIN_NAMES = ("nova", "نووا", "नोवा")
 
@@ -40,7 +40,8 @@ HELP = re.compile(
 SYSTEM_TOPICS: list[tuple[str, re.Pattern[str]]] = [
     (topic, re.compile(pattern, re.IGNORECASE))
     for topic, pattern in [
-        ("running", r"chal rah[eiy]|running|khul[ei] hu[ei]|open (?:apps|windows)"),
+        # Needs both an app word and a "running/open" word, so "zindagi kaisi chal rahi hai" is not a system query.
+        ("running", r"^(?=.*\b(?:apps?|applications?|programs?|softwares?|windows)\b)(?=.*(?:chal rah|running|khul[ei]|\bopen\b))"),
         ("browsers", r"\bbrowsers?\b|براؤزر|ब्राउज़र"),
         ("apps", r"\b(?:apps?|applications?|softwares?|programs?)\b|ایپس|ایپلیکیشن"),
         ("ram", r"\bram\b|\bmemory\b|ریم|میموری|रैम"),
@@ -108,7 +109,9 @@ OPEN_APP = [
     re.compile(r"^(?P<app>.+?)\s+(?:खोलो|खोल दो|चलाओ|ओपन करो|ओपन कर दो)$"),
 ]
 
-FOLDER_DETERMINERS = {"ye", "yeh", "is", "ek", "aik", "naya", "new", "this", "a"}
+COMPOUND_SPLIT = re.compile(r"\s*(?:,\s*)?\b(?:aur phir|aur|and then|and|phir|then)\b\s*|\s+(?:اور|پھر|और|फिर)\s+", re.IGNORECASE)
+
+FOLDER_DETERMINERS ={"ye", "yeh", "is", "ek", "aik", "naya", "new", "this", "a"}
 
 TRAILING_PUNCT =re.compile(r"[\s.!?۔،,]+$")
 
@@ -118,10 +121,29 @@ def normalize(text: str, wake: re.Pattern[str] = WAKE_WORD) -> str:
     return TRAILING_PUNCT.sub("", text).strip()
 
 
+FILLER_PREFIX = re.compile(
+    r"^(?:(?:the|a|an|first|please|plz|zara|jaldi|jaldi se|bhai|yaar|yar|pehle|pahle|mera|meri|mere|my|ye|yeh|is|wo|woh)\s+)+",
+    re.IGNORECASE,
+)
+
+
+PRONOUNS = {"isko", "isey", "ise", "usko", "usey", "use", "ye", "yeh", "wo", "woh", "it", "this", "that", "inko",
+             "unko", "اسے", "اس کو", "इसे", "इसको", "उसे"}
+
+FILLER_SUFFIX =re.compile(r"(?:\s+(?:for me|please|plz|mere liye|mera|jaldi|zara|now|abhi))+$", re.IGNORECASE)
+# "desktop par Projects" -> "Projects": a location phrase in front of a name is not part of the name.
+LOCATION_PREFIX = re.compile(
+    r"^(?:(?:desktop|documents|downloads|pictures|music|videos|[a-z]:\\?|d drive|c drive)\s+(?:par|pe|mein|me|main|on|in)\s+)",
+    re.IGNORECASE,
+)
+
+
 def _clean_entity(value: str | None) -> str | None:
     if not value:
         return None
-    value = re.sub(r"^(?:the|a|an)\s+", "", value.strip(), flags=re.IGNORECASE)
+    value = FILLER_PREFIX.sub("", value.strip())
+    value = LOCATION_PREFIX.sub("", value)
+    value = FILLER_SUFFIX.sub("", value)
     return value.strip(" \"'") or None
 
 
@@ -135,21 +157,40 @@ class RuleBasedProvider(AIProvider):
     def configure_wake(self, assistant_name: str, wake_word: str) -> None:
         self._wake = build_wake_pattern(assistant_name, wake_word)
 
+    async def understand(self, text: str, context: list[ConversationTurn] | None = None) -> Understanding:
+        """Splits compound commands ("Chrome kholo aur RAM batao") when every part is understood."""
+        cleaned = normalize(text, self._wake)
+        parts = [p for p in COMPOUND_SPLIT.split(cleaned) if p.strip()]
+        if len(parts) > 1:
+            intents = [await self.detect_intent(p) for p in parts]
+            if all(i.name not in ("unknown", "greeting") for i in intents):
+                language = detect_language(text)
+                unique: list[Intent] = []
+                for i in intents:
+                    i.language = language
+                    if not any(u.name == i.name and u.entities == i.entities for u in unique):
+                        unique.append(i)  # "mic aur camera" -> one devices query, not two
+                return Understanding(intents=unique, provider=self.name)
+        return Understanding(intents=[await self.detect_intent(text)], provider=self.name)
+
     async def detect_intent(self, text: str) -> Intent:
         language = detect_language(text)
         cleaned = normalize(text, self._wake)
+        # Rules are precise on short commands; long conversational sentences are less certain,
+        # which lets hybrid mode hand them to the LLM.
+        damping = 0.75 if len(cleaned.split()) > 8 else 1.0
 
         def make(name: str, confidence: float, **entities: object) -> Intent:
             return Intent(
                 name=name,
-                confidence=confidence,
+                confidence=round(confidence * damping, 3),
                 language=language,
                 entities={k: v for k, v in entities.items() if v is not None},
                 provider=self.name,
             )
 
         if not cleaned:
-            return make("greeting", 0.6)
+            return make("greeting", 0.9)  # bare wake word
 
         if m := RUN_WORKFLOW.search(cleaned):
             return make("run_workflow", 0.8, workflow=(m.group("name") or m.group("name2")).lower())
@@ -168,7 +209,9 @@ class RuleBasedProvider(AIProvider):
 
         for pattern in OPEN_APP:
             if m := pattern.search(cleaned):
-                return make("open_app", 0.85, app=_clean_entity(m.group("app")))
+                app = _clean_entity(m.group("app"))
+                # "isko kholo" refers to something said earlier: only the LLM (with context) can resolve it.
+                return make("open_app", 0.3 if app and app.lower() in PRONOUNS else 0.85, app=app)
 
         if CHANGE_SETTING.search(cleaned):
             return make("change_setting", 0.7, request=cleaned)

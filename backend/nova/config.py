@@ -23,7 +23,7 @@ class Settings:
     port: int = 8765
     data_dir: Path = PROJECT_ROOT / "data"
     assistant_name: str = "NOVA"
-    ai_provider: str = "rule_based"
+    ollama_url: str = "http://127.0.0.1:11434"
     discovery_on_startup: bool = True
     allowed_origins: tuple[str, ...] = field(default=DEFAULT_ALLOWED_ORIGINS)
 
@@ -42,7 +42,7 @@ def load_settings() -> Settings:
         port=int(os.environ.get("NOVA_PORT", "8765")),
         data_dir=Path(os.environ.get("NOVA_DATA_DIR", PROJECT_ROOT / "data")),
         assistant_name=os.environ.get("NOVA_ASSISTANT_NAME", "NOVA"),
-        ai_provider=os.environ.get("NOVA_AI_PROVIDER", "rule_based"),
+        ollama_url=os.environ.get("NOVA_OLLAMA_URL", "http://127.0.0.1:11434"),
         discovery_on_startup=os.environ.get("NOVA_DISCOVERY_ON_STARTUP", "1").lower() not in ("0", "false", "no"),
         allowed_origins=DEFAULT_ALLOWED_ORIGINS + extra_origins,
     )

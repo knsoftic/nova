@@ -28,13 +28,42 @@ export type EventType =
   | "DISCOVERY_STARTED"
   | "DISCOVERY_COMPLETED"
   | "DISCOVERY_FAILED"
-  | "SETTINGS_CHANGED";
+  | "SETTINGS_CHANGED"
+  | "PLAN_CREATED"
+  | "STEP_COMPLETED"
+  | "AI_FALLBACK"
+  | "AI_STATUS";
+
+export type AiMode = "hybrid" | "llm" | "rules";
 
 export interface UserSettings {
   assistant_name: string;
   wake_word: string;
   continuous_listening: boolean;
   startup_mode: "silent" | "active";
+  ai_mode: AiMode;
+  ai_model: string;
+}
+
+export interface AiStatus {
+  mode: AiMode;
+  model: string;
+  model_ready: boolean;
+  llm_in_use: boolean;
+  ollama: { reachable: boolean; version: string | null; models: string[]; error: string | null };
+  last_provider: string | null;
+  last_latency_ms: number | null;
+}
+
+export interface PlanStepSummary {
+  id: number;
+  agent: string;
+  action: string;
+  risk: "low" | "medium" | "high";
+  status: "ready" | "unavailable" | "needs_permission" | "done" | "failed" | "skipped";
+  description: string;
+  intent: string;
+  available_from_phase: number | null;
 }
 
 /** One row of the persisted, structured activity log (spec section 30). */
@@ -152,6 +181,9 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   failed?: boolean;
+  /** For NOVA replies: who understood the command and the steps that were planned. */
+  provider?: string;
+  steps?: PlanStepSummary[];
 }
 
 declare global {

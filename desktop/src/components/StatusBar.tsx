@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import type { ConnectionStatus, LiveStats } from "../lib/types";
+import type { AiStatus, ConnectionStatus, LiveStats } from "../lib/types";
+import { aiLabel } from "../lib/ui";
 import type { MicStatus } from "../lib/useMicrophone";
 import { MIC_LABEL } from "./MicControl";
 
@@ -37,13 +38,15 @@ interface Props {
   connection: ConnectionStatus;
   version: string | null;
   micStatus: MicStatus;
+  aiStatus: AiStatus | null;
   onOpenSettings: () => void;
 }
 
-export function StatusBar({ name, connection, version, micStatus, onOpenSettings }: Props) {
+export function StatusBar({ name, connection, version, micStatus, aiStatus, onOpenSettings }: Props) {
   const c = CONNECTION[connection];
   const mic = MIC_LABEL[micStatus];
   const live = useLiveStats(connection === "connected");
+  const ai = aiLabel(aiStatus);
 
   return (
     <header className="flex items-center justify-between px-1">
@@ -61,7 +64,9 @@ export function StatusBar({ name, connection, version, micStatus, onOpenSettings
           <span className={`h-2 w-2 rounded-full ${mic.dot}`} />
           {mic.text}
         </span>
-        <span>AI: rule-based (local)</span>
+        <span className={ai.ok ? "" : "text-amber-300"} title="Commands kaun samajh raha hai (local, PC se bahar kuch nahi jata)">
+          {ai.text}
+        </span>
         {version && <span>v{version}</span>}
         <span className="flex items-center gap-2" role="status">
           <span className={`h-2 w-2 rounded-full ${c.dot}`} />

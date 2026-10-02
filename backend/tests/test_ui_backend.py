@@ -10,7 +10,7 @@ from nova.ai.rule_based import RuleBasedProvider
 def test_settings_defaults(client):
     s = client.get("/api/settings").json()
     assert s == {"assistant_name": "NOVA", "wake_word": "Hey NOVA", "continuous_listening": False,
-                 "startup_mode": "active"}
+                 "startup_mode": "active", "ai_mode": "hybrid", "ai_model": "qwen3:4b"}
 
 
 def test_settings_partial_update_persists_and_logs(client):
@@ -26,19 +26,11 @@ def test_settings_partial_update_persists_and_logs(client):
 
 
 def test_settings_survive_restart(tmp_path):
-    from fastapi.testclient import TestClient
+    from conftest import build_client
 
-    from conftest import fake_stats, make_profile
-    from nova.config import Settings
-    from nova.main import create_app
-
-    def make():
-        return create_app(Settings(data_dir=tmp_path, discovery_on_startup=False), scanner=make_profile,
-                          stats=fake_stats)
-
-    with TestClient(make()) as c:
+    with build_client(tmp_path) as c:
         c.put("/api/settings", json={"assistant_name": "Zara", "wake_word": "Suno Zara"})
-    with TestClient(make()) as c:
+    with build_client(tmp_path) as c:
         assert c.get("/api/settings").json()["wake_word"] == "Suno Zara"
         assert c.get("/api/status").json()["assistant_name"] == "Zara"
 
@@ -105,7 +97,7 @@ def test_voice_state_switches_listening_and_returns_after_command(client):
 
         # A command while the mic is open returns to LISTENING, not IDLE.
         ws.send_json({"type": "command", "text": "Assalam-o-Alaikum"})
-        assert _states_until(ws, "LISTENING") == ["THINKING", "COMPLETED", "LISTENING"]
+        assert _states_until(ws, "LISTENING") == ["THINKING", "PLANNING", "COMPLETED", "LISTENING"]
 
         ws.send_json({"type": "voice_state", "active": False})
         assert _states_until(ws, "IDLE") == ["IDLE"]

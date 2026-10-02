@@ -11,7 +11,8 @@ def test_settings_defaults(client):
     s = client.get("/api/settings").json()
     assert s == {"assistant_name": "NOVA", "wake_word": "Hey NOVA", "continuous_listening": False,
                  "startup_mode": "active", "ai_mode": "hybrid", "ai_model": "qwen3:4b",
-                 "stt_language": "ur", "tts_voice": "ur_PK-fasih-medium", "speak_responses": "voice_only"}
+                 "stt_language": "ur", "tts_voice": "ur_PK-fasih-medium", "speak_responses": "voice_only",
+                 "search_engine": "google", "browser_channel": "chrome"}
 
 
 def test_settings_partial_update_persists_and_logs(client):

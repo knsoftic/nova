@@ -106,6 +106,13 @@ LEXICON: dict[str, str] = {
     "rakha": "رکھا", "wapas": "واپس", "yaad": "یاد", "sun": "سن", "mat": "مت", "ruk": "رک", "ruko": "رکو",
     "rehne": "رہنے", "jao": "جاؤ", "han": "ہاں", "haa": "ہاں", "jee": "جی", "kardo": "کر دو", "bhai": "بھائی",
     "nai": "نہیں",
+    # browser + research replies (Phase 8A)
+    "aakhir": "آخر", "aisi": "ایسی", "baare": "بارے", "bare": "بارے", "banayi": "بنائی", "bharosemand": "بھروسہ مند",
+    "daalein": "ڈالیں", "dhoond": "ڈھونڈ", "faislon": "فیصلوں", "jiski": "جس کی", "kabhi": "کبھی", "khaali": "خالی",
+    "khabron": "خبروں", "khabrein": "خبریں", "khane": "خانے", "kholega": "کھولے گا", "kholein": "کھولیں",
+    "khulasa": "خلاصہ", "lagega": "لگے گا", "layak": "لائق", "likhta": "لکھتا", "mojood": "موجود", "pichla": "پچھلا",
+    "agla": "اگلا", "pohncha": "پہنچا", "poori": "پوری", "taza": "تازہ", "wahi": "وہی", "wazeh": "واضح",
+    "kami": "کمی", "ikhtilaf": "اختلاف",
 }
 # "ki" appears twice above (possessive and "did"); both are written the same in Urdu.
 

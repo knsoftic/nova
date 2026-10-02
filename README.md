@@ -2,12 +2,13 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 7 (Permission Engine)**. NOVA listens (push-to-talk or wake word), understands Urdu /
-Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in an
-offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
+Current status: **Phase 8A (Browser + Research agents)**. NOVA listens (push-to-talk or wake word), understands
+Urdu / Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in
+an offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
 afterwards). Risky actions — typing, clicking, pasting, closing apps — run only after the user says yes
 (dialog or voice), with context-aware risk levels, remembered approvals for medium risk, and a full audit
-trail. See [LOGS.md](LOGS.md) for development history and approval status.
+trail. It drives its own browser (open, read, summarise, click, type, download) and answers live questions
+or writes research reports from web sources. See [LOGS.md](LOGS.md) for development history and approval status.
 
 ## Voice (offline)
 
@@ -50,6 +51,19 @@ Measure the brain against real commands:
 
 (from `backend/`)
 
+## Web (browser + research)
+
+- **Browser Agent:** drives the installed Google Chrome (or Microsoft Edge, Settings → Web) through Playwright
+  with NOVA's **own profile** (`data/browser-profile`) — never the user's passwords, cookies or logins. No extra
+  browser download is needed. Clicking, typing and downloads always ask first; password, card and OTP fields
+  are refused outright. Downloads go to `Downloads\NOVA`; executables are high risk.
+- **Research Agent:** web search through the **Brave Search API** (official API, free tier — add your key in
+  ⚙ Settings → Web; it is encrypted with Windows DPAPI and never shown again). Without a key, research reports
+  use Wikipedia, and live questions (weather, rates, news) explain how to enable Brave instead of guessing.
+  Reports are saved to `Documents\NOVA\Research`.
+- Pages are fetched only from the public internet (local/private addresses are blocked, every redirect is
+  re-checked). Web text is untrusted: the local model only summarises it, never acts on it.
+
 ## Layout
 
 ```
@@ -63,6 +77,10 @@ nova/
 │   │   ├── agents/         System Agent: system info + computer control (computer.py)
 │   │   ├── control/        Win32 windows, app launcher with verification, SendInput, screen capture/OCR/UIA
 │   │   ├── permissions/    risk classification, asking the user, remembered approvals, audit
+│   │   ├── browser/        Browser Agent + Playwright controller (NOVA's own Chrome profile)
+│   │   ├── research/       Research Agent, Brave/Wikipedia search, safe fetching, text extraction
+│   │   ├── secret_store.py DPAPI-encrypted secrets (Brave key)
+│   │   ├── known_folders.py Desktop/Documents/Downloads… from the registry
 │   │   ├── voice/          segmenter, Whisper STT, wake word, Piper TTS, Roman Urdu → Urdu script
 │   │   ├── events.py       event types, NOVA states, event bus
 │   │   ├── ai/             Provider Manager (hybrid/llm/rules), Ollama provider, rule-based provider
@@ -147,7 +165,31 @@ Environment variables (backend):
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
 
-## Admin manual test (Phase 7)
+## Admin manual test (Phase 8A, approved)
+
+1. `desktop/` mein `npm start` chalayein. ⚙ Settings → **Web aur browser**: "Search: sirf Wikipedia" likha ho.
+2. **Brave key (ikhtiyari, tajweez):** brave.com/search/api se free key banayein, paste karke **Save key** — status
+   "Brave API (key ••••XXXX)" ho jaye aur key dobara kahin nazar na aaye. **Hatao** se wapas Wikipedia.
+3. **Website:** `example.com kholo` — NOVA ki apni Chrome window khule (aap ke bookmarks/logins nahi), jawab
+   "khul gaya (Verify: page example.com load hua)". `youtube kholo` bhi try karein.
+4. **Parhna:** `is page ko summarize karo` — ~30 second mein 3-5 points (local AI).
+5. **Navigation:** `neeche scroll karo`, `peeche jao`, `aage jao`, `page reload karo`.
+6. **Click (ijazat se):** example.com par `Learn more link par click karo` — dialog mein asli link ka naam
+   ("Learn more"), Haan → "page badla". `Delete link par click karo` — "nahi mila", kuch na pooche.
+7. **Likhna (ijazat se):** `wikipedia.org kholo`, phir `search box mein Islamabad likho` — dialog mein text aur
+   khana ("Search Wikipedia" khane mein); Haan → "Likh diya (Verify…)". Kisi login page par
+   `password box mein abc likho` — NOVA bina pooche inkaar kare ("password kabhi nahi likhta").
+8. **Search:** `google par python tutorial search karo` — browser mein Google search khule.
+9. **Taza sawal:** `dollar ka rate kya hai` — Brave key ho to jawab + Sources (links clickable); key na ho to
+   NOVA imandari se batata hai ke Wikipedia par live maloomat nahi hoti.
+10. **Research report:** `Islamabad ke baare mein research karo` — 1-2 minute (local AI). Jawab mein khulasa,
+    sources, aur `Documents\NOVA\Research\…md` file ban jaye.
+11. **Download (ijazat se):** kisi page par PDF link ho to `<link ka naam> download karo` → Haan → file
+    `Downloads\NOVA` mein. `.exe` wala download laal (high risk) dialog dikhaye.
+12. **Activity Log** tab mein har kaam (Browser/Research Agent, permission, verification) nazar aaye.
+13. Sab theek ho to approve karein, warna problem batayein.
+
+## Admin manual test (Phase 7, approved)
 
 1. `desktop/` mein `npm start` chalayein. **Notepad** kholein aur us mein click kar dein (taa ke wo aap ki "pichli window" ho), phir NOVA par aayein.
 2. **Ijazat dialog:** `hello type karo` — dialog aaye: "Text type karna: "hello" (… Notepad)", peela "Darmiyana khatra", countdown, focus **Nahi** par. Avatar "?" (WAITING FOR PERMISSION).

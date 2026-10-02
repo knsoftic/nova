@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ChatMessage, PlanStepSummary } from "../lib/types";
-import { formatTime, providerLabel } from "../lib/ui";
+import { formatTime, linkParts, providerLabel } from "../lib/ui";
 
 const STEP_BADGE: Record<PlanStepSummary["status"], { icon: string; tone: string }> = {
   done: { icon: "✓", tone: "text-emerald-300" },
@@ -93,7 +93,21 @@ export function Conversation({ messages, assistantName }: { messages: ChatMessag
                 <span>{formatTime(m.timestamp)}</span>
                 {provider && <span title="Kis ne samjha">· {provider}</span>}
               </div>
-              {m.text}
+              {linkParts(m.text).map((p, i) =>
+                p.href ? (
+                  <a
+                    key={i}
+                    href={p.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="break-all text-sky-300 underline decoration-sky-300/40 hover:text-sky-200"
+                  >
+                    {p.text}
+                  </a>
+                ) : (
+                  p.text
+                ),
+              )}
               {isModelAnswer(m) && (
                 <div className="mt-1.5 text-[10px] text-slate-500">
                   AI ka jawab ({provider}) — chhota local model hai, ghalti ho sakti hai.

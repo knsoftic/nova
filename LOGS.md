@@ -330,3 +330,79 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 7 commit `274da28`, `main` mein merge `fae39a2`.
+
+---
+
+### Task: Phase 8A — Browser Agent + Research Agent
+
+Status: Complete (branch `phase-8a-browser-research`, approval ke baad `main` mein merge)
+
+Phase 8 teen hisson mein (admin ka faisla): **8A** Browser + Research, **8B** File + Coding, **8C** System settings + Communication + Design. Har hissa alag test aur approval ke sath.
+
+Kaam:
+- **Browser Agent:** NOVA ab apna browser chalata hai — installed Google Chrome (ya Edge, Settings se), Playwright ke zariye, NOVA ki **alag profile** (`data/browser-profile`) ke sath: aap ke passwords, cookies aur logins istemal nahi hote. Koi naya browser download nahi hua.
+  - Website kholna ("example.com kholo", "youtube kholo" — jo site app ki tarah installed na ho wo browser mein khulti hai). Verify: page load hua aur address sahi hai.
+  - Anjaan naam (bina dot ke) → search engine par search (Settings: Google / Bing / DuckDuckGo).
+  - Page parhna aur khulasa ("is page ko summarize karo") — local AI 3-5 points deta hai.
+  - Scroll, peeche, aage, reload — verify ke page badla ya nahi (chhote page par imandari se "page wahi raha").
+  - Click, type, download — **hamesha ijazat se**. Ijazat se pehle NOVA page par asli element dhoondta hai aur dialog mein uska asli naam dikhata hai (maslan "Learn more", ya "Search Wikipedia" khane mein). Element na mile to bina pooche "nahi mila". Ijazat ke baad page badal gaya ho (element ka text alag ho) to click nahi karta.
+  - "Delete / Buy / Pay / Send..." jaise buttons aur `.exe/.msi` jaise downloads **high risk** (laal dialog, yaad nahi rakhe jate).
+  - Password, card number, CVV, OTP wale khane: NOVA **bina pooche inkaar** karta hai ("NOVA password kabhi nahi likhta").
+  - Downloads `Downloads\NOVA` mein, file ka naam saaf karke. Verify: file bani.
+  - User NOVA ke browser window mein ho aur "X par click karo" kahe, to ye kaam Browser Agent karta hai (desktop click nahi).
+- **Research Agent:**
+  - Web search sirf official API se: **Brave Search API** (admin ki apni key) — Google/Bing ke pages scrape nahi kiye jate. Key na ho to Wikipedia API.
+  - Taza sawal ("Lahore ka mausam", "dollar ka rate", "latest news"): Brave se 5 results + local AI ka 1-4 jumlon ka jawab + Sources (links). Key na ho to NOVA imandari se batata hai ke Wikipedia par live maloomat nahi hoti, aur Brave key ya browser search ka tareeqa batata hai — ghalat articles nahi dikhata.
+  - Research report ("X ke baare mein research karo"): mukhtalif websites ke 3 sources parhta hai, local AI report likhta hai (khulasa, 4-6 aham baatein, kami/ikhtilaf) — `Documents\NOVA\Research\<tareekh>_<topic>.md` mein Sources aur disclaimer ke sath. Verify: file bani.
+- **Hifazat:**
+  - Safe fetch: sirf public internet. localhost, 127.x, 10.x, 192.168.x, 169.254 (cloud metadata), IPv6 local waghera block. Har redirect dobara check hota hai, aur connection usi IP se hota hai jo check hui (DNS rebinding se bachao). Sirf HTML/text, 2 MB tak.
+  - Web ka text "untrusted" hai: local AI ko sakht hidayat hai ke us mein likhi hidayaat par amal na kare. AI ka jawab sirf dikhaya/bola jata hai, kabhi execute nahi hota.
+  - Brave key Windows DPAPI se encrypted (sirf isi user/PC par khul sakti hai). API key kabhi wapas nahi deti — sirf "••••1234". Activity log aur server logs mein key nahi jati (test se verify).
+- **Local AI behtar:** chhota model khulase mein apni "soch" English mein likh deta tha ("Okay, the user wants...") aur bohat slow tha. Ab jawab JSON schema mein majboor hai (points / jumle), prompt mein Roman Urdu misaal, chhota input, aur har call ka ek hi context size (model dobara load nahi hota). Nateeja: page khulasa 52s → ~30s, report 204s → ~110s, "soch" wala text khatam.
+- **UI:** Settings mein "Web aur browser" section — Brave key (likh kar save, dobara nazar nahi aati, Hatao), search engine, Chrome/Edge. Agents panel mein Browser aur Research Agent active; File/Coding "Phase 8B", Design/Communication "Phase 8C". Jawab mein https links clickable hain (default browser mein khulte hain).
+- AI brain: 8 naye intents (open_website, read_page, browser_nav, browser_click, browser_type, download, research, web_answer) — rules aur LLM prompt dono mein.
+
+Test:
+- Backend automated tests: 337/337 pass (58 naye) — SSRF block list, IP pinning, redirects, size/type, text extraction, Brave/Wikipedia (disambiguation pages skip), encrypted secret (kabhi wapas nahi, ghalat key echo nahi), browser flows (fake browser par), click/type/download ijazat, password/card par inkaar, page badalne par click na karna, research report sirf public sources se, AI "soch" filter, ghalat JSON par fallback, search phrasing. Tests asli browser ya internet ko haath nahi lagate.
+- Frontend: 12/12 tests (link parsing naya), typecheck aur production build successful.
+- AI brain eval (47 commands, 11 naye browser/research): sirf rules 42/47 (baqi 5 aam sawal hain jo model ke liye hain), **hybrid 47/47** (median 7.9s), sirf LLM 47/47 (median 9.0s).
+- **Is PC par asli test:**
+  - NOVA ki Chrome window apni profile se ~3s mein khuli; example.com khula + verify (2.7s).
+  - Khulasa ~30s, bina "soch" ke.
+  - Scroll (chhota page — imandari se "page wahi raha"); "Learn more" click ijazat se → page badla (verify); peeche.
+  - "Delete link par click karo" — nahi mila, poocha bhi nahi.
+  - wikipedia.org par "search box mein Islamabad likho" → dialog → Haan → likha gaya aur verify (0.5s).
+  - "Islamabad ke baare mein research karo" — Wikipedia ke 3 sources, Roman Urdu report, ~110s.
+  - SSRF: localhost/private addresses block; Wikipedia ka asli TLS fetch pinned IP ke sath.
+- Browser UI: Settings Web section; ek nakli test key save → "••••0000" → Hatao (activity log mein sirf "save hui (encrypted)", key kahin nahi); sources ke links clickable; "dollar ka rate kya hai" (bina key) → imandar jawab fauran.
+- Electron app: production build launch hui, "NOVA Command Center" window, backend errors: 0.
+
+Bugs / masail jo test ke dauran mile aur fix kiye gaye:
+- Khulase aur report mein AI ki English "soch" — JSON schema se fix.
+- Wikipedia se report mein sirf 1 source (har source alag website ka hona zaroori tha) — ab pehle alag websites, phir usi site ke doosre pages; disambiguation pages skip.
+- "dollar ka rate kya hai" bina Brave key ke Wikipedia se film/TV articles le aaya aur AI ne sawal hi dohra diya — ab live sawal par Wikipedia istemal nahi hota (imandar jawab), aur sawal dohrane wala jumla filter hota hai.
+- Wikipedia search Roman Urdu alfaaz ("ka", "kya", "hai") ki wajah se ghalat articles laata tha — ab sirf asal alfaaz search hote hain.
+- "google par ... search karo" / "google pe dekho ..." ko live sawal samjha ja raha tha — ab browser search; "dollar rate google par search karo" mein "google par" query se hataya.
+- "search box mein ... likho" Wikipedia par khana nahi dhoond pata tha ("search box" vs "Search Wikipedia") — ab "box/field/khana" hata kar aur search fields bhi dhoondta hai; dialog mein khane ka naam bhi aata hai.
+- AI model "Pakistan ka capital kya hai" ko live sawal samajhne laga — prompt mein misaalen di gayin, hybrid wapas 47/47.
+- "aage jao" pehchana nahi jata tha — add kiya.
+- Mere test se bani 2 research reports `Documents\NOVA\Research` se Recycle Bin mein bheji gayin.
+
+Maloom hadood (limitations):
+- Brave key ke baghair taza maloomat (mausam, rate, khabrein) nahi milti — sirf browser search. Brave ki free key admin ko khud banani hogi.
+- Local AI (CPU) slow hai: khulasa ~30s, report 1-2 minute. Chhota model kabhi khulasa English mein deta hai (khaas kar English page par), aur facts mein ghalti ho sakti hai — report mein disclaimer hai.
+- Login wali sites (Gmail waghera) NOVA ki alag profile mein logged out hain. NOVA password nahi likhta, is liye login admin ko khud karna hoga.
+- Kuch websites automation ko CAPTCHA dikhati hain — NOVA CAPTCHA hal nahi karta.
+- Ek dafa (dobara nahi hua) page khulne ke foran baad khana dhoondne mein 21s lage — nazar rakhi ja rahi hai.
+
+Verification:
+- Website: page ka address/title; click: page badla ya nahi; type: khane mein wahi text; download: file bani; report: file bani. Activity log mein verification_status.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

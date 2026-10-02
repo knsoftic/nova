@@ -141,9 +141,124 @@ FOCUS_APP = [
 ]
 
 
+# ---- browser + research (Phase 8A) ---------------------------------------------------------
+_TLDS = (r"com|org|net|pk|io|dev|edu|gov|in|co|ai|app|tv|me|info|biz|uk|us|ca|au|de|fr|jp|xyz|site|online|tech|"
+         r"blog|news|store|shop|ly|gg|so|to")
+_URL = rf"(?P<url>(?:https?://)?(?:localhost(?::\d+)?|(?:[a-z0-9-]+\.)+(?:{_TLDS})(?::\d+)?)(?:/\S*)?)"
+OPEN_WEBSITE = [
+    re.compile(rf"^(?:please\s+)?(?:open|kholo|go\s+to|visit)\s+(?:website\s+|site\s+)?{_URL}$", re.IGNORECASE),
+    re.compile(rf"^{_URL}\s+(?:website\s+|site\s+)?(?:kholo|khol do|open\s+{_DO}|(?:par|pe)\s+jao|chalao|visit\s+{_DO})$",
+               re.IGNORECASE),
+    re.compile(r"^(?P<url>.+?)\s+(?:website|site)\s+(?:kholo|khol do|open\s+" + _DO[3:-1] + r"|(?:par|pe)\s+jao)$",
+               re.IGNORECASE),
+]
+
+RESEARCH = [
+    re.compile(r"^(?P<q>.+?)\s+(?:ke|ki|ka)\s+(?:baare|bare|mutalliq)\s+(?:mein|me)\s+(?:research|tehqeeq|report)\s*"
+               r"(?:karo|kar do|kijiye|banao|bana do|likho)?$", re.IGNORECASE),
+    re.compile(r"^(?P<q>.+?)\s+(?:par|pe)\s+(?:research|tehqeeq|report)\s*(?:karo|kar do|kijiye|banao|bana do|likho)?$",
+               re.IGNORECASE),
+    re.compile(r"^(?P<q>.+?)\s+(?:ki|ka)\s+(?:report|research)\s+(?:banao|bana do|likho|karo)$", re.IGNORECASE),
+    re.compile(r"^(?:research|do\s+research\s+on|research\s+about|make\s+a\s+report\s+on|write\s+a\s+report\s+on)\s+"
+               r"(?P<q>.+)$", re.IGNORECASE),
+    re.compile(r"^(?P<q>.+?\s+(?:aur|and|vs\.?|versus)\s+.+?)\s+(?:ka|ki|mein)\s+(?:comparison|muqabla|muqabila)\s*"
+               r"(?:karo|kar do|batao)?$", re.IGNORECASE),
+    re.compile(r"^compare\s+(?P<q>.+)$", re.IGNORECASE),
+]
+
+# Questions that need live information: answered from the web with sources.
+ENGINE_LOOKUP = [
+    re.compile(r"^(?:google|bing|duckduckgo)\s+(?:pe|par|mein|me)\s+(?:dekho|dekh\s+lo|check\s+karo|dhoondo)\s+(?P<query>.+)$",
+               re.IGNORECASE),
+    re.compile(r"^(?P<query>.+?)\s+(?:google|bing|duckduckgo)\s+(?:pe|par|mein|me)\s+(?:dekho|dekh\s+lo|check\s+karo|dhoondo)$",
+               re.IGNORECASE),
+]
+
+SEARCH_REQUEST = re.compile(r"\bsearch\s+(?:karo|kar do|kardo|kijiye|karein)$", re.IGNORECASE)
+
+WEB_ANSWER = re.compile(
+    r"\b(?:mausam|weather|temperature|darja\s+hararat)\b"
+    r"|\b(?:latest|taaza|taza|aaj\s+ki|aaj\s+ka|abhi\s+ki)\s+(?:news|khabar|khabrein|khabren|update|updates|score)\b"
+    r"|\b(?:dollar|gold|sona|petrol|bitcoin)\s+(?:ka|ki)\s+(?:rate|qeemat|keemat|price)\b"
+    r"|موسم|मौसम",
+    re.IGNORECASE,
+)
+
+READ_PAGE = re.compile(
+    r"\b(?:is|ye|yeh|this|current)\s+(?:page|website|article|site|webpage)\s+(?:ko\s+)?(?:parho|parh\s+do|read\s+karo|"
+    r"summari[sz]e\s*(?:karo|kar\s+do)?|ka\s+khulasa\s*(?:batao|do|karo)?|mein\s+kya\s+(?:hai|likha\s+hai))"
+    r"|\bsummari[sz]e\s+(?:this\s+|the\s+)?(?:page|website|article)\b|\bpage\s+(?:ka\s+)?(?:khulasa|summary)\b"
+    r"|\bread\s+(?:this|the)\s+(?:page|article)\b",
+    re.IGNORECASE,
+)
+
+SCROLL = re.compile(r"\bscroll\s+(?P<d>down|up|neeche|niche|upar)\b|\b(?P<d2>neeche|niche|upar|down|up)\s+scroll\b",
+                    re.IGNORECASE)
+BROWSER_BACK = re.compile(r"^(?:browser\s+mein\s+)?(?:go\s+back|back\s+(?:jao|karo|chalo)|peeche\s+(?:jao|chalo)|"
+                          r"pichle\s+page\s+(?:par|pe)\s+(?:jao|chalo))$", re.IGNORECASE)
+BROWSER_FORWARD = re.compile(r"^(?:browser\s+mein\s+)?(?:go\s+forward|forward\s+(?:jao|karo)|aage\s+(?:jao|chalo)|"
+                             r"agle\s+page\s+(?:par|pe)\s+(?:jao|chalo))$", re.IGNORECASE)
+BROWSER_RELOAD = re.compile(r"^(?:page\s+)?reload\s*(?:karo|kar do)?$", re.IGNORECASE)
+
+BROWSER_CLICK = [
+    re.compile(r"^(?P<target>.+?)\s+link\s+(?:par|pe)\s+click\s*(?:karo|kar do|kijiye)?$", re.IGNORECASE),
+    re.compile(r"^click\s+(?:on\s+)?(?:the\s+)?(?P<target>.+?)\s+link$", re.IGNORECASE),
+]
+BROWSER_TYPE = re.compile(
+    r"^(?P<field>.+?\s+(?:box|field|khane|khana|bar))\s+(?:mein|me)\s+(?P<text>.+?)\s+"
+    r"(?:likho|likh do|type karo|bharo|bhar do|daalo|dalo)$", re.IGNORECASE)
+DOWNLOAD = [
+    re.compile(r"^(?P<target>.+?)\s+(?:download|dawnload)\s*(?:karo|kar do|kar lo|kijiye)?$", re.IGNORECASE),
+    re.compile(r"^download\s+(?P<target>.+)$", re.IGNORECASE),
+]
+
+
+def _browser_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
+    for p in RESEARCH:
+        if m := p.search(cleaned):
+            return "research", {"query": m.group("q").strip(" ?.")}
+    # A named search engine or "... search karo" asks for a browser search, even about the weather or a rate.
+    for p in ENGINE_LOOKUP:
+        if m := p.search(cleaned):
+            return "web_search", {"query": m.group("query").strip(" ?.")}
+    if SEARCH_REQUEST.search(cleaned):
+        return None  # handled by WEB_SEARCH
+    if WEB_ANSWER.search(cleaned):
+        return "web_answer", {"query": cleaned}
+    if READ_PAGE.search(cleaned):
+        return "read_page", {}
+    if m := SCROLL.search(cleaned):
+        d = (m.group("d") or m.group("d2")).lower()
+        return "browser_nav", {"action": "scroll_down" if d in ("down", "neeche", "niche") else "scroll_up"}
+    if BROWSER_BACK.search(cleaned):
+        return "browser_nav", {"action": "back"}
+    if BROWSER_FORWARD.search(cleaned):
+        return "browser_nav", {"action": "forward"}
+    if BROWSER_RELOAD.search(cleaned):
+        return "browser_nav", {"action": "reload"}
+    if m := BROWSER_TYPE.search(cleaned):
+        return "browser_type", {"field": m.group("field").strip(), "text": m.group("text").strip()}
+    for p in BROWSER_CLICK:
+        if m := p.search(cleaned):
+            return "browser_click", {"target": _clean_entity(m.group("target"))}
+    for p in DOWNLOAD:
+        if m := p.search(cleaned):
+            return "download", {"target": _clean_entity(m.group("target"))}
+    for p in OPEN_WEBSITE:
+        if m := p.search(cleaned):
+            return "open_website", {"url": m.group("url").strip()}
+    return None
+
+
 def _computer_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
-    """Computer-control commands. Typing is checked first so dictated text is never treated as a command."""
-    for p in TYPE_TEXT:
+    """Action commands. Explicit dictation ("likho: ...") is checked first so dictated text is never treated as
+    a command; browser commands come before the ambiguous trailing "... likho" form."""
+    for p in TYPE_TEXT[:2]:
+        if m := p.search(cleaned):
+            return "type_text", {"text": m.group("text").strip()}
+    if browser := _browser_intent(cleaned):
+        return browser
+    for p in TYPE_TEXT[2:]:
         if m := p.search(cleaned):
             return "type_text", {"text": m.group("text").strip()}
     if SCREENSHOT.search(cleaned):
@@ -315,6 +430,9 @@ class RuleBasedProvider(AIProvider):
         for pattern in WEB_SEARCH:
             if m := pattern.search(cleaned):
                 query = _clean_entity(m.groupdict().get("query"))
+                if query:  # "dollar rate google par search karo": the engine is a place, not part of the query
+                    query = re.sub(r"\s+(?:google|bing|duckduckgo|internet|web)\s+(?:par|pe|mein|me)$", "", query,
+                                   flags=re.IGNORECASE) or query
                 return make("web_search", 0.8, query=query)
 
         for pattern in OPEN_APP:

@@ -16,3 +16,5 @@ winrt-Windows.Storage.Streams>=3.2
 winrt-Windows.Globalization>=3.2
 winrt-Windows.Foundation>=3.2
 winrt-Windows.Foundation.Collections>=3.2
+playwright>=1.55
+trafilatura>=2.0

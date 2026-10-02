@@ -52,6 +52,17 @@ export interface UserSettings {
   stt_language: "ur" | "hi" | "en" | "auto";
   tts_voice: string;
   speak_responses: "voice_only" | "always" | "never";
+  search_engine: "google" | "bing" | "duckduckgo";
+  browser_channel: "chrome" | "msedge";
+}
+
+/** Web search setup. The Brave key itself never comes back from the backend — only a masked hint. */
+export interface WebStatus {
+  search_provider: "brave" | "wikipedia";
+  brave_configured: boolean;
+  brave_key_masked: string | null;
+  search_engine: UserSettings["search_engine"];
+  browser_channel: UserSettings["browser_channel"];
 }
 
 export interface AiStatus {

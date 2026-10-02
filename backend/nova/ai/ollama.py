@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from ..language import detect_language
 from .base import (
+    BROWSER_NAV_ACTIONS,
     KNOWN_INTENTS,
     SHORTCUT_NAMES,
     SYSTEM_TOPICS,
@@ -45,7 +46,8 @@ Intent names:
 - chat: a general question, knowledge, advice, small talk, or anything answerable with words only.
 - open_app: open/launch/start an application. Field "app".
 - app_check: asks whether an application is installed. Field "app".
-- web_search: search the web for something. Field "query" (what to search, without the browser name).
+- web_search: search or look something up in the browser, e.g. on Google/Bing ("google pe dekho ...",
+  "... search karo"). Field "query" (what to search, without the browser or engine name).
 - create_folder: create a folder. Field "folder_name" ("" if not given).
 - system_info: asks about this PC. Field "topic", one of: summary, cpu, ram, gpu, storage, windows, devices, displays, network, admin, browsers, apps, running.
 - rescan_system: asks to scan / rescan the system.
@@ -61,7 +63,17 @@ Intent names:
   press enter/escape. Field "keys" (copy | paste | cut | undo | redo | select_all | save | new_tab |
   close_tab | find | refresh | enter | escape).
 - type_text: type/write given text into the current window. Field "text" with the exact text to type.
-- mouse_click: click a named button/link on screen. Field "target" (its label).
+- mouse_click: click a named button on screen. Field "target" (its label).
+- open_website: open a website/URL in the browser. Field "url" (domain or site name, e.g. "youtube.com").
+- read_page: read or summarise the web page currently open in NOVA's browser.
+- browser_nav: scroll or move in the browser. Field "nav_action" (scroll_down | scroll_up | back | forward | reload).
+- browser_click: click a link/button on the open web page. Field "target" (its visible text).
+- browser_type: type into a field of the open web page. Fields "field" (its label, "" if not said) and "text".
+- download: download a file from the open web page. Field "target" (link text).
+- research: research a topic, compare things, or write a report from web sources. Field "query".
+- web_answer: a question that needs current/live information (weather, news, prices/rates, scores,
+  "who is the current ...") and names no search engine. Field "query" (the question). Facts that
+  do not change - capitals, history, definitions, how-to - are "chat".
 - unknown: unclear or not covered.
 
 Rules:
@@ -81,6 +93,8 @@ Examples:
 "VS Code open karo aur RAM batao" -> {"intents":[{"name":"open_app","app":"VS Code"},{"name":"system_info","topic":"ram"}],"answer":""}
 "likho: Kal subah 9 baje call hai" -> {"intents":[{"name":"type_text","text":"Kal subah 9 baje call hai"}],"answer":""}
 "chai aur coffee mein kya farq hai" -> {"intents":[{"name":"chat"}],"answer":"Coffee mein caffeine zyada hoti hai aur chai mein kam. Dono patton/beejon se bante hain lekin zaiqa alag hota hai."}
+"Quaid-e-Azam kab paida huay" -> {"intents":[{"name":"chat"}],"answer":"Quaid-e-Azam Muhammad Ali Jinnah 25 December 1876 ko Karachi mein paida huay."}
+"google pe dekho kal ka match kis ne jeeta" -> {"intents":[{"name":"web_search","query":"kal ka match kis ne jeeta"}],"answer":""}
 """
 
 
@@ -107,6 +121,9 @@ def _schema() -> dict[str, Any]:
                         "keys": {"type": "string", "enum": ["", *SHORTCUT_NAMES]},
                         "text": text,
                         "target": text,
+                        "url": text,
+                        "field": text,
+                        "nav_action": {"type": "string", "enum": ["", *BROWSER_NAV_ACTIONS]},
                     },
                     "required": ["name"],
                 },
@@ -130,12 +147,18 @@ ENTITY_FIELDS: dict[str, tuple[str, str]] = {
     "read_screen": ("app", "app"),
     "type_text": ("text", "text"),
     "mouse_click": ("target", "target"),
+    "open_website": ("url", "url"),
+    "browser_click": ("target", "target"),
+    "download": ("target", "target"),
+    "research": ("query", "query"),
+    "web_answer": ("query", "query"),
 }
 
 # Enum-valued fields: anything outside the allowed set is dropped.
 ENUM_FIELDS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "window_control": ("window_action", "action", WINDOW_ACTIONS),
     "keyboard_shortcut": ("keys", "keys", SHORTCUT_NAMES),
+    "browser_nav": ("nav_action", "action", BROWSER_NAV_ACTIONS),
 }
 
 
@@ -164,10 +187,12 @@ def parse_model_output(raw: str, language: str, provider: str) -> tuple[list[Int
             continue
         name = item["name"]
         entities: dict[str, Any] = {}
-        if name == "type_text":
+        if name in ("type_text", "browser_type"):
             # Dictated text is typed exactly as given (whitespace kept), only length-limited.
             if isinstance(item.get("text"), str) and item["text"].strip():
                 entities["text"] = item["text"].strip()[:2000]
+            if name == "browser_type" and (field := _clip(item.get("field"))):
+                entities["field"] = field
         elif name in ENTITY_FIELDS:
             field, key = ENTITY_FIELDS[name]
             if value := _clip(item.get(field)):
@@ -179,7 +204,7 @@ def parse_model_output(raw: str, language: str, provider: str) -> tuple[list[Int
             elif name == "keyboard_shortcut":
                 continue  # a shortcut without a known key combination is not actionable
             else:
-                entities[key] = "minimize"
+                entities[key] = "minimize" if name == "window_control" else "scroll_down"
             if name == "window_control" and (app := _clip(item.get("app"))):
                 entities["app"] = app
         if name == "system_info":
@@ -243,6 +268,29 @@ class OllamaProvider(AIProvider):
 
     async def detect_intent(self, text: str) -> Intent:
         return (await self.understand(text)).intents[0]
+
+    async def complete_json(self, system: str, prompt: str, schema: dict[str, Any], max_tokens: int = 600,
+                            num_ctx: int = 8192, timeout: float = 240.0) -> dict[str, Any]:
+        """Generation forced into a JSON schema (summaries, reports). The output is only ever shown/spoken -
+        never executed. The schema also stops small models from narrating their reasoning in plain text.
+        Raises ValueError when the reply is not a JSON object."""
+        payload = {
+            "model": self.model,
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            "format": schema,
+            "stream": False,
+            "think": False,
+            "keep_alive": "30m",
+            "options": {"temperature": 0.2, "num_ctx": num_ctx, "num_predict": max_tokens},
+        }
+        async with self._client(timeout=timeout) as client:
+            r = await client.post("/api/chat", json=payload)
+            r.raise_for_status()
+            content = r.json()["message"]["content"]
+        data = json.loads(content)  # JSONDecodeError is a ValueError
+        if not isinstance(data, dict):
+            raise ValueError("model reply is not a JSON object")
+        return data
 
     async def understand(
         self, text: str, context: list[ConversationTurn] | None = None, *, timeout: float | None = None

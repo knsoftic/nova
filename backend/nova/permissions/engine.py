@@ -45,10 +45,12 @@ UNSAVED_MARKERS = re.compile(r"^\*|\*\s|●|\bunsaved\b|\buntitled\b", re.IGNORE
 
 @dataclass
 class TargetContext:
-    """The window an action would affect, resolved when the plan is made."""
+    """The window (or web page) an action would affect, resolved when the plan is made."""
 
     title: str | None = None
-    process: str | None = None
+    process: str | None = None  # e.g. "notepad.exe", or "browser:example.com" for NOVA's browser
+    element: str | None = None  # the exact element text on a web page (for clicks)
+    executable: bool = False  # a download that is a program/script
 
 
 class PermissionItem(BaseModel):
@@ -105,6 +107,17 @@ def classify(intent: str, entities: dict[str, object], base_risk: Risk, target: 
             reasons.append("Window ke naam se lagta hai kuch unsaved hai")
     if intent == "keyboard_shortcut" and entities.get("keys") in ("save",):
         reasons.append("File save/overwrite ho sakti hai")
+    # Browser actions: judged by what is actually on the page (element text), not only the user's words.
+    if intent == "browser_click":
+        label = f"{entities.get('target', '')} {target.element or ''}"
+        if DANGEROUS_CLICK.search(label):
+            escalate("high", "Ye button kuch mita, bhej ya khareed sakta hai — wapas nahi hota")
+    if intent == "browser_type" and CREDENTIAL_TEXT.search(str(entities.get("text", ""))):
+        escalate("high", "Text mein password/card jaisi maloomat lagti hai")
+    if intent == "download":
+        reasons.append("File Downloads\\NOVA mein save hogi; NOVA use kholega nahi")
+        if target.executable:
+            escalate("high", "Ye program/script file hai — chalane par computer ko nuqsan pohncha sakti hai")
     return risk, reasons
 
 
@@ -120,6 +133,12 @@ def scope_for(intent: str, entities: dict[str, object], target: TargetContext) -
             return f"click:{str(entities.get('target', '')).lower()}@{process}"
         case "close_app":
             return f"close:{str(entities.get('app') or target.title or '').lower()}"
+        case "browser_click":
+            return f"click:{str(target.element or entities.get('target', '')).lower()}@{process}"
+        case "browser_type":
+            return f"type@{process}"
+        case "download":
+            return f"download@{process}"
     return f"{intent}@{process}"
 
 
@@ -175,6 +194,10 @@ class PermissionEngine:
             "mouse_click": f": \"{entities.get('target', '')}\"",
             "keyboard_shortcut": f": {entities.get('keys', '')}",
             "close_app": f": {entities.get('app') or target.title or ''}",
+            "browser_click": f": \"{target.element or entities.get('target', '')}\"",
+            "browser_type": f": \"{str(entities.get('text', ''))[:60]}\""
+                            + (f", \"{target.element}\" khane mein" if target.element else ""),
+            "download": f": \"{target.element or entities.get('target', '')}\"",
         }.get(intent, "")
         where = f" ({target.title})" if target.title and intent != "close_app" else ""
         return PermissionItem(step_id=step_id, intent=intent, description=f"{description}{detail}{where}",

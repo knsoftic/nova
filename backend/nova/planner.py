@@ -47,7 +47,17 @@ CAPABILITIES: dict[str, Capability] = {
     "keyboard_shortcut": Capability("System Agent", "keyboard_shortcut", "medium", None, "Keyboard shortcut dabana"),
     "type_text": Capability("System Agent", "type_text", "medium", None, "Text type karna"),
     "mouse_click": Capability("System Agent", "mouse_click", "medium", None, "Mouse se click karna"),
-    "web_search": Capability("Browser Agent", "web_search", "low", 8, "Web par search karna"),
+    # Browser Agent: NOVA's own browser window. Reading/moving is low risk; acting on a page needs permission.
+    "web_search": Capability("Browser Agent", "web_search", "low", None, "Web par search kholna"),
+    "open_website": Capability("Browser Agent", "open_website", "low", None, "Website kholna"),
+    "read_page": Capability("Browser Agent", "read_page", "low", None, "Web page parhna"),
+    "browser_nav": Capability("Browser Agent", "browser_nav", "low", None, "Browser mein scroll/back/forward"),
+    "browser_click": Capability("Browser Agent", "browser_click", "medium", None, "Web page par click karna"),
+    "browser_type": Capability("Browser Agent", "browser_type", "medium", None, "Web page par likhna"),
+    "download": Capability("Browser Agent", "download", "medium", None, "File download karna"),
+    # Research Agent: reads public web sources through official search APIs; saves reports in Documents\NOVA.
+    "research": Capability("Research Agent", "research_report", "low", None, "Research report banana"),
+    "web_answer": Capability("Research Agent", "web_answer", "low", None, "Web se taza jawab dhoondna"),
     "create_folder": Capability("File Agent", "create_folder", "medium", 8, "Folder banana"),
     "change_setting": Capability("System Agent", "change_setting", "medium", 8, "Setting badalna"),
     "run_workflow": Capability("Orchestrator", "run_workflow", "low", 9, "Workflow chalana"),
@@ -67,6 +77,8 @@ class PlanStep(BaseModel):
     # Set by the Permission Engine: approved | rule (remembered approval) | denied | timeout
     permission: str | None = None
     reasons: list[str] = Field(default_factory=list)
+    # For web-page clicks: the exact element text the user approved (re-checked before clicking).
+    element_text: str | None = None
 
 
 class Plan(BaseModel):

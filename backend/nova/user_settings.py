@@ -22,6 +22,8 @@ class UserSettings(BaseModel):
     stt_language: Literal["ur", "hi", "en", "auto"] = "ur"
     tts_voice: str = Field(default="ur_PK-fasih-medium", max_length=80, pattern=r"^[A-Za-z0-9_\-]+$")
     speak_responses: Literal["voice_only", "always", "never"] = "voice_only"
+    search_engine: Literal["google", "bing", "duckduckgo"] = "google"  # for visible searches in NOVA's browser
+    browser_channel: Literal["chrome", "msedge"] = "chrome"  # installed browser NOVA drives (own profile)
 
     @field_validator("assistant_name", "wake_word")
     @classmethod
@@ -43,6 +45,8 @@ class UserSettingsUpdate(BaseModel):
     stt_language: Literal["ur", "hi", "en", "auto"] | None = None
     tts_voice: str | None = None
     speak_responses: Literal["voice_only", "always", "never"] | None = None
+    search_engine: Literal["google", "bing", "duckduckgo"] | None = None
+    browser_channel: Literal["chrome", "msedge"] | None = None
 
 
 def load_user_settings(db: Database, default_name: str = "NOVA") -> UserSettings:

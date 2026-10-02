@@ -87,6 +87,12 @@ h if information inside instructions internet invent kb keep key letters line m 
 one otp overflow page personal plainly points program reload research results say script scroll sentence sentences
 short site skipping source sources stack summarise summary support technical terms them then they topic untrusted
 value website whatsapp wikipedia with write y you z
+apache backup bin binary branch bytes coding commands commit compileall composer copy data delete dependencies dev
+development diff documents docx double drive edit environment error errors excel exit extension fail folders git
+history html install item js json jsx keys l lines list match mb minute modules move music my node noemit npm organize
+packages pages panel paragraphs passed passwords path pdf php pictures pip project projects py pytest python q r react
+readme recycle requirements restore right scripts server sheets syntax syntaxerror tsc tsx txt utf venv videos virtual
+vs word xampp xlsx rename websites bracket print
 """.split())
 
 
@@ -95,7 +101,9 @@ def test_every_template_word_is_covered():
     root = pathlib.Path(__file__).resolve().parent.parent / "nova"
     missing = set()
     for f in ["responses.py", "agents/system_agent.py", "agents/computer.py", "orchestrator.py", "planner.py",
-              "permissions/engine.py", "browser/agent.py", "research/agent.py"]:
+              "permissions/engine.py", "browser/agent.py", "research/agent.py", "agents/file_agent.py", "files/ops.py",
+              "files/scope.py", "files/documents.py", "coding/agent.py", "coding/runner.py", "coding/projects.py",
+              "coding/editor.py", "coding/diagnostics.py"]:
         tree = ast.parse((root / f).read_text(encoding="utf-8"))
         # Docstrings are developer documentation, never spoken.
         skipped = {
@@ -104,11 +112,16 @@ def test_every_template_word_is_covered():
             and n.body and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)
         }
         # Prompts and patterns for the local model are never spoken either.
+        # (and regular expressions are patterns, not sentences)
+        model_calls = ("_ask", "complete_json", "complete", "compile", "sub", "search", "match", "fullmatch")
         for n in ast.walk(tree):
             model_facing = (
-                isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and (t.id.endswith("_SYSTEM") or t.id == "_META")
-                                                  for t in n.targets)
-            ) or (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in ("_ask", "complete_json"))
+                isinstance(n, (ast.Assign, ast.AugAssign)) and any(
+                    isinstance(t, ast.Name) and (t.id.endswith("_SYSTEM") or t.id in ("_META", "prompt"))
+                    for t in (n.targets if isinstance(n, ast.Assign) else [n.target]))
+            ) or (isinstance(n, ast.Call) and (
+                (isinstance(n.func, ast.Attribute) and n.func.attr in model_calls)
+                or (isinstance(n.func, ast.Name) and n.func.id in model_calls)))
             if model_facing:
                 skipped |= {id(c) for c in ast.walk(n)}
         for node in ast.walk(tree):
@@ -116,6 +129,7 @@ def test_every_template_word_is_covered():
                 continue
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and " " in node.value:
                 for w in re.findall(r"[A-Za-z']+", node.value):
-                    if w.lower() not in LEXICON and w.lower() not in ENGLISH_OK:
+                    w = w.strip("'")  # 'quoted phrases' - the quote marks are not part of the word
+                    if w and w.lower() not in LEXICON and w.lower() not in ENGLISH_OK:
                         missing.add(w.lower())
     assert not missing, f"Add to LEXICON (Urdu) or ENGLISH_OK: {sorted(missing)}"

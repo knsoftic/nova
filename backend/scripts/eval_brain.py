@@ -72,6 +72,20 @@ CASES: list[tuple[str, list[str], dict[str, str] | None]] = [
     ("aaj lahore ka mausam kaisa hai", ["web_answer"], None),
     ("dollar ka rate kya hai", ["web_answer"], None),
     ("dollar rate google par search karo", ["web_search"], {"query": "dollar rate"}),
+    # files + coding (Phase 8B)
+    ("Downloads mein pdf files dhoondo", ["search_files"], {"query": "pdf"}),
+    ("desktop par notes.txt banao", ["create_file"], {"file_name": "notes.txt"}),
+    ("notes.txt ka naam todo.txt rakh do", ["rename_file"], {"target": "notes.txt"}),
+    ("report.pdf ko Documents mein move karo", ["move_file"], {"target": "report.pdf"}),
+    ("purani invoice.pdf delete kar do", ["delete_file"], None),
+    ("notes.txt mein likho: doodh lana hai", ["edit_file"], None),
+    ("mera Downloads folder organize kar do", ["organize_folder"], None),
+    ("pichla file kaam undo karo", ["undo_file_op"], None),
+    ("nova project VS Code mein kholo", ["open_project"], {"project": "nova"}),
+    ("shop app project ke tests chalao", ["run_tests"], {"project": "shop app"}),
+    ("is project mein errors check karo", ["check_errors"], None),
+    ("ye error samjhao", ["explain_error"], None),
+    ("error theek kar do", ["fix_error"], None),
 ]
 
 

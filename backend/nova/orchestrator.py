@@ -13,13 +13,18 @@ import logging
 import uuid
 from collections import deque
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 
 from .agents import system_agent
 from .agents.computer import ComputerAgent, ControlOutcome
+from .agents.file_agent import FILE_INTENTS, FileAgent
+from .agents.prepared import Prepared, Reply
 from .ai.base import ConversationTurn, Intent, Understanding
+from .coding import CODING_INTENTS, CodingAgent
+from .files import ScopeError
 from .browser.agent import BrowserAgent, download_is_executable, site_for
 from .browser.controller import ElementInfo
 from .ai.manager import ProviderManager
@@ -29,6 +34,7 @@ from .discovery.models import LiveStats, SystemProfile
 from .discovery.service import DiscoveryService
 from .events import EventBus, EventType, NovaEvent, NovaState
 from .permissions import PermissionEngine, TargetContext
+from .permissions.engine import classify
 from .planner import Plan, PlanStep, build_plan
 from .research import ResearchAgent, SearchError
 from .responses import (
@@ -70,6 +76,7 @@ class AgentOutcome:
     action: str
     executed: bool
     verification: str = "not_applicable"  # passed | failed | unverified | not_applicable
+    test_status: str = "not_run"  # passed | failed when the step ran a project's tests
 
 
 class Orchestrator:
@@ -84,10 +91,14 @@ class Orchestrator:
         permissions: PermissionEngine | None = None,
         browser: BrowserAgent | None = None,
         research: ResearchAgent | None = None,
+        files: FileAgent | None = None,
+        coding: CodingAgent | None = None,
     ) -> None:
         self.permissions = permissions
         self.browser = browser
         self.research = research
+        self.files = files
+        self.coding = coding
         self.bus = bus
         self.db = db
         self.providers = providers
@@ -186,6 +197,7 @@ class Orchestrator:
                 )
             )
 
+            await self._prepare_steps(task_id, plan)
             await self._seek_permission(task_id, plan, source)
             outcomes = [await self._run_step(task_id, step, plan) for step in plan.steps]
         except Exception as exc:  # provider/agent failures must never crash the backend
@@ -248,6 +260,13 @@ class Orchestrator:
             outcome = await self._run_browser(task_id, step)
         elif intent.name in RESEARCH_INTENTS and step.status == "ready" and self.research is not None:
             outcome = await self._run_research(task_id, step)
+        elif intent.name in FILE_INTENTS and step.status == "ready" and self.files is not None and step.prepared:
+            outcome = await self._run_file(task_id, step)
+        elif intent.name in CODING_INTENTS and step.status == "ready" and self.coding is not None and step.prepared:
+            outcome = await self._run_coding(task_id, step)
+        elif step.status == "skipped" and step.result:
+            # The agent answered without acting: "kaun si file?", "nahi mila", "pehle errors check karo".
+            outcome = AgentOutcome(step.result, step.agent, step.action, executed=False)
         elif step.status == "denied" and step.permission == "refused":
             # NOVA itself refuses (e.g. a password field) - the user was not even asked.
             outcome = AgentOutcome(step.result or "Ye kaam NOVA nahi karta.", step.agent, step.action, executed=False)
@@ -286,6 +305,7 @@ class Orchestrator:
             action=outcome.action,
             permission_status=permission_status,
             execution_status=execution,
+            test_status=outcome.test_status,
             # Read-only lookups change nothing on the PC, so there is no state to verify afterwards.
             verification_status=outcome.verification,
             final_result=f"step {step.id}/{len(plan.steps)} · risk {step.risk} · {plan.provider}",
@@ -335,6 +355,8 @@ class Orchestrator:
     async def _target_for(self, step: PlanStep) -> TargetContext | str:
         """Where a risky step would act, or a refusal reason if NOVA will not do it at all."""
         intent = step.intent
+        if isinstance(step.prepared, Prepared):
+            return self._prepared_target(step.prepared)
         if intent.name in BROWSER_INTENTS and self.browser is not None:
             target = await asyncio.to_thread(self.browser.describe_target, intent)
             if target.refusal:
@@ -426,6 +448,75 @@ class Orchestrator:
             result = ControlOutcome(found.response, step.action, bool(found.sources), "not_applicable")
         return await self._report(task_id, step, result)
 
+    @staticmethod
+    def _prepared_target(p: Prepared) -> TargetContext:
+        return TargetContext(title=p.summary, scope_key=p.scope_key, preview=p.preview, count=p.count, size=p.size,
+                             executes_code=p.executes_code, network=p.network, always_ask=p.always_ask)
+
+    async def _prepare_steps(self, task_id: str, plan: Plan) -> None:
+        """File/Coding steps: resolve exactly what will happen before anyone is asked. A step that turns out
+        to run project code (or to be a big delete) is raised to "needs permission" here."""
+        for step in plan.steps:
+            name = step.intent.name
+            if step.status not in ("ready", "needs_permission"):
+                continue
+            if name in FILE_INTENTS and self.files is not None:
+                result: Prepared | Reply = await asyncio.to_thread(self.files.prepare, step.intent)
+            elif name in CODING_INTENTS and self.coding is not None:
+                async def progress(message: str, agent: str = step.agent) -> None:
+                    await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=agent,
+                                                     message=message))
+
+                result = await self.coding.prepare(step.intent, progress)
+            else:
+                continue
+            if isinstance(result, Reply):
+                step.result = result.message
+                step.status, step.permission = ("denied", "refused") if result.refused else ("skipped", None)
+                continue
+            step.prepared = result
+            if step.status == "ready" and self.permissions is not None:
+                risk, reasons = classify(name, step.intent.entities, step.risk, self._prepared_target(result))
+                if risk != "low":
+                    step.status, step.risk, step.reasons = "needs_permission", risk, reasons
+
+    async def _run_file(self, task_id: str, step: PlanStep) -> AgentOutcome:
+        assert self.files is not None
+        await self.set_state(NovaState.WORKING, task_id)
+        await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
+                                         message=f"{step.description}: {step.prepared.summary}"))
+        approved = step.permission in ("approved", "rule")
+        try:
+            result, content = await asyncio.to_thread(self.files.run, step.intent, step.prepared, approved)
+        except (ScopeError, OSError) as exc:  # e.g. the file was moved or locked after the plan was made
+            message = str(exc) if isinstance(exc, ScopeError) else f"Windows ne ye kaam nahi karne diya: {exc}"
+            result, content = ControlOutcome(message, step.action, False, "failed"), None
+        if content is not None and step.intent.entities.get("summary") and self.research is not None:
+            await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=step.agent,
+                                             message="File ka khulasa bana raha hai..."))
+            summary = await self.research.summarise_page(Path(result.detail or "").name, content.text)
+            if summary:
+                result.response = f"\"{Path(result.detail or '').name}\" ({content.detail}) ka khulasa:\n{summary}"
+        return await self._report(task_id, step, result)
+
+    async def _run_coding(self, task_id: str, step: PlanStep) -> AgentOutcome:
+        assert self.coding is not None
+        await self.set_state(NovaState.WORKING, task_id)
+        await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
+                                         message=f"{step.description}: {step.prepared.summary}"))
+
+        async def progress(message: str) -> None:
+            await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=step.agent,
+                                             message=message))
+
+        approved = step.permission in ("approved", "rule")
+        try:
+            result = await self.coding.run(step.intent, step.prepared, approved, progress)
+        except (ScopeError, OSError) as exc:
+            message = str(exc) if isinstance(exc, ScopeError) else f"Command nahi chal saki: {exc}"
+            result = ControlOutcome(message, step.action, False, "failed")
+        return await self._report(task_id, step, result)
+
     async def _report(self, task_id: str, step: PlanStep, result: ControlOutcome) -> AgentOutcome:
         """Publish what an agent did and how it was verified; return it for the step log."""
         if result.executed:
@@ -444,7 +535,7 @@ class Orchestrator:
                           data={"action": result.action})
             )
         return AgentOutcome(result.response, step.agent, result.action, executed=result.executed,
-                            verification=result.verification)
+                            verification=result.verification, test_status=result.test_status or "not_run")
 
     async def _run_computer(self, task_id: str, step: PlanStep) -> AgentOutcome:
         """Run a computer-control action and report its verification (spec: never assume success)."""

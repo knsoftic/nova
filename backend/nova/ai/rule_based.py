@@ -16,9 +16,14 @@ BUILTIN_NAMES = ("nova", "نووا", "नोवा")
 
 def build_wake_pattern(assistant_name: str = "NOVA", wake_word: str = "Hey NOVA") -> re.Pattern[str]:
     """Matches the configured wake word, or '[hey] <name>', at the start of an utterance."""
-    names = sorted({re.escape(assistant_name), *BUILTIN_NAMES}, key=len, reverse=True)
+    names = "|".join(sorted({re.escape(assistant_name), *BUILTIN_NAMES}, key=len, reverse=True))
+    # A bare name followed by "project"/"ka"/"mein"... is part of the command ("nova project kholo" means the
+    # project called nova), not a wake word. With "hey" in front it always is the wake word.
+    part_of_command = r"(?!\s+(?:project|projects|folder|ka|ki|ke|mein|me|wala|wali|wale)\b)"
+    # "(?!-?\w)": a name joined to the next word ("NOVA-Test-8B", "nova-demo") is a name, not a wake word.
     return re.compile(
-        rf"^\s*(?:{re.escape(wake_word)}|(?:hey|hi|ok|ay|ae|اے|ہے)?\s*(?:{'|'.join(names)}))(?![\w])[\s,!.:-]*",
+        rf"^\s*(?:{re.escape(wake_word)}|(?:hey|hi|ok|ay|ae|اے|ہے)\s*(?:{names})|(?:{names}){part_of_command})"
+        rf"(?!-?\w)[\s,!.:-]*",
         re.IGNORECASE,
     )
 
@@ -250,12 +255,334 @@ def _browser_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
     return None
 
 
+# ---- files + coding (Phase 8B) -------------------------------------------------------------
+_WEB_TLDS = frozenset(_TLDS.split("|"))
+_FILENAME = r"[^\s\"'“‘][^\"”’]*?\.[A-Za-z0-9]{1,8}"  # "notes.txt", "final report.docx"
+_Q = r"[\"'“”‘’]?"
+_PRON = r"(?:is|us|ye|yeh|wo|woh)\s+(?:file|folder)|isko|isey|ise|isay|usko|usay|usey"
+_CODE_EXT = "py|js|mjs|cjs|ts|tsx|jsx|php|html|htm|css|scss|vue|java|kt|c|h|cpp|cs|go|rs|rb|dart|sql"
+_FOLDER_WORDS = re.compile(r"^(?:desktop|documents?|docs|downloads?|pictures?|photos|tasveerein|music|videos?|htdocs)$",
+                           re.IGNORECASE)
+_FILE_WORD = re.compile(r"\b(?:file|files|folder|folders)\b", re.IGNORECASE)
+_ORDINAL_TARGET = re.compile(r"^(?:pehli|pehla|pehle|doosri|dusri|doosra|teesri|teesra|chauthi|first|second|third|"
+                             r"(?:number\s+)?\d+)(?:\s+(?:number|wali|wala|file|folder))*$", re.IGNORECASE)
+
+UNDO_FILE = [
+    re.compile(r"^(?:pichla|pichhla|aakhri|akhri|last)\s+(?:file\s+(?:wala\s+)?)?(?:kaam|operation|change|tabdeeli)\s+"
+               r"(?:wapas|undo|ulta)\s*(?:karo|kar do|lo|le lo)?$", re.IGNORECASE),
+    re.compile(r"^(?:file|files|rename|move|organi[sz]e|edit|tabdeeli)\s+(?:wala\s+kaam\s+)?(?:wapas|undo)\s+(?:karo|kar do)$",
+               re.IGNORECASE),
+    re.compile(r"^undo\s+(?:the\s+|my\s+)?last\s+(?:file\s+)?(?:change|operation|action)$", re.IGNORECASE),
+]
+SEARCH_FILES = [
+    re.compile(r"^(?:(?P<loc>.+?)\s+(?:mein|me|par|pe)\s+)?(?P<q>.+?)\s+(?:naam\s+(?:ki|ka|ke)\s+|wali\s+|wala\s+|wale\s+|"
+               r"ki\s+(?:saari\s+|sab\s+)?|ke\s+)?"
+               r"(?P<kind>files?|folders?)\s+(?:dhoondo|dhundo|dhoond do|dhund do|talash karo|search karo|search kar do|"
+               r"find karo|dikhao|batao)$", re.IGNORECASE),
+    re.compile(r"^(?:find|search(?:\s+for)?|show(?:\s+me)?)\s+(?:all\s+|my\s+)?(?P<q>.+?)\s+(?P<kind>files?|folders?)"
+               r"(?:\s+in\s+(?P<loc>.+))?$", re.IGNORECASE),
+    re.compile(r"^(?:find|search(?:\s+for)?)\s+(?:the\s+)?(?P<kind>files?|folders?)\s+(?:named\s+|called\s+)?(?P<q>.+?)"
+               r"(?:\s+in\s+(?P<loc>.+))?$", re.IGNORECASE),
+    re.compile(rf"^(?P<q>{_FILENAME})\s+(?:kahan|kidhar)\s+(?:hai|he|pari hai|para hai|rakhi hai)$", re.IGNORECASE),
+]
+CREATE_FILE_WITH_TEXT = re.compile(
+    rf"^(?:(?P<loc>.+?)\s+(?:mein|me|par|pe)\s+)?(?P<name>{_FILENAME})\s+(?:naam\s+(?:ki|ka)\s+)?(?:nayi\s+|new\s+)?"
+    rf"(?:file\s+)?(?:banao|bana do|create karo|create kar do)\s+(?:aur|jis)\s+(?:us\s+|is\s+)?(?:mein|me)\s+"
+    rf"{_Q}(?P<text>.+?){_Q}\s+(?:likho|likh do|daalo|daal do)$", re.IGNORECASE)
+CREATE_FILE = [
+    re.compile(rf"^(?:(?P<loc>.+?)\s+(?:mein|me|par|pe)\s+)?(?P<name>{_FILENAME})\s+(?:naam\s+(?:ki|ka)\s+)?(?:nayi\s+|new\s+)?"
+               r"(?:file\s+)?(?:banao|bana do|create karo|create kar do)$", re.IGNORECASE),
+    re.compile(r"^(?:(?P<loc>.+?)\s+(?:mein|me|par|pe)\s+)?(?P<name>.+?)\s+naam\s+(?:ki|ka)\s+(?:nayi\s+|new\s+)?file\s+"
+               r"(?:banao|bana do|create karo|create kar do)$", re.IGNORECASE),
+    re.compile(r"^(?:create|make)\s+(?:a\s+)?(?:new\s+)?(?:text\s+)?file\s+(?:named\s+|called\s+)?(?P<name>.+?)"
+               r"(?:\s+(?:in|on)\s+(?P<loc>.+))?$", re.IGNORECASE),
+]
+CREATE_FOLDER_AT = [
+    re.compile(r"^(?:(?P<loc>.+?)\s+(?:mein|me|par|pe)\s+)?(?P<name>.+?)\s+(?:naam\s+(?:ka|ki)\s+)?(?:naya\s+|new\s+)?"
+               r"folder\s+(?:banao|bana do|create karo|create kar do)$", re.IGNORECASE),
+    re.compile(r"^(?:create|make)\s+(?:a\s+)?(?:new\s+)?folder\s+(?:named\s+|called\s+)?(?P<name>.+?)"
+               r"(?:\s+(?:in|on)\s+(?P<loc>.+))?$", re.IGNORECASE),
+]
+OPEN_FILE = [
+    re.compile(rf"^(?P<target>{_FILENAME})\s+(?:file\s+)?(?:kholo|khol do|open karo|open kar do|chalao|chala do)$",
+               re.IGNORECASE),
+    re.compile(rf"^(?P<target>.+?\s+folder|{_PRON})\s+(?:ko\s+)?(?:kholo|khol do|open karo|open kar do)$", re.IGNORECASE),
+    re.compile(rf"^open\s+(?:the\s+)?(?:file\s+)?(?P<target>{_FILENAME})$", re.IGNORECASE),
+    re.compile(r"^open\s+(?:the\s+|my\s+)?(?P<target>.+?\s+folder)$", re.IGNORECASE),
+]
+READ_FILE_SUMMARY = [
+    re.compile(rf"^(?P<target>{_FILENAME}|{_PRON})\s+(?:ka|ki)\s+(?:khulasa|khulaasa|summary)\s*"
+               r"(?:batao|do|karo|dikhao|bata do|sunao)?$", re.IGNORECASE),
+    re.compile(rf"^(?P<target>{_FILENAME}|{_PRON})\s+(?:ko\s+)?summari[sz]e\s*(?:karo|kar do)?$", re.IGNORECASE),
+    re.compile(rf"^summari[sz]e\s+(?:the\s+)?(?:file\s+)?(?P<target>{_FILENAME})$", re.IGNORECASE),
+]
+READ_FILE = [
+    re.compile(rf"^(?P<target>{_FILENAME}|{_PRON}|.+?\s+file)\s+(?:ko\s+)?(?:parho|padho|parh do|parh kar sunao|read karo|"
+               r"dikhao|ka content dikhao|mein kya (?:likha )?hai)$", re.IGNORECASE),
+    re.compile(r"^(?P<target>.+?)\s+(?:mein|me)\s+(?:kya\s+kya|kya)\s+(?:hai|hain|para hai|pada hai)$", re.IGNORECASE),
+    re.compile(r"^(?P<target>.+?)\s+(?:ki|ke)\s+(?:saari\s+|sab\s+)?(?:files|cheezein)\s+(?:dikhao|batao)$", re.IGNORECASE),
+    re.compile(rf"^(?:read|show)\s+(?:me\s+)?(?:the\s+)?(?:file\s+)?(?P<target>{_FILENAME})$", re.IGNORECASE),
+]
+RENAME_FILE = [
+    re.compile(r"^(?P<target>.+?)\s+(?:ka|ki)\s+naam\s+(?:badal\s+kar\s+)?(?P<new>.+?)\s+(?:rakh do|rakho|rakh dein|kar do|karo)$",
+               re.IGNORECASE),
+    re.compile(r"^(?P<target>.+?)\s+ko\s+(?P<new>.+?)\s+(?:se|mein|me|naam se)\s+rename\s+(?:karo|kar do)$", re.IGNORECASE),
+    re.compile(r"^(?P<target>.+?)\s+(?:ko\s+)?rename\s+(?:karo|kar do)\s*[:\-]?\s*(?P<new>.+)$", re.IGNORECASE),
+    re.compile(r"^rename\s+(?P<target>.+?)\s+(?:to|as)\s+(?P<new>.+)$", re.IGNORECASE),
+]
+MOVE_FILE = [
+    re.compile(r"^(?P<target>.+?)\s+ko\s+(?P<dest>.+?)\s+(?:mein|me|par|pe)\s+(?:move|shift)\s*(?:karo|kar do|kar dein)?$",
+               re.IGNORECASE),
+    re.compile(r"^(?P<target>.+?)\s+ko\s+(?P<dest>.+?)\s+(?:mein|me)\s+(?:le jao|rakh do|daal do|dal do|pohncha do)$",
+               re.IGNORECASE),
+    re.compile(r"^move\s+(?P<target>.+?)\s+(?:to|into)\s+(?P<dest>.+)$", re.IGNORECASE),
+]
+COPY_FILE = [
+    re.compile(r"^(?P<target>.+?)\s+ko\s+(?P<dest>.+?)\s+(?:mein|me|par|pe)\s+copy\s*(?:karo|kar do|kar dein)$", re.IGNORECASE),
+    re.compile(r"^(?P<target>.+?)\s+(?:ki|ka)\s+(?:copy|nakal)\s+(?:banao|bana do)$", re.IGNORECASE),
+    re.compile(r"^copy\s+(?P<target>.+?)\s+(?:to|into)\s+(?P<dest>.+)$", re.IGNORECASE),
+]
+DELETE_FILE = [
+    re.compile(r"^(?P<target>.+?)\s+(?:ko\s+)?(?:delete|mita|hata|remove|trash)\s*(?:karo|kar do|kardo|do|dein|kar dein|kijiye)$",
+               re.IGNORECASE),
+    re.compile(r"^(?:delete|remove|trash)\s+(?:the\s+)?(?P<target>.+)$", re.IGNORECASE),
+]
+EDIT_REPLACE = [
+    re.compile(rf"^(?P<target>{_FILENAME}|{_PRON})\s+(?:mein|me)\s+{_Q}(?P<old>.+?){_Q}\s+ko\s+{_Q}(?P<new>.+?){_Q}\s+"
+               r"(?:se|mein|me)\s+(?:badal do|badlo|badal dein|replace karo|replace kar do|change karo|change kar do)$",
+               re.IGNORECASE),
+    re.compile(rf"^(?:in\s+(?P<target>{_FILENAME})\s*,?\s+)?replace\s+{_Q}(?P<old>.+?){_Q}\s+with\s+{_Q}(?P<new>.+?){_Q}"
+               rf"(?:\s+in\s+(?P<target2>{_FILENAME}))?$", re.IGNORECASE),
+]
+EDIT_APPEND = [
+    re.compile(rf"^(?P<target>{_FILENAME}|{_PRON})\s+(?:mein|me)\s+(?:ye\s+|yeh\s+)?(?:likho|likh do|add karo|add kar do|"
+               r"jor do|daal do)\s*[:\-]\s*(?P<text>.+)$", re.IGNORECASE),
+    re.compile(rf"^(?P<target>{_FILENAME}|{_PRON})\s+(?:mein|me)\s+(?P<text>.+?)\s+(?:likho|likh do|add karo|add kar do|"
+               r"jor do|daal do)$", re.IGNORECASE),
+    re.compile(rf"^(?:add|append|write)\s+{_Q}(?P<text>.+?){_Q}\s+(?:to|in|into)\s+(?P<target>{_FILENAME})$", re.IGNORECASE),
+]
+ORGANIZE_FOLDER = [
+    re.compile(r"^(?P<loc>.+?)\s+(?:ko\s+)?(?:organi[sz]e|arrange)\s*(?:karo|kar do|kar dein|kijiye)?$", re.IGNORECASE),
+    re.compile(r"^(?P<loc>.+?)\s+(?:ki|ko)\s+(?:files\s+(?:ko\s+)?)?(?:tarteeb|tartib)\s+(?:do|de do|dein|se rakho|"
+               r"se laga do)$", re.IGNORECASE),
+    re.compile(r"^(?:organi[sz]e|arrange|tidy\s+up|clean\s+up)\s+(?:my\s+|the\s+)?(?P<loc>.+?)$", re.IGNORECASE),
+]
+FOLDER_REPORT = [
+    re.compile(r"^(?P<loc>.+?)\s+(?:ki|ka)\s+(?:report|jaiza)\s+(?:banao|bana do|do|dikhao|batao|tayyar karo)$", re.IGNORECASE),
+    re.compile(r"^(?:make|create|give\s+me)\s+(?:a\s+)?report\s+(?:of|on|for|about)\s+(?:my\s+|the\s+)?(?P<loc>.+?)$",
+               re.IGNORECASE),
+]
+MODIFY_CODE = [
+    re.compile(rf"^(?:(?P<p>.+?)\s+project\s+(?:ki|ke|ka|mein|me)\s+)?(?P<target>[^\s\"']+?\.(?:{_CODE_EXT}))\s+(?:mein|me)\s+"
+               r"(?P<instr>.+?\s+(?:karo|kar do|kar dein|kijiye|badlo|badal do|hatao|hata do|likho|likh do|banao|bana do|"
+               r"lagao|laga do|jor do|daalo|daal do))$", re.IGNORECASE),
+    re.compile(rf"^in\s+(?P<target>[^\s\"']+?\.(?:{_CODE_EXT}))\s*,?\s+(?P<instr>(?:add|remove|change|rename|replace|fix|"
+               r"make|use|update|delete)\b.+)$", re.IGNORECASE),
+]
+
+OPEN_PROJECT = [
+    re.compile(r"^(?P<p>.+?)\s+project\s+(?:ko\s+)?(?:vs\s*code|code)\s+(?:mein|me)\s+(?:kholo|khol do|open karo|open kar do)$",
+               re.IGNORECASE),
+    re.compile(r"^(?:vs\s*code|code)\s+(?:mein|me)\s+(?P<p>.+?)(?:\s+project|\s+folder)?\s+(?:kholo|khol do|open karo|"
+               r"open kar do)$", re.IGNORECASE),
+    re.compile(r"^(?P<p>.+?)\s+project\s+(?:kholo|khol do|open karo|open kar do)$", re.IGNORECASE),
+    re.compile(r"^open\s+(?:the\s+|my\s+)?(?P<p>.+?)\s+project(?:\s+in\s+(?:vs\s*)?code)?$", re.IGNORECASE),
+]
+LIST_PROJECTS = re.compile(
+    r"^(?:mere\s+|meri\s+|sab\s+|saare\s+|all\s+|my\s+)?projects?\s+(?:ki\s+list\s+)?(?:dikhao|batao|list karo)$"
+    r"|^(?:kaun|kon)\s*(?:se|si)\s+projects?\s+(?:hain|hai)$|^(?:list|show)\s+(?:me\s+)?(?:my\s+|all\s+)?projects$",
+    re.IGNORECASE)
+INSPECT_PROJECT = [
+    re.compile(r"^(?P<p>.+?)\s+project\s+(?:ka|ki|ke)\s+(?:jaiza|jaeza|review|structure|tafseel|maloomat|details?|overview)"
+               r"\s*(?:lo|le lo|do|dikhao|batao|karo|bataen)?$", re.IGNORECASE),
+    re.compile(r"^(?P<p>.+?)\s+project\s+(?:ke\s+baare\s+mein\s+batao|mein\s+kya\s+(?:hai|hain)|check\s+karo|inspect\s+karo|"
+               r"samjhao|dekho)$", re.IGNORECASE),
+    re.compile(r"^(?:inspect|analy[sz]e|review|describe)\s+(?:the\s+|my\s+)?(?P<p>.+?)\s+project$", re.IGNORECASE),
+]
+RUN_TESTS = [
+    re.compile(r"^(?:(?P<p>.+?)\s+(?:project\s+)?(?:ke|ki|ka|mein|me)\s+)?(?:saare\s+|sab\s+)?tests?\s+(?:chalao|chala do|"
+               r"run karo|run kar do|chalaiye|chala kar dekho)$", re.IGNORECASE),
+    re.compile(r"^run\s+(?:the\s+|all\s+)?tests?(?:\s+(?:for|in|of)\s+(?:the\s+)?(?P<p>.+?)(?:\s+project)?)?$", re.IGNORECASE),
+]
+CHECK_ERRORS = [
+    re.compile(r"^(?:(?P<p>.+?)\s+(?:project\s+)?(?:mein|me|ke|ki|ka)\s+)?(?:code\s+(?:ke|ki|mein)\s+)?(?:errors?|ghaltiyan|"
+               r"ghaltiyaan|ghalatiyan|bugs?|masle)\s+(?:check\s+karo|check\s+kar\s+do|dhoondo|dhundo|dekho|batao|chek\s+karo)$",
+               re.IGNORECASE),
+    re.compile(r"^(?:check|find)\s+(?:the\s+|for\s+)?(?:errors|bugs)(?:\s+in\s+(?:the\s+)?(?P<p>.+?)(?:\s+project)?)?$",
+               re.IGNORECASE),
+]
+RUN_COMMAND = [
+    re.compile(r"^(?:(?P<p>.+?)\s+(?:project\s+)?(?:mein|me|ka|ki|ke)\s+)?(?P<cmd>npm\s+(?:run\s+)?[\w:.\-]+|git\s+(?:status|diff|log)|"
+               r"build|lint|typecheck|dev\s+server|server|dependencies(?:\s+install)?|packages(?:\s+install)?)\s+"
+               r"(?:chalao|chala do|run karo|run kar do|start karo|start kar do|install karo|install kar do)$", re.IGNORECASE),
+    re.compile(r"^run\s+(?P<cmd>npm\s+(?:run\s+)?[\w:.\-]+|git\s+(?:status|diff|log))(?:\s+in\s+(?:the\s+)?(?P<p>.+?)"
+               r"(?:\s+project)?)?$", re.IGNORECASE),
+]
+EXPLAIN_ERROR = [
+    re.compile(r"^(?:(?:ye|yeh|is|wo|us|pichla|aakhri)\s+)?(?:error|errors|ghalti|masla)\s+(?:samjhao|samjha do|explain karo|"
+               r"explain kar do|ka matlab batao|kya hai|kyun aaya|kyon aaya)\s*(?:[:\-]\s*(?P<text>.+))?$", re.IGNORECASE),
+    re.compile(r"^explain\s+(?:this\s+|the\s+)?error(?:\s*[:\-]\s*(?P<text>.+))?$", re.IGNORECASE),
+]
+FIX_ERROR = [
+    re.compile(r"^(?:(?:ye|yeh|is|wo|us|pichla|aakhri|sab|saare)\s+)?(?:error|errors|ghalti|ghaltiyan|masla|bug)\s+"
+               r"(?:theek|thik|fix|durust|hal)\s+(?:karo|kar do|kijiye|kar dein)$", re.IGNORECASE),
+    re.compile(r"^fix\s+(?:this\s+|the\s+)?(?:error|bug)s?$", re.IGNORECASE),
+]
+# Whole commands whose text may contain "aur"/"and" that must not split them into several commands.
+UNSPLITTABLE = [CREATE_FILE_WITH_TEXT, *EDIT_REPLACE, *EDIT_APPEND, *MODIFY_CODE, *EXPLAIN_ERROR]
+
+
+def _target_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    value = re.sub(r"^(?:(?:zara|please|plz|meri|mera|mere|my|the)\s+)+", "", value.strip(), flags=re.IGNORECASE)
+    return value.strip(" \"'“”‘’") or None
+
+
+def _ext_ok(name: str) -> bool:
+    """Has a file extension that is not a website ending ("notes.txt" yes, "example.com" no)."""
+    m = re.search(r"\.([A-Za-z0-9]{1,8})$", name.strip())
+    return bool(m) and m.group(1).lower() not in _WEB_TLDS
+
+
+def _fileish(target: str | None) -> bool:
+    t = (target or "").strip().lower()
+    if not t:
+        return False
+    return bool(re.fullmatch(_PRON, t) or t in ("is", "us", "in", "un") or _ORDINAL_TARGET.match(t) or _ext_ok(t)
+                or _FILE_WORD.search(t)
+                or re.match(r"^[a-z]:\\", t) or _FOLDER_WORDS.match(t))
+
+
+def _folderish(loc: str | None) -> bool:
+    t = (loc or "").strip().lower()
+    t = re.sub(r"^(?:mera|meri|mere|my|the)\s+", "", t)
+    return bool(_FOLDER_WORDS.match(re.sub(r"\s+folder$", "", t)) or t.endswith((" folder", " project"))
+                or re.match(r"^[a-z]:\\", t) or re.fullmatch(r"(?:is|us|ye|yeh|wo)\s+folder", t))
+
+
+def _quoted(text: str) -> tuple[str, bool]:
+    t = text.strip()
+    if len(t) >= 2 and t[0] in "\"'“‘" and t[-1] in "\"'”’":
+        return t[1:-1], True
+    return t, False
+
+
+def _coding_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
+    def project(m: re.Match[str]) -> dict[str, object]:
+        p = _target_text(m.groupdict().get("p"))
+        return {"project": re.sub(r"\s+project$", "", p, flags=re.IGNORECASE)} if p else {}
+
+    if LIST_PROJECTS.search(cleaned):
+        return "inspect_project", {}
+    for p in OPEN_PROJECT:
+        if m := p.search(cleaned):
+            return "open_project", project(m)
+    for p in INSPECT_PROJECT:
+        if m := p.search(cleaned):
+            return "inspect_project", project(m)
+    for p in RUN_TESTS:
+        if m := p.search(cleaned):
+            return "run_tests", project(m)
+    for p in CHECK_ERRORS:
+        if m := p.search(cleaned):
+            return "check_errors", project(m)
+    for p in RUN_COMMAND:
+        if m := p.search(cleaned):
+            return "run_command", {**project(m), "command": " ".join(m.group("cmd").split())}
+    for p in EXPLAIN_ERROR:
+        if m := p.search(cleaned):
+            return "explain_error", {"text": m.group("text").strip()} if m.group("text") else {}
+    for p in FIX_ERROR:
+        if p.search(cleaned):
+            return "fix_error", {}
+    return None
+
+
+def _file_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
+    # "isko Documents mein move karo" -> "is ko ...", so "X ko Y mein ..." patterns see the pronoun as X.
+    split_ko = re.sub(r"^(is|us|in|un)ko\b", r"\1 ko", cleaned, flags=re.IGNORECASE)
+    for p in UNDO_FILE:
+        if p.search(cleaned):
+            return "undo_file_op", {}
+    if m := CREATE_FILE_WITH_TEXT.search(cleaned):
+        return "create_file", {"file_name": m.group("name").strip(), "location": _target_text(m.group("loc")),
+                               "text": _quoted(m.group("text"))[0]}
+    for p in EDIT_REPLACE:
+        if m := p.search(cleaned):
+            target = m.groupdict().get("target") or m.groupdict().get("target2")
+            if target:
+                return "edit_file", {"target": _target_text(target), "edit_action": "replace",
+                                     "old_text": m.group("old").strip(), "new_text": m.group("new").strip()}
+    for p in EDIT_APPEND:
+        if m := p.search(cleaned):
+            target = _target_text(m.group("target")) or ""
+            text, quoted = _quoted(m.group("text"))
+            if re.search(rf"\.(?:{_CODE_EXT})$", target, re.IGNORECASE) and not quoted:
+                return "modify_code", {"target": target, "instruction": cleaned}  # "app.py mein login function add karo"
+            return "edit_file", {"target": target, "edit_action": "append", "text": text}
+    for p in SEARCH_FILES:
+        if m := p.search(cleaned):
+            q = re.sub(r"^(?:saari|sari|sab|saare|all|meri|mere|my)\s*", "", m.group("q").strip(), flags=re.IGNORECASE)
+            loc = _target_text(m.groupdict().get("loc"))
+            if not loc and _FOLDER_WORDS.match(q):  # "Downloads ki files dikhao": list that folder
+                return "read_file", {"target": q}
+            if q:
+                return "search_files", {"query": q.strip(" \"'"), "location": loc}
+    for p in CREATE_FILE:
+        if m := p.search(cleaned):
+            return "create_file", {"file_name": _target_text(m.group("name")), "location": _target_text(m.group("loc"))}
+    for p in CREATE_FOLDER_AT:
+        if m := p.search(cleaned):
+            name = _target_text(m.group("name"))
+            if name and name.lower() in FOLDER_DETERMINERS:
+                name = None
+            return "create_folder", {"folder_name": name, "location": _target_text(m.group("loc"))}
+    for p in READ_FILE_SUMMARY:
+        if m := p.search(cleaned):
+            return "read_file", {"target": _target_text(m.group("target")), "summary": True}
+    for p in READ_FILE:
+        if (m := p.search(cleaned)) and (_fileish(m.group("target")) or _folderish(m.group("target"))):
+            return "read_file", {"target": _target_text(m.group("target"))}
+    for p in OPEN_FILE:
+        if (m := p.search(cleaned)) and (_ext_ok(m.group("target")) or _FILE_WORD.search(m.group("target"))):
+            return "open_file", {"target": _target_text(m.group("target"))}
+    for p in RENAME_FILE:
+        if (m := p.search(cleaned)) and _fileish(m.group("target")):
+            return "rename_file", {"target": _target_text(m.group("target")), "new_name": _target_text(m.group("new"))}
+    for p in MOVE_FILE:
+        if (m := p.search(split_ko)) and _fileish(m.group("target")):
+            return "move_file", {"target": _target_text(m.group("target")), "destination": _target_text(m.group("dest"))}
+    for p in COPY_FILE:
+        if (m := p.search(split_ko)) and _fileish(m.group("target")):
+            return "copy_file", {"target": _target_text(m.group("target")),
+                                 "destination": _target_text(m.groupdict().get("dest"))}
+    for p in DELETE_FILE:
+        if (m := p.search(cleaned)) and _fileish(m.group("target")):
+            return "delete_file", {"target": _target_text(m.group("target"))}
+    for p in ORGANIZE_FOLDER:
+        if (m := p.search(cleaned)) and _folderish(m.group("loc")):
+            return "organize_folder", {"location": _target_text(m.group("loc"))}
+    for p in FOLDER_REPORT:
+        if (m := p.search(cleaned)) and _folderish(m.group("loc")):
+            return "folder_report", {"location": _target_text(m.group("loc"))}
+    for p in MODIFY_CODE:
+        if m := p.search(cleaned):
+            return "modify_code", {"target": m.group("target"), "instruction": cleaned,
+                                   **({"project": _target_text(m.group("p"))} if m.groupdict().get("p") else {})}
+    return None
+
+
 def _computer_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
     """Action commands. Explicit dictation ("likho: ...") is checked first so dictated text is never treated as
-    a command; browser commands come before the ambiguous trailing "... likho" form."""
+    a command; file/coding and browser commands come before the ambiguous trailing "... likho" form."""
     for p in TYPE_TEXT[:2]:
         if m := p.search(cleaned):
             return "type_text", {"text": m.group("text").strip()}
+    if coding := _coding_intent(cleaned):
+        return coding
+    if files := _file_intent(cleaned):
+        return files
     if browser := _browser_intent(cleaned):
         return browser
     for p in TYPE_TEXT[2:]:
@@ -375,10 +702,12 @@ class RuleBasedProvider(AIProvider):
     async def understand(self, text: str, context: list[ConversationTurn] | None = None) -> Understanding:
         """Splits compound commands ("Chrome kholo aur RAM batao") when every part is understood."""
         cleaned = normalize(text, self._wake)
-        # Explicit dictation ("likho: main aur tum", "type hello and bye") is never split into commands.
-        # The trailing form ("... type karo") is ambiguous, so it may still be one part of a compound.
+        # Explicit dictation ("likho: main aur tum", "type hello and bye") is never split into commands, nor is
+        # text going into a file or a code change. The trailing form ("... type karo") is ambiguous, so it may
+        # still be one part of a compound.
         dictation = any(p.search(cleaned) for p in TYPE_TEXT[:2])
-        parts = [] if dictation else [p for p in COMPOUND_SPLIT.split(cleaned) if p.strip()]
+        whole = dictation or any(p.search(cleaned) for p in UNSPLITTABLE)
+        parts = [] if whole else [p for p in COMPOUND_SPLIT.split(cleaned) if p.strip()]
         if len(parts) > 1:
             intents = [await self.detect_intent(p) for p in parts]
             if all(i.name not in ("unknown", "greeting") for i in intents):
@@ -395,8 +724,10 @@ class RuleBasedProvider(AIProvider):
         language = detect_language(text)
         cleaned = normalize(text, self._wake)
         # Rules are precise on short commands; long conversational sentences are less certain,
-        # which lets hybrid mode hand them to the LLM.
-        damping = 0.75 if len(cleaned.split()) > 8 else 1.0
+        # which lets hybrid mode hand them to the LLM. A command carrying text ("notes.txt mein likho: ...",
+        # "... banao aur us mein ... likho") is long because of that text, not because it is unclear.
+        carries_text = any(p.search(cleaned) for p in TYPE_TEXT[:2]) or any(p.search(cleaned) for p in UNSPLITTABLE)
+        damping = 0.75 if len(cleaned.split()) > 8 and not carries_text else 1.0
 
         def make(name: str, confidence: float, **entities: object) -> Intent:
             return Intent(

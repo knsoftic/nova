@@ -38,10 +38,32 @@ KNOWN_INTENTS = (
     "download",
     "research",
     "web_answer",
+    # files + coding (Phase 8B)
+    "search_files",
+    "create_file",
+    "open_file",
+    "read_file",
+    "rename_file",
+    "move_file",
+    "copy_file",
+    "delete_file",
+    "edit_file",
+    "organize_folder",
+    "folder_report",
+    "undo_file_op",
+    "open_project",
+    "inspect_project",
+    "run_tests",
+    "check_errors",
+    "run_command",
+    "explain_error",
+    "fix_error",
+    "modify_code",
     "unknown",
 )
 
 BROWSER_NAV_ACTIONS = ("scroll_down", "scroll_up", "back", "forward", "reload")
+EDIT_ACTIONS = ("append", "replace")
 
 WINDOW_ACTIONS = ("minimize", "maximize", "restore", "show_desktop")
 SHORTCUT_NAMES = ("copy", "paste", "cut", "undo", "redo", "select_all", "save", "new_tab", "close_tab", "find",

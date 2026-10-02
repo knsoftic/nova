@@ -41,6 +41,8 @@ DANGEROUS_CLICK = re.compile(
 )
 CREDENTIAL_TEXT = re.compile(r"\b(password|passwd|pin|otp|cvv|card\s*number|pass\s*code)\b|\b\d{12,19}\b", re.IGNORECASE)
 UNSAVED_MARKERS = re.compile(r"^\*|\*\s|●|\bunsaved\b|\buntitled\b", re.IGNORECASE)
+BIG_DELETE_FILES = 100
+BIG_DELETE_BYTES = 1024**3
 
 
 @dataclass
@@ -51,6 +53,14 @@ class TargetContext:
     process: str | None = None  # e.g. "notepad.exe", or "browser:example.com" for NOVA's browser
     element: str | None = None  # the exact element text on a web page (for clicks)
     executable: bool = False  # a download that is a program/script
+    # File/Coding steps (from agents.prepared.Prepared)
+    scope_key: str | None = None  # what a remembered approval covers
+    preview: str | None = None  # diff, organize plan or command, shown in the dialog
+    count: int = 0
+    size: int = 0
+    executes_code: bool = False
+    network: bool = False
+    always_ask: bool = False
 
 
 class PermissionItem(BaseModel):
@@ -62,6 +72,7 @@ class PermissionItem(BaseModel):
     target: str | None = None
     scope: str  # what a remembered approval would cover
     rememberable: bool
+    preview: str | None = None  # shown (not spoken): the diff, plan or command that will run
 
 
 class PermissionRequest(BaseModel):
@@ -118,11 +129,26 @@ def classify(intent: str, entities: dict[str, object], base_risk: Risk, target: 
         reasons.append("File Downloads\\NOVA mein save hogi; NOVA use kholega nahi")
         if target.executable:
             escalate("high", "Ye program/script file hai — chalane par computer ko nuqsan pohncha sakti hai")
+    # Files and code: judged by what was actually resolved (how many files, what runs).
+    if intent == "delete_file":
+        reasons.append("Recycle Bin mein jayegi — wahan se Restore ho sakti hai")
+        if target.count > BIG_DELETE_FILES or target.size > BIG_DELETE_BYTES:
+            escalate("high", f"Bohat bara delete: {target.count} files / {target.size // (1024 * 1024)} MB")
+    if intent in ("rename_file", "move_file", "edit_file", "organize_folder", "fix_error", "modify_code"):
+        reasons.append("Wapas ho sakta hai: 'pichla file kaam undo karo'")
+    if intent in ("fix_error", "modify_code"):
+        reasons.insert(0, "Code ki tabdeeli neeche dikhai gayi hai; purani file ka backup rakha jayega")
+    if target.executes_code:
+        escalate("medium", "Project ka apna code/scripts is PC par chalenge")
+    if target.network:
+        escalate("medium", "Internet se packages download honge; un ke install scripts bhi chal sakte hain")
     return risk, reasons
 
 
 def scope_for(intent: str, entities: dict[str, object], target: TargetContext) -> str:
     """A remembered approval covers the same action in the same app - never anything broader."""
+    if target.scope_key:  # File/Coding: same action, same folder/project/command
+        return f"{intent}:{target.scope_key}".lower()
     process = (target.process or "unknown").lower()
     match intent:
         case "type_text":
@@ -200,9 +226,12 @@ class PermissionEngine:
             "download": f": \"{target.element or entities.get('target', '')}\"",
         }.get(intent, "")
         where = f" ({target.title})" if target.title and intent != "close_app" else ""
+        if target.scope_key:  # File/Coding: the agent's own summary already names the exact target
+            detail, where = f": {target.title}", ""
         return PermissionItem(step_id=step_id, intent=intent, description=f"{description}{detail}{where}",
                               risk=risk, reasons=reasons, target=target.title,
-                              scope=scope_for(intent, entities, target), rememberable=risk == "medium")
+                              scope=scope_for(intent, entities, target),
+                              rememberable=risk == "medium" and not target.always_ask, preview=target.preview)
 
     # ------------------------------------------------------------------ requests
 

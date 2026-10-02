@@ -3,7 +3,7 @@ import { matchesActivity } from "./activityFilter";
 import { computeLevel, smoothLevel } from "./audio";
 import { emptyHistory, navigateHistory, pushHistory } from "./commandHistory";
 import type { AiStatus, EventType, NovaEvent } from "./types";
-import { aiLabel, formatBytes, formatDuration, linkParts, providerLabel } from "./ui";
+import { aiLabel, formatBytes, formatDuration, linkParts, messageBlocks, providerLabel } from "./ui";
 
 const ev = (type: EventType, agent: string | null = "Orchestrator"): NovaEvent => ({
   type,
@@ -129,5 +129,19 @@ describe("linkParts", () => {
     for (const t of ["http://example.com", "C:\\Users\\x\\report.md", "javascript:alert(1)"]) {
       expect(linkParts(t)).toEqual([{ text: t }]);
     }
+  });
+});
+
+describe("messageBlocks", () => {
+  it("separates code blocks from prose", () => {
+    expect(messageBlocks('"app.py" (2 lines):\n```\nprint(1)\nprint(2)\n```\nAur kuch?')).toEqual([
+      { code: false, text: '"app.py" (2 lines):' },
+      { code: true, text: "print(1)\nprint(2)" },
+      { code: false, text: "Aur kuch?" },
+    ]);
+  });
+
+  it("leaves plain replies alone", () => {
+    expect(messageBlocks("Folder bana diya.")).toEqual([{ code: false, text: "Folder bana diya." }]);
   });
 });

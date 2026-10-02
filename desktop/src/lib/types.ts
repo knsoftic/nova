@@ -54,6 +54,14 @@ export interface UserSettings {
   speak_responses: "voice_only" | "always" | "never";
   search_engine: "google" | "bing" | "duckduckgo";
   browser_channel: "chrome" | "msedge";
+  project_folders: string[];
+}
+
+/** A folder the File/Coding agents may use. */
+export interface FileRoot {
+  name: string;
+  path: string;
+  kind: "folder" | "projects";
 }
 
 /** Web search setup. The Brave key itself never comes back from the backend — only a masked hint. */
@@ -220,6 +228,8 @@ export interface PermissionItem {
   target: string | null;
   scope: string;
   rememberable: boolean;
+  /** Shown, not spoken: the diff, organize plan or command that will run. */
+  preview?: string | null;
 }
 
 export interface PermissionRequest {

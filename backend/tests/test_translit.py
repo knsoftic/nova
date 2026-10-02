@@ -76,6 +76,12 @@ opening plugs reading screen screenshot shortcut spec success tab verified verif
 command select cut paste redo undo refresh enter escape minimize maximize normal size desktop focus launch
 exactly text typed for access arrange current every fake goes load name nothing ocr real reports resolve save
 second shortcuts substitute switch tests this through update was taskbar
+affect after again allow always answer anything app applies apply approval approvals approve approved as ask asked
+asking asks audit broader button by bypasses cancel card chose classification context counts covered covers decision
+deny did directly don't earlier field first go ha happen happens link made needs newest no nope ok okay overwrite
+password per planner's please plz question raise remembered request requires resolved runs said same section set
+shown spoken stop terminal timeout title trail treat unless unsaved user's using what when where within without
+would yeah yep yes be
 """.split())
 
 
@@ -83,8 +89,18 @@ def test_every_template_word_is_covered():
     """New Roman Urdu words in replies must be added to the lexicon, or the voice mispronounces them."""
     root = pathlib.Path(__file__).resolve().parent.parent / "nova"
     missing = set()
-    for f in ["responses.py", "agents/system_agent.py", "agents/computer.py", "orchestrator.py", "planner.py"]:
-        for node in ast.walk(ast.parse((root / f).read_text(encoding="utf-8"))):
+    for f in ["responses.py", "agents/system_agent.py", "agents/computer.py", "orchestrator.py", "planner.py",
+              "permissions/engine.py"]:
+        tree = ast.parse((root / f).read_text(encoding="utf-8"))
+        # Docstrings are developer documentation, never spoken.
+        docstrings = {
+            id(n.body[0].value) for n in ast.walk(tree)
+            if isinstance(n, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.body and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)
+        }
+        for node in ast.walk(tree):
+            if id(node) in docstrings:
+                continue
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and " " in node.value:
                 for w in re.findall(r"[A-Za-z']+", node.value):
                     if w.lower() not in LEXICON and w.lower() not in ENGLISH_OK:

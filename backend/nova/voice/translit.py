@@ -99,6 +99,13 @@ LEXICON: dict[str, str] = {
     "nazar": "نظر", "saaf": "صاف", "tak": "تک", "lein": "لیں", "le": "لے", "shayad": "شاید", "chalane": "چلانے",
     "sakoon": "سکوں", "uski": "اس کی", "use": "اسے", "aayi": "آئی", "dikha": "دکھا", "jise": "جسے",
     "kahein": "کہیں", "khol": "کھول", "lane": "لانے", "likha": "لکھا", "likhne": "لکھنے", "parhne": "پڑھنے",
+    # permission questions (Phase 7)
+    "aage": "آگے", "ban": "بن", "bhej": "بھیج", "daba": "دبا", "deti": "دیتی", "dhyan": "دھیان", "kaha": "کہا",
+    "karoon": "کروں", "karunga": "کروں گا", "khareed": "خرید", "khatarnak": "خطرناک", "lagta": "لگتا",
+    "lagti": "لگتی", "likhna": "لکھنا", "mil": "مل", "mita": "مٹا", "poochegi": "پوچھے گی", "poochenge": "پوچھیں گے",
+    "rakha": "رکھا", "wapas": "واپس", "yaad": "یاد", "sun": "سن", "mat": "مت", "ruk": "رک", "ruko": "رکو",
+    "rehne": "رہنے", "jao": "جاؤ", "han": "ہاں", "haa": "ہاں", "jee": "جی", "kardo": "کر دو", "bhai": "بھائی",
+    "nai": "نہیں",
 }
 # "ki" appears twice above (possessive and "did"); both are written the same in Urdu.
 

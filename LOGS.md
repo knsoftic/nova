@@ -288,3 +288,45 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 6 commit `a8543f4`, `main` mein merge `7fb4721`. (Pehli commit koshish message ke quotes ki wajah se fail hui thi — kuch commit nahi hua tha; dobara sahi tareeqe se ki gayi.)
+
+---
+
+### Task: Phase 7 — Permission Engine
+
+Status: Complete (branch `phase-7-permission-engine`, approval ke baad `main` mein merge)
+
+Kaam:
+- **Risk classification (context ke sath):** planner ka risk + jagah aur kaam dekh kar: Terminal/PowerShell mein type ya Enter → high; password/card jaisa text → high; "Delete/Send/Pay/Buy/Confirm" jaise button par click → high; app band karna → medium (unsaved window ho to bataya jata hai).
+- **Ijazat maangna:** risky step se pehle NOVA ruk jata hai (avatar "?" WAITING FOR PERMISSION), dialog dikhata hai — kaam, kis window mein, khatra aur wajah, countdown. Default focus **Nahi** par, Esc = Nahi. 60 second mein jawab na aaye to **Nahi**. NOVA window khud saamne aa jati hai (Electron).
+- **Jawab ke tareeqe:** dialog button, command box mein "haan"/"nahi" (Urdu/Hindi bhi), ya awaaz se — awaaz wali command ka sawal NOVA bolta hai aur phir mic khud kholta hai; continuous mode mein jawab ke liye wake word zaroori nahi.
+- **Yaad rakhna:** sirf medium risk, aur sirf usi app mein usi kaam ke liye (maslan "Notepad mein paste"). High risk kabhi yaad nahi rakha jata. Settings mein list aur "Hatao".
+- **Audit:** har sawal `permission_requests` table mein (kya, risk, faisla, kis ne — UI/text/voice/rule/timeout, kab); activity log mein bhi.
+- **Ab chalne lage (ijazat ke baad):** type karna (verify: field mein text nazar aaye), click (pehle accessibility "Invoke", warna mouse; button na mile to imandari se batata hai), app band karna (verify: window band hui ya save ka pooch rahi hai), paste/save/undo waghera.
+- **Hifazat ki doosri teh:** ComputerAgent bina orchestrator ki di hui ijazat ke risky kaam karne se khud inkaar karta hai.
+
+Test:
+- Backend automated tests: 279/279 pass (45 naye): classification, scope, haan/nahi parsing, approve/deny/timeout, text "haan", yaad rakhna + hatana, high risk kabhi yaad nahi, compound mein sirf risky step ka sawal, click fallback, band na hone wali window, agent ka inkaar, sawal bolna.
+- Frontend: 10/10 tests, build successful.
+- Browser UI (asli backend): dialog sahi dikha; Esc → denied; Calculator kholna + "band karo" → Haan → "band ho gaya (Verify)".
+- Electron app ke andar: dialog aaya, focus "Nahi" par, attention function mojood, deny ka jawab sahi.
+
+**Test ke dauran ek waqia (incident) — imandari se:**
+- Browser pane mein "hello world type karo" test karte waqt dialog **"Haan" + "yaad rakhna" ke sath approve** hua (audit: `user_ui`, remembered=1) aur NOVA ne "hello world" **Claude app ki window** mein type kar diya (development mein NOVA ka UI usi window ke andar chal raha tha). Mera Esc sirf "Nahi" bhejta hai — dobara test mein Esc ne sahi "Nahi" bheja. Approve shayad shared browser pane mein kisi click se hua.
+- Fauran: ghalti se bana rule (`type@claude.exe`) hata diya gaya.
+- **Asal masla fix kiya:** jis window mein NOVA ka apna UI chal raha ho (typed command ke waqt jo window saamne ho), wo ab kabhi type/click/"ye window" ka target nahi banti — chahe NOVA Electron mein ho ya kisi browser mein. Regression test add kiya. Live dobara check: target ab Claude window nahi.
+
+Maloom hadood (limitations):
+- Admin (elevated) apps mein type/click Windows ki taraf se band hai.
+- Kuch apps typed text wapas parhne nahi deti — tab NOVA "unverified" batata hai.
+
+Verification:
+- Activity log mein permission_status: approved_by_user / approved_by_saved_rule / denied / timeout, aur action ka verification.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

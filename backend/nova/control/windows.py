@@ -105,9 +105,18 @@ def foreground() -> WindowInfo | None:
     return _info(hwnd) if hwnd else None
 
 
-def last_user_window() -> WindowInfo | None:
-    """The window the user was working in before talking to NOVA (topmost non-NOVA window)."""
-    return next((w for w in list_windows() if not w.is_nova), None)
+def foreground_hwnd() -> int | None:
+    hwnd = user32.GetForegroundWindow() if IS_WINDOWS else None
+    return int(hwnd) if hwnd else None
+
+
+def last_user_window(exclude: set[int] | None = None) -> WindowInfo | None:
+    """The window the user was working in before talking to NOVA (topmost non-NOVA window).
+
+    `exclude` holds windows known to host NOVA's UI (e.g. a browser showing it during development).
+    """
+    exclude = exclude or set()
+    return next((w for w in list_windows() if not w.is_nova and w.hwnd not in exclude), None)
 
 
 def name_tokens(name: str) -> list[str]:

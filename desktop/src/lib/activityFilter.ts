@@ -26,6 +26,7 @@ const CATEGORY: Record<Exclude<ActivityFilter, "all">, EventType[]> = {
     "AGENT_WORKING",
     "ACTION_EXECUTED",
     "PERMISSION_REQUIRED",
+    "PERMISSION_DECIDED",
     "VERIFICATION_STARTED",
     "VERIFICATION_PASSED",
     "VERIFICATION_FAILED",

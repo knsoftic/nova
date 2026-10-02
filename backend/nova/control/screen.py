@@ -155,6 +155,50 @@ def ui_elements(hwnd: int) -> list[UiElement]:
     return found
 
 
+def find_element(hwnd: int, label: str) -> tuple[str, UiElement | None]:
+    """Find a named control and activate it the accessible way (Invoke) when possible.
+
+    Returns ("invoked" | "found" | "not_found", element). "found" means the caller must click it.
+    """
+    import uiautomation as auto
+
+    target = label.strip().lower()
+    with auto.UIAutomationInitializerInThread():
+        root = auto.ControlFromHandle(hwnd)
+        exact = partial = None
+        for control, _depth in auto.WalkControl(root, maxDepth=12):
+            if control.ControlTypeName not in UI_ELEMENT_TYPES or not control.Name:
+                continue
+            name = control.Name.strip().lower()
+            if name == target:
+                exact = control
+                break
+            if partial is None and target in name:
+                partial = control
+        control = exact or partial
+        if control is None:
+            return "not_found", None
+        rect = control.BoundingRectangle
+        element = UiElement(kind=control.ControlTypeName.removesuffix("Control").lower(), name=control.Name[:80],
+                            x=(rect.left + rect.right) // 2, y=(rect.top + rect.bottom) // 2)
+        try:
+            control.GetInvokePattern().Invoke()
+            return "invoked", element
+        except Exception:
+            return "found", element
+
+
+def focused_value() -> str | None:
+    """Text of the focused input field (to verify typing), if the app exposes it."""
+    import uiautomation as auto
+
+    with auto.UIAutomationInitializerInThread():
+        try:
+            return auto.GetFocusedControl().GetValuePattern().Value
+        except Exception:
+            return None
+
+
 def read_window(hwnd: int, title: str, process: str) -> ScreenReading:
     reading = ScreenReading(window_title=title, process=process)
     try:

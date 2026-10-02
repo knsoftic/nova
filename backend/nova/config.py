@@ -28,6 +28,7 @@ class Settings:
     allowed_origins: tuple[str, ...] = field(default=DEFAULT_ALLOWED_ORIGINS)
 
     stt_model: str = "small"
+    permission_timeout_s: float = 60.0  # no answer = "no"
 
     @property
     def db_path(self) -> Path:

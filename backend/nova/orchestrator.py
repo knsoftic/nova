@@ -1,9 +1,9 @@
-"""AI Orchestrator: command -> understand (AI brain) -> plan -> agents -> verify -> response.
+"""AI Orchestrator: command -> understand -> plan -> permission -> agents -> verify -> response.
 
-Low-risk actions run (read-only system info; opening, focusing and arranging windows; reading the
-screen) and are verified afterwards. Steps whose agent does not exist yet, or that need permission
-(medium/high risk), are planned and reported but never executed; responses never claim otherwise.
-The Permission Engine (Phase 7) plugs in at _run_step.
+Low-risk actions run directly. Medium/high-risk steps go through the Permission Engine first: the
+user is asked (or a remembered approval for exactly that action applies) and only approved steps
+run. Steps whose agent does not exist yet are planned and reported but never executed; responses
+never claim an action that did not happen.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from .db import Database
 from .discovery.models import LiveStats, SystemProfile
 from .discovery.service import DiscoveryService
 from .events import EventBus, EventType, NovaEvent, NovaState
+from .permissions import PermissionEngine, TargetContext
 from .planner import Plan, PlanStep, build_plan
 from .responses import (
     FALLBACK_NOTES,
@@ -73,7 +74,9 @@ class Orchestrator:
         assistant_name: str,
         discovery: DiscoveryService,
         computer: ComputerAgent | None = None,
+        permissions: PermissionEngine | None = None,
     ) -> None:
+        self.permissions = permissions
         self.bus = bus
         self.db = db
         self.providers = providers
@@ -106,7 +109,7 @@ class Orchestrator:
             NovaEvent(
                 type=EventType.NOVA_LISTENING,
                 agent=ORCHESTRATOR,
-                message="Microphone on (abhi sirf mic test, awaaz pehchanna Phase 5 mein)" if active else "Microphone off",
+                message="Microphone on — sun raha hoon" if active else "Microphone off",
                 data={"active": active},
             )
         )
@@ -117,6 +120,14 @@ class Orchestrator:
     async def handle_command(self, text: str, source: str = "text") -> CommandResult:
         task_id = uuid.uuid4().hex[:12]
         text = text.strip()
+        # "haan" / "nahi" while NOVA is waiting for permission answers that question, it is not a new command.
+        if self.permissions is not None:
+            answer = await self.permissions.answer_latest(text, f"user_{source}")
+            if answer is not None:
+                return CommandResult(task_id=task_id, intent=None, status="permission_answer",
+                                     response="Theek hai." if answer else "Theek hai, ye kaam nahi karunga.")
+        if self.computer is not None:
+            self.computer.note_command(source)  # the window hosting NOVA's UI is never a target
         await self.bus.publish(
             NovaEvent(
                 type=EventType.TASK_STARTED,
@@ -163,6 +174,7 @@ class Orchestrator:
                 )
             )
 
+            await self._seek_permission(task_id, plan, source)
             outcomes = [await self._run_step(task_id, step, plan) for step in plan.steps]
         except Exception as exc:  # provider/agent failures must never crash the backend
             log.exception("Command handling failed")
@@ -220,8 +232,12 @@ class Orchestrator:
                 outcome = AgentOutcome("Computer control is PC par available nahi.", step.agent, step.action, False)
             else:
                 outcome = await self._run_computer(task_id, step)
+        elif step.status == "denied":
+            reply = ("Aap ka jawab nahi aaya, is liye ye kaam nahi kiya" if step.permission == "timeout"
+                     else "Theek hai, ijazat nahi mili, is liye ye kaam nahi kiya")
+            outcome = AgentOutcome(f"{reply}: {step.description}.", step.agent, step.action, executed=False)
         elif step.status == "needs_permission":
-            # Medium/high risk: never executed without the user's permission (Permission Engine, Phase 7).
+            # No Permission Engine available: risky steps are never executed.
             outcome = AgentOutcome(build_permission_response(intent, step.description), step.agent, step.action,
                                    executed=False)
         else:
@@ -238,13 +254,17 @@ class Orchestrator:
             "done": "success" if outcome.executed else "responded",
             "unavailable": "not_available_yet",
             "needs_permission": "blocked_needs_permission",
+            "denied": "not_executed_denied",
         }.get(step.status, step.status)
+        permission_status = {
+            "approved": "approved_by_user", "rule": "approved_by_saved_rule", "denied": "denied", "timeout": "timeout",
+        }.get(step.permission or "", "required_pending" if step.status == "needs_permission" else "not_required")
         self.db.add_activity(
             task_id=task_id,
             task_name=f"command:{intent.name}",
             agent=outcome.agent,
             action=outcome.action,
-            permission_status="required_pending" if step.status == "needs_permission" else "not_required",
+            permission_status=permission_status,
             execution_status=execution,
             # Read-only lookups change nothing on the PC, so there is no state to verify afterwards.
             verification_status=outcome.verification,
@@ -261,6 +281,29 @@ class Orchestrator:
         )
         return outcome
 
+    async def _seek_permission(self, task_id: str, plan: Plan, source: str) -> None:
+        """Ask the user (or apply a remembered approval) for every step that needs permission."""
+        risky = [s for s in plan.steps if s.status == "needs_permission"]
+        if not risky or self.permissions is None or self.computer is None:
+            return
+        items = []
+        for step in risky:
+            title, process = await asyncio.to_thread(self.computer.describe_target, step.intent)
+            item = self.permissions.make_item(step.id, step.intent.name, step.intent.entities, step.description,
+                                              step.risk, TargetContext(title=title, process=process))
+            step.risk, step.reasons = item.risk, item.reasons
+            items.append(item)
+        await self.set_state(NovaState.WAITING_FOR_PERMISSION, task_id)
+        decisions = await self.permissions.request(task_id, items, source)
+        for step in risky:
+            decision = decisions[step.id]
+            if decision.approved:
+                step.status = "ready"
+                step.permission = "rule" if decision.decided_by == "rule" else "approved"
+            else:
+                step.status = "denied"
+                step.permission = "timeout" if decision.decided_by == "timeout" else "denied"
+
     async def _run_computer(self, task_id: str, step: PlanStep) -> AgentOutcome:
         """Run a computer-control action and report its verification (spec: never assume success)."""
         assert self.computer is not None
@@ -269,7 +312,8 @@ class Orchestrator:
         await self.set_state(NovaState.WORKING, task_id)
         await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
                                          message=f"{step.description}..."))
-        result = await asyncio.to_thread(self.computer.run, step.intent)
+        approved = step.permission in ("approved", "rule")
+        result = await asyncio.to_thread(self.computer.run, step.intent, approved)
         if result.executed:
             await self.bus.publish(NovaEvent(type=EventType.ACTION_EXECUTED, task_id=task_id, agent=step.agent,
                                              message=f"Action: {result.action}", data={"action": result.action}))

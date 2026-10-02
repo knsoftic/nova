@@ -2,10 +2,32 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 4 (AI Brain)**. NOVA understands natural Urdu / Roman Urdu / Hindi / English commands
-with a local LLM (Ollama, `qwen3:4b`) plus fast rules, plans multi-step requests, answers general questions
-in Roman Urdu, scans the PC and answers system questions. It does not launch apps, recognise speech, or change
+Current status: **Phase 5 (Voice)**. NOVA listens (push-to-talk or continuous with a configurable wake word),
+understands Urdu / Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests,
+answers system and general questions, and replies in an offline Urdu voice. It does not launch apps or change
 anything on the PC yet. See [LOGS.md](LOGS.md) for development history and approval status.
+
+## Voice (offline)
+
+Download the voice models once per PC (~600 MB):
+
+```bash
+.venv\Scripts\python.exe scripts\download_voice_models.py
+```
+
+(from `backend/`)
+
+- **Speech-to-text:** faster-whisper `small` (int8, CPU), Urdu by default.
+- **Wake word:** recognised from the transcript, so any name/phrase set in Settings works ("Hey NOVA", "Suno Zara").
+- **Urdu voice:** Piper `ur_PK-fasih` (male) / `ur_PK-aegis_female`. Roman Urdu replies are converted to Urdu
+  script for correct pronunciation (`nova/voice/translit.py`).
+- Audio stays on the PC. In continuous mode, speech without the wake word is dropped without being shown or stored.
+
+Check the whole voice chain against the running backend (NOVA's voice plays the user):
+
+```bash
+.venv\Scripts\python.exe scripts\voice_loopback.py
+```
 
 ## Local AI (Ollama)
 
@@ -37,6 +59,7 @@ nova/
 │   │   ├── planner.py      intents → ordered steps with agent, risk and availability
 │   │   ├── discovery/      system scan: probe.ps1, Windows collectors, app catalog, self-configuration
 │   │   ├── agents/         System Agent (read-only)
+│   │   ├── voice/          segmenter, Whisper STT, wake word, Piper TTS, Roman Urdu → Urdu script
 │   │   ├── events.py       event types, NOVA states, event bus
 │   │   ├── ai/             Provider Manager (hybrid/llm/rules), Ollama provider, rule-based provider
 │   │   ├── language.py     Urdu / Hindi / Roman Urdu / English detection
@@ -120,7 +143,22 @@ Environment variables (backend):
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
 
-## Admin manual test (Phase 4)
+## Admin manual test (Phase 5)
+
+1. `desktop/` mein `npm start` chalayein. Live Activity mein "Voice: awaaz pehchanna tayyar (whisper small), Urdu awaaz tayyar" aana chahiye (kuch second lagte hain).
+2. **Awaaz test:** ⚙ Settings → Awaaz → "🔊 Awaaz test karein". NOVA Urdu mein bolega, avatar "SPEAKING" dikhayega. Dono awaazein (Fasih mard / Aegis khatoon) chunein, Save karein aur dobara test karein — kaun si behtar lagi, batayein.
+3. **Push-to-talk:** Mic button dabayein ("Mic: Bolein"), saaf bolein: *"RAM kitni free hai"*. Khamosh hone ke ~3 second baad aapki baat chat mein aaye, jawab likha aaye aur NOVA bol kar sunaye. Mic khud band ho jaye.
+4. Phir aazmayein: *"Hey NOVA, mera system check karo"*, *"Windows ka version batao"*, *"kya Photoshop installed hai"*, *"Pakistan ka capital kya hai"* (yeh model se, 10-15 s).
+5. **Continuous listening:** Settings → "Continuous listening" on → Save. Mic khud on hoga ("Mic: On · Hey NOVA").
+   - Kuch aam baat karein (bina "Hey NOVA") — NOVA ko kuch nahi karna chahiye, chat ya Activity mein kuch nahi aana chahiye.
+   - *"Hey NOVA, storage check karo"* — command chalni chahiye aur jawab bolna chahiye.
+   - Sirf *"Hey NOVA"* kahein — NOVA "Ji, farmaiye?" bolega; phir 8 second ke andar bina wake word command dein.
+   - NOVA ke bolte waqt woh apni awaaz nahi sun'na chahiye (khud ko command na de).
+6. Wake word badal kar dekhein (maslan "Suno Zara", naam "Zara") — ab "Suno Zara, RAM batao" chalna chahiye. Phir wapas NOVA / Hey NOVA kar dein aur continuous listening off kar dein (agar nahi chahiye).
+7. Batayein: Urdu pronunciation kaisi lagi, aur kaun se alfaaz ghalat bole ya ghalat sune gaye — main unhein theek karunga.
+8. Sab theek ho to approve karein, warna problem batayein.
+
+## Admin manual test (Phase 4, approved)
 
 1. `desktop/` mein `npm start` chalayein. Status bar mein **AI: qwen3:4b (hybrid)** aana chahiye (pehle kuch second "AI model load ho raha hai" Live Activity mein).
 2. **Sawal:** `Pakistan ka capital kya hai?` — 5-15 second mein Roman Urdu jawab, neeche "AI ka jawab (qwen3:4b)" likha ho. Avatar THINKING dikhaye.

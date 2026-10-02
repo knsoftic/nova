@@ -42,16 +42,17 @@ SYSTEM_TOPICS: list[tuple[str, re.Pattern[str]]] = [
     for topic, pattern in [
         # Needs both an app word and a "running/open" word, so "zindagi kaisi chal rahi hai" is not a system query.
         ("running", r"^(?=.*\b(?:apps?|applications?|programs?|softwares?|windows)\b)(?=.*(?:chal rah|running|khul[ei]|\bopen\b))"),
-        ("browsers", r"\bbrowsers?\b|براؤزر|ब्राउज़र"),
-        ("apps", r"\b(?:apps?|applications?|softwares?|programs?)\b|ایپس|ایپلیکیشن"),
-        ("ram", r"\bram\b|\bmemory\b|ریم|میموری|रैम"),
-        ("cpu", r"\bcpu\b|processor|پروسیسر|प्रोसेसर"),
-        ("gpu", r"\bgpu\b|graphics?|گرافکس|ग्राफिक्स"),
-        ("storage", r"storage|\bdisk\b|\bdrives?\b|hard ?disk|\bspace\b|اسٹوریج|سٹوریج|स्टोरेज"),
-        ("windows", r"\bwindows\b|ونڈوز|विंडोज"),
-        ("devices", r"\bmic\b|microphone|speakers?|camera|webcam|مائیک|کیمرہ|स्पीकर|कैमरा"),
-        ("displays", r"monitors?|displays?|screens?"),
-        ("network", r"network|internet|wi-?fi|انٹرنیٹ|इंटरनेट"),
+        # Urdu-script forms include how Whisper spells English tech words ("آر ایم" = RAM, "وندوز" = Windows).
+        ("browsers", r"\bbrowsers?\b|براؤزر|براوزر|ब्राउज़र"),
+        ("apps", r"\b(?:apps?|applications?|softwares?|programs?)\b|ایپس|ایپلیکیشن|ایپلیکیشنز"),
+        ("ram", r"\bram\b|\bmemory\b|ریم|آر\s*ایم|میموری|मेमोरी|रैम|आर\s*एम"),
+        ("cpu", r"\bcpu\b|processor|پروسیسر|پراسیسر|سی\s*پی\s*یو|प्रोसेसर"),
+        ("gpu", r"\bgpu\b|graphics?|گرافکس|گرافک|جی\s*پی\s*یو|ग्राफिक्स"),
+        ("storage", r"storage|\bdisk\b|\bdrives?\b|hard ?disk|\bspace\b|اسٹوریج|سٹوریج|سٹورج|ڈسک|स्टोरेज"),
+        ("windows", r"\bwindows\b|ونڈوز|وندوز|ونڈو|विंडोज"),
+        ("devices", r"\bmic\b|microphone|speakers?|camera|webcam|مائیک|مائک|کیمرہ|کیمرا|سپیکر|स्पीकर|कैमरा"),
+        ("displays", r"monitors?|displays?|screens?|مانیٹر|ڈسپلے"),
+        ("network", r"network|internet|wi-?fi|انٹرنیٹ|نیٹ\s*ورک|وائی\s*فائی|इंटरनेट"),
         ("admin", r"\badmin(?:istrator)?\b|permissions?"),
     ]
 ]

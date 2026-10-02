@@ -38,11 +38,12 @@ interface Props {
   connection: ConnectionStatus;
   version: string | null;
   micStatus: MicStatus;
+  micLabel?: string;
   aiStatus: AiStatus | null;
   onOpenSettings: () => void;
 }
 
-export function StatusBar({ name, connection, version, micStatus, aiStatus, onOpenSettings }: Props) {
+export function StatusBar({ name, connection, version, micStatus, micLabel, aiStatus, onOpenSettings }: Props) {
   const c = CONNECTION[connection];
   const mic = MIC_LABEL[micStatus];
   const live = useLiveStats(connection === "connected");
@@ -62,7 +63,7 @@ export function StatusBar({ name, connection, version, micStatus, aiStatus, onOp
         )}
         <span className="flex items-center gap-2" title={mic.hint} role="status" aria-label={mic.text}>
           <span className={`h-2 w-2 rounded-full ${mic.dot}`} />
-          {mic.text}
+          {micLabel ?? mic.text}
         </span>
         <span className={ai.ok ? "" : "text-amber-300"} title="Commands kaun samajh raha hai (local, PC se bahar kuch nahi jata)">
           {ai.text}

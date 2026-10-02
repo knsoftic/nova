@@ -10,15 +10,22 @@ interface Props {
   /** Live microphone level 0..1; drives the orb while LISTENING. */
   level?: number;
   preview?: boolean;
+  /** NOVA's voice is playing. */
+  speaking?: boolean;
 }
 
-export function NovaCore({ state, name, level = 0, preview = false }: Props) {
-  const meta = STATE_META[state];
+export function NovaCore({ state, name, level = 0, preview = false, speaking = false }: Props) {
+  const meta = speaking ? { label: "Bol raha hoon...", color: "#22d3ee" } : STATE_META[state];
   const style = { "--nova-color": meta.color, "--nova-level": level.toFixed(3) } as CSSProperties;
 
   return (
     <div className="flex flex-col items-center gap-5" style={style}>
-      <div className={`nova-core ${BUSY.includes(state) ? "nova-core--busy" : ""}`} data-state={state} aria-hidden>
+      <div
+        className={`nova-core ${BUSY.includes(state) ? "nova-core--busy" : ""}`}
+        data-state={state}
+        data-speaking={speaking || undefined}
+        aria-hidden
+      >
         <div className="nova-ring nova-ring--outer" />
         <div className="nova-ring nova-ring--middle" />
         <div className="nova-ring nova-ring--inner" />
@@ -41,7 +48,7 @@ export function NovaCore({ state, name, level = 0, preview = false }: Props) {
           className="rounded-full border px-3 py-1 font-mono text-xs tracking-widest"
           style={{ borderColor: meta.color, color: meta.color }}
         >
-          {state.replaceAll("_", " ")}
+          {speaking ? "SPEAKING" : state.replaceAll("_", " ")}
           {preview && " · PREVIEW"}
         </span>
         <span className="text-sm text-slate-300">{meta.label}</span>

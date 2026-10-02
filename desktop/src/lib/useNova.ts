@@ -35,8 +35,8 @@ export function useNova() {
   const [activityRevision, setActivityRevision] = useState(0);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
-  // Whether this window's microphone is open; re-announced to the backend after reconnects.
-  const voiceActiveRef = useRef(false);
+  // Latest speech NOVA produced; the UI fetches and plays it.
+  const [lastSpeech, setLastSpeech] = useState<{ id: string; duration: number } | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const holdUntil = useRef(0);
@@ -90,6 +90,18 @@ export function useNova() {
         setProfileRevision((n) => n + 1);
       }
       if (msg.type === "AI_STATUS") setAiStatus(msg.data as unknown as AiStatus);
+      if (msg.type === "NOVA_SPEAK") {
+        const d = msg.data as { speech_id: string; duration_s: number };
+        setLastSpeech({ id: d.speech_id, duration: d.duration_s });
+      }
+      if (msg.type === "VOICE_TRANSCRIBED") {
+        const text = String((msg.data as { text?: string }).text ?? "");
+        setMessages((prev) =>
+          [...prev, { id: nextId(), role: "user" as const, text, timestamp: msg.timestamp, voice: true }].slice(
+            -MAX_MESSAGES,
+          ),
+        );
+      }
       if (msg.type === "NOVA_RESPONSE" || msg.type === "TASK_FAILED") {
         const text = msg.message ?? "";
         const data = msg.data as { provider?: string; steps?: PlanStepSummary[] };
@@ -125,7 +137,6 @@ export function useNova() {
       ws.onopen = () => {
         retry = 0;
         setConnection("connected");
-        if (voiceActiveRef.current) ws.send(JSON.stringify({ type: "voice_state", active: true }));
         pingTimer = window.setInterval(() => ws.send(JSON.stringify({ type: "ping" })), 15_000);
       };
       ws.onmessage = (e) => {
@@ -170,13 +181,14 @@ export function useNova() {
     return true;
   }, []);
 
-  const sendVoiceState = useCallback((active: boolean) => {
-    voiceActiveRef.current = active;
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "voice_state", active }));
-  }, []);
 
   const clearEvents = useCallback(() => setEvents([]), []);
+
+  /** Tell the backend NOVA's voice is playing, so the microphone pipeline ignores it. */
+  const sendPlayback = useCallback((active: boolean) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "playback", active }));
+  }, []);
 
   const refreshAiStatus = useCallback(async () => {
     try {
@@ -194,7 +206,6 @@ export function useNova() {
     events,
     messages,
     sendCommand,
-    sendVoiceState,
     clearEvents,
     scanning,
     profileRevision,
@@ -202,5 +213,7 @@ export function useNova() {
     settings,
     aiStatus,
     refreshAiStatus,
+    lastSpeech,
+    sendPlayback,
   };
 }

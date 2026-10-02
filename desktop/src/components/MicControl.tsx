@@ -3,23 +3,24 @@ import type { MicStatus } from "../lib/useMicrophone";
 import { Waveform } from "./Waveform";
 
 export const MIC_LABEL: Record<MicStatus, { text: string; dot: string; hint: string }> = {
-  off: { text: "Mic: Off", dot: "bg-slate-500", hint: "Microphone on karne ke liye click karein" },
+  off: { text: "Mic: Off", dot: "bg-slate-500", hint: "Click karke bolein — NOVA awaaz se command samjhega" },
   starting: { text: "Mic: ...", dot: "bg-amber-400 animate-pulse", hint: "Microphone shuru ho raha hai" },
-  on: { text: "Mic: On", dot: "bg-emerald-400 animate-pulse", hint: "Sun raha hoon. Band karne ke liye click karein" },
-  denied: { text: "Mic: Blocked", dot: "bg-red-400", hint: "Microphone ki permission nahi mili (Windows privacy settings dekhein)" },
+  on: { text: "Mic: On", dot: "bg-emerald-400 animate-pulse", hint: "Sun raha hoon. Band karne ke liye click karein" },  denied: { text: "Mic: Blocked", dot: "bg-red-400", hint: "Microphone ki permission nahi mili (Windows privacy settings dekhein)" },
   unavailable: { text: "Mic: Nahi mila", dot: "bg-red-400", hint: "Koi microphone connect nahi hai" },
   error: { text: "Mic: Error", dot: "bg-red-400", hint: "Microphone shuru nahi ho saka" },
 };
 
 interface Props {
   status: MicStatus;
+  /** Overrides the default text while listening (e.g. "Mic: On · Hey NOVA"). */
+  label?: string;
   deviceLabel: string | null;
   analyserRef: RefObject<AnalyserNode | null>;
   onToggle: () => void;
   disabled: boolean;
 }
 
-export function MicControl({ status, deviceLabel, analyserRef, onToggle, disabled }: Props) {
+export function MicControl({ status, label: labelOverride, deviceLabel, analyserRef, onToggle, disabled }: Props) {
   const label = MIC_LABEL[status];
   const on = status === "on";
   return (
@@ -35,7 +36,7 @@ export function MicControl({ status, deviceLabel, analyserRef, onToggle, disable
         }`}
       >
         <span className={`h-2 w-2 rounded-full ${label.dot}`} />
-        {label.text}
+        {labelOverride ?? label.text}
       </button>
       {on && <Waveform analyserRef={analyserRef} active={on} />}
     </div>

@@ -5,9 +5,12 @@ export type MicStatus = "off" | "starting" | "on" | "denied" | "unavailable" | "
 
 const LEVEL_UPDATE_MS = 50;
 
+/** Path of the AudioWorklet (served from public/, relative so it works from file:// in Electron). */
+const WORKLET_URL = "./pcm-worklet.js";
+
 /**
- * Opens the microphone for the live level meter. Audio never leaves this window: it is analysed
- * locally and discarded. Speech-to-text arrives in Phase 5.
+ * Opens the microphone: live level meter, plus (when `onPcm` is given) a 16 kHz mono int16 stream
+ * for NOVA's local speech recognition. Audio only goes to NOVA's own backend on this PC.
  */
 export function useMicrophone() {
   const [status, setStatus] = useState<MicStatus>("off");
@@ -32,7 +35,7 @@ export function useMicrophone() {
     setStatus("off");
   }, [release]);
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (onPcm?: (chunk: ArrayBuffer) => void) => {
     if (resources.current) return true;
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus("unavailable");
@@ -60,8 +63,27 @@ export function useMicrophone() {
     const ctx = new AudioContext();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
-    ctx.createMediaStreamSource(stream).connect(analyser);
+    const source = ctx.createMediaStreamSource(stream);
+    source.connect(analyser);
     analyserRef.current = analyser;
+
+    if (onPcm) {
+      try {
+        await ctx.audioWorklet.addModule(WORKLET_URL);
+        const node = new AudioWorkletNode(ctx, "pcm-downsampler");
+        node.port.onmessage = (e: MessageEvent<ArrayBuffer>) => onPcm(e.data);
+        // A muted path to the output keeps the worklet running without playing the mic back.
+        const mute = ctx.createGain();
+        mute.gain.value = 0;
+        source.connect(node).connect(mute).connect(ctx.destination);
+      } catch {
+        stream.getTracks().forEach((t) => t.stop());
+        void ctx.close().catch(() => undefined);
+        analyserRef.current = null;
+        setStatus("error");
+        return false;
+      }
+    }
 
     const track = stream.getAudioTracks()[0];
     setDeviceLabel(track?.label || null);

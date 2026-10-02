@@ -27,9 +27,15 @@ class Settings:
     discovery_on_startup: bool = True
     allowed_origins: tuple[str, ...] = field(default=DEFAULT_ALLOWED_ORIGINS)
 
+    stt_model: str = "small"
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "nova.db"
+
+    @property
+    def models_dir(self) -> Path:
+        return self.data_dir / "models"
 
 
 def load_settings() -> Settings:
@@ -43,6 +49,7 @@ def load_settings() -> Settings:
         data_dir=Path(os.environ.get("NOVA_DATA_DIR", PROJECT_ROOT / "data")),
         assistant_name=os.environ.get("NOVA_ASSISTANT_NAME", "NOVA"),
         ollama_url=os.environ.get("NOVA_OLLAMA_URL", "http://127.0.0.1:11434"),
+        stt_model=os.environ.get("NOVA_STT_MODEL", "small"),
         discovery_on_startup=os.environ.get("NOVA_DISCOVERY_ON_STARTUP", "1").lower() not in ("0", "false", "no"),
         allowed_origins=DEFAULT_ALLOWED_ORIGINS + extra_origins,
     )

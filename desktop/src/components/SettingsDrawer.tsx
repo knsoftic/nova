@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, fieldErrors } from "../lib/api";
-import type { AiMode, AiStatus, NovaState, UserSettings } from "../lib/types";
+import type { AiMode, AiStatus, NovaState, UserSettings, VoiceStatus } from "../lib/types";
 import { STATE_META } from "../lib/ui";
 
 interface Props {
@@ -43,6 +43,112 @@ function Field({ label, hint, error, children }: { label: string; hint?: string;
       {children}
       {error ? <span className="text-xs text-red-300">{error}</span> : hint && <span className="text-xs text-slate-500">{hint}</span>}
     </label>
+  );
+}
+
+const SPEAK_MODES: { value: UserSettings["speak_responses"]; label: string }[] = [
+  { value: "voice_only", label: "Sirf awaaz wali commands ka jawab bolein" },
+  { value: "always", label: "Har jawab bolein" },
+  { value: "never", label: "Kabhi na bolein (sirf likh kar)" },
+];
+
+const STT_LANGUAGES: { value: UserSettings["stt_language"]; label: string }[] = [
+  { value: "ur", label: "Urdu (tajweez)" },
+  { value: "hi", label: "Hindi" },
+  { value: "en", label: "English" },
+  { value: "auto", label: "Khud pehchane" },
+];
+
+const TEST_SENTENCE = "Assalam-o-Alaikum! Main aapki awaaz test kar raha hoon. Kya aap mujhe saaf sun sakte hain?";
+
+function VoiceSettings({
+  draft,
+  set,
+  errors,
+  open,
+}: {
+  draft: UserSettings;
+  set: <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => void;
+  errors: Record<string, string>;
+  open: boolean;
+}) {
+  const [status, setStatus] = useState<VoiceStatus | null>(null);
+  const [testing, setTesting] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) api.voiceStatus().then(setStatus).catch(() => setStatus(null));
+  }, [open]);
+
+  const test = async () => {
+    setTesting("Bol raha hai...");
+    try {
+      await api.speak(TEST_SENTENCE); // playback starts via the NOVA_SPEAK event
+      setTesting(null);
+    } catch {
+      setTesting("Awaaz test nahi ho saki — voice model check karein.");
+    }
+  };
+
+  const voices = status?.tts.voices ?? [];
+  return (
+    <fieldset className="flex flex-col gap-3 border-t border-white/10 pt-4">
+      <legend className="mb-1 text-xs font-medium text-slate-300">Awaaz (local — audio PC se bahar nahi jata)</legend>
+      {status && (
+        <span className={`text-xs ${status.stt.downloaded && status.tts.available ? "text-emerald-300" : "text-amber-300"}`}>
+          {status.stt.downloaded ? `Sun'na: whisper ${status.stt.model}${status.stt.loaded ? " (tayyar)" : ""}` : "Whisper model download nahi hua"}
+          {" · "}
+          {status.tts.available ? "Bolna: tayyar" : "Urdu voice download nahi hui"}
+        </span>
+      )}
+      <Field label="Bolne wali zaban (sun'ne ke liye)" error={errors.stt_language}>
+        <select
+          className={inputClass}
+          value={draft.stt_language}
+          onChange={(e) => set("stt_language", e.target.value as UserSettings["stt_language"])}
+        >
+          {STT_LANGUAGES.map((l) => (
+            <option key={l.value} value={l.value}>
+              {l.label}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="NOVA ki awaaz" error={errors.tts_voice}>
+        <select className={inputClass} value={draft.tts_voice} onChange={(e) => set("tts_voice", e.target.value)}>
+          {[...new Map([[draft.tts_voice, draft.tts_voice], ...voices.map((v) => [v.id, v.label] as [string, string])])].map(
+            ([id, label]) => (
+              <option key={id} value={id}>
+                {label}
+              </option>
+            ),
+          )}
+        </select>
+      </Field>
+      <div className="flex flex-col gap-1.5">
+        {SPEAK_MODES.map((m) => (
+          <label key={m.value} className="flex items-center gap-2 text-sm text-slate-200">
+            <input
+              type="radio"
+              name="speak_responses"
+              checked={draft.speak_responses === m.value}
+              onChange={() => set("speak_responses", m.value)}
+            />
+            {m.label}
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={test}
+          disabled={!status?.tts.available}
+          className="rounded-lg border border-sky-500/40 px-3 py-1.5 text-xs text-sky-200 hover:bg-sky-500/10 disabled:opacity-40"
+        >
+          🔊 Awaaz test karein
+        </button>
+        <span className="text-xs text-slate-500">{testing ?? "Abhi wali (save ki hui) awaaz se bolega."}</span>
+      </div>
+    </fieldset>
   );
 }
 
@@ -138,7 +244,7 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
             </Field>
             <Field
               label="Wake word"
-              hint='Text commands ke shuru mein bhi pehchana jata hai. Awaaz se "Hey NOVA" Phase 5 mein.'
+              hint="Awaaz aur text dono mein pehchana jata hai. Doosre alfaaz ke sath naam zaroor rakhein (maslan 'Suno Zara')."
               error={errors.wake_word}
             >
               <input
@@ -158,7 +264,8 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
               <span className="flex flex-col">
                 <span className="text-xs font-medium text-slate-300">Continuous listening</span>
                 <span className="text-xs text-slate-500">
-                  Setting save hogi; mic ko lagatar sun'ne ka kaam Phase 5 (voice) mein shuru hoga.
+                  Mic khula rahega aur sirf wake word ke baad wali baat command banegi. Baqi baatein na save hoti
+                  hain na dikhai jati hain. Band ho to mic button dabane par ek command suni jati hai.
                 </span>
               </span>
             </label>
@@ -182,6 +289,8 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
               ))}
               <span className="text-xs text-slate-500">Windows ke sath auto-start Phase 12 (installer) mein lagega.</span>
             </fieldset>
+
+            <VoiceSettings draft={draft} set={set} errors={errors} open={open} />
 
             <fieldset className="flex flex-col gap-2 border-t border-white/10 pt-4">
               <legend className="mb-1 text-xs font-medium text-slate-300">AI brain (local, PC se bahar kuch nahi jata)</legend>

@@ -607,6 +607,31 @@ REPEAT_LAST = [
     (re.compile(r"^(?:kya\s+kaha|dobara\s+(?:bolo|batao|kaho)|phir\s+se\s+(?:bolo|batao)|say\s+(?:that|it)\s+again|"
                 r"repeat\s+what\s+you\s+said)$", re.IGNORECASE), "response"),
 ]
+# ---- behavior layer (Phase 10) -------------------------------------------------------------
+THANKS = re.compile(
+    r"^(?:(?:bohat|bahut|bht)\s+)?(?:shukriya|shukria|thanks?|thank\s+you(?:\s+so\s+much)?|thanku|jazak\s*allah(?:\s+khair)?|"
+    r"zabardast|bohat\s+khoob|kamaal|shabash|wah|great|awesome|perfect|nice|well\s+done|(?:acha|achha)\s+kaam)"
+    r"(?:\s+(?:hai|kiya|nova|yaar|bhai|ji|dost|boss|kaam\s+kiya))*(?:[\s,]+(?:shukriya|thanks))?[\s!.]*$"
+    r"|^شکریہ[\s!.۔]*$|^(?:शुक्रिया|धन्यवाद)[\s!.।]*$",
+    re.IGNORECASE)
+_STYLE_DO = r"(?:diya\s+karo|dijiye|dena|do|bataya\s+karo|batao)"
+SET_REPLY_STYLE = [
+    (re.compile(rf"^(?:ab\s+se\s+|hamesha\s+|please\s+)?(?:chhote|chote|chhota|mukhtasar|short)\s+(?:jawab|answers?|"
+                rf"replies)\s+{_STYLE_DO}$|^(?:keep\s+(?:your\s+)?answers\s+short|be\s+brief)$", re.IGNORECASE), "short"),
+    (re.compile(rf"^(?:ab\s+se\s+|hamesha\s+)?(?:har\s+(?:cheez|baat)\s+)?(?:tafseel|detail)\s+(?:se|mein)\s+(?:jawab\s+)?"
+                rf"(?:diya\s+karo|bataya\s+karo|samjhaya\s+karo)$"
+                rf"|^(?:ab\s+se\s+|hamesha\s+)?(?:lambe|detailed|poore)\s+(?:jawab|answers)\s+{_STYLE_DO}$"
+                r"|^(?:give\s+)?detailed\s+answers(?:\s+from\s+now\s+on)?$", re.IGNORECASE), "detailed"),
+    (re.compile(rf"^(?:ab\s+se\s+)?(?:normal|aam|pehle\s+jaise)\s+(?:jawab|answers)\s+{_STYLE_DO}$", re.IGNORECASE),
+     "auto"),
+]
+SHOW_PATTERNS = re.compile(
+    r"^(?:meri\s+)?(?:aadatein|aadaten|adatein|habits|patterns)\s+(?:dikhao|batao)$|^main\s+aksar\s+kya\s+(?:karta|karti|"
+    r"kholta|kholti)\s+(?:hoon|hun|hu)$|^(?:what\s+are\s+my\s+habits|show\s+my\s+habits)$", re.IGNORECASE)
+FORGET_PATTERNS = re.compile(
+    r"^(?:meri\s+)?(?:aadatein|aadaten|adatein|habits|patterns)\s+(?:bhool\s+jao|bhul\s+jao|mita\s+do|mitao|"
+    r"delete\s+karo|hata\s+do)$|^forget\s+my\s+habits$", re.IGNORECASE)
+
 PERIOD_KEYS = {"aaj": "today", "today": "today", "kal": "yesterday", "yesterday": "yesterday", "parson": "before_yesterday",
                "is hafte": "week", "pichle hafte": "week", "this week": "week", "last week": "week",
                "is mahine": "month", "pichle mahine": "month"}
@@ -692,6 +717,15 @@ def _memory_intent(cleaned: str) -> tuple[str, dict[str, object]] | None:
     for p, what in REPEAT_LAST:
         if p.search(cleaned):
             return "repeat_last", {"what": what}
+    if THANKS.search(cleaned):
+        return "thanks", {}
+    for p, style in SET_REPLY_STYLE:
+        if p.search(cleaned):
+            return "set_reply_style", {"style": style}
+    if SHOW_PATTERNS.search(cleaned):
+        return "show_patterns", {}
+    if FORGET_PATTERNS.search(cleaned):
+        return "forget_memory", {"scope": "patterns"}
     for p, query in RECALL_MEMORY:  # before "remember": "kya tumhe yaad hai ke ..." is a question
         if m := p.search(cleaned):
             return "recall_memory", {"query": query if query is not None else _target_text(m.group("query")) or ""}
@@ -964,7 +998,7 @@ def normalize(text: str, wake: re.Pattern[str] = WAKE_WORD) -> str:
 
 
 FILLER_PREFIX = re.compile(
-    r"^(?:(?:the|a|an|first|please|plz|zara|jaldi|jaldi se|bhai|yaar|yar|pehle|pahle|mera|meri|mere|my|ye|yeh|is|wo|woh)\s+)+",
+    r"^(?:(?:the|a|an|first|please|plz|zara|jaldi se|jaldi|foran|fauran|bhai|yaar|yar|pehle|pahle|mera|meri|mere|my|ye|yeh|is|wo|woh)\s+)+",
     re.IGNORECASE,
 )
 
@@ -1005,7 +1039,7 @@ class RuleBasedProvider(AIProvider):
         self._wake = build_wake_pattern(assistant_name, wake_word)
 
     async def understand(self, text: str, context: list[ConversationTurn] | None = None,
-                         memories: list[str] | None = None) -> Understanding:
+                         memories: list[str] | None = None, style_hint: str | None = None) -> Understanding:
         """Splits compound commands ("Chrome kholo aur RAM batao") when every part is understood."""
         cleaned = normalize(text, self._wake)
         # Explicit dictation ("likho: main aur tum", "type hello and bye") is never split into commands, nor is

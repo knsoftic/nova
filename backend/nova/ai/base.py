@@ -78,6 +78,10 @@ KNOWN_INTENTS = (
     "list_workflows",
     "delete_workflow",
     "repeat_last",
+    # behavior layer (Phase 10)
+    "thanks",
+    "set_reply_style",
+    "show_patterns",
     "unknown",
 )
 
@@ -89,6 +93,7 @@ IMAGE_OPERATIONS = ("resize", "fit", "convert", "compress", "rotate", "flip", "g
 HISTORY_PERIODS = ("today", "yesterday", "week", "month")
 WORKFLOW_ACTIONS = ("replace", "add", "remove")
 REPEAT_WHAT = ("command", "response")
+REPLY_STYLES = ("short", "detailed", "auto")
 
 WINDOW_ACTIONS = ("minimize", "maximize", "restore", "show_desktop")
 SHORTCUT_NAMES = ("copy", "paste", "cut", "undo", "redo", "select_all", "save", "new_tab", "close_tab", "find",
@@ -132,8 +137,9 @@ class AIProvider(ABC):
         """Map a user utterance (any supported language) to a single structured intent."""
 
     async def understand(self, text: str, context: list[ConversationTurn] | None = None,
-                         memories: list[str] | None = None) -> Understanding:
-        """`context`: the last turns (short-term memory). `memories`: related things the user asked NOVA to remember."""
+                         memories: list[str] | None = None, style_hint: str | None = None) -> Understanding:
+        """`context`: the last turns (short-term memory). `memories`: related things the user asked NOVA to remember.
+        `style_hint`: how to word a chat answer (from the behavior layer's estimate)."""
         intent = await self.detect_intent(text)
         return Understanding(intents=[intent], provider=self.name)
 

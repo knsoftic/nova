@@ -224,3 +224,27 @@ def test_voice_settings_validation(voice_app):
     assert client.put("/api/settings", json={"speak_responses": "sometimes"}).status_code == 422
     assert client.put("/api/settings", json={"stt_language": "hi"}).status_code == 200
     assert client.app.state.voice.stt.language == "hi"
+
+
+def test_speaking_much_faster_than_usual_is_noticed_and_never_stored(voice_app):
+    """Speaking speed is compared with the user's own earlier utterances; only a hedged estimate comes out."""
+    client, stt, tts = voice_app
+    stt.queue = ["RAM batao", "RAM batao", "RAM batao", "mera system ki RAM aur storage dono abhi check karo"]
+    with client.websocket_connect("/ws/voice") as ws:
+        for n in range(4):
+            # NOVA has finished its previous reply (NOVA_SPEAK is published after it starts ignoring the mic).
+            wait_for(lambda: len(events(client, "NOVA_SPEAK")) >= n and not client.app.state.voice.muted)
+            ws.send_json({"type": "start", "mode": "ptt"})
+            stream(ws, utterance())
+            receive_until(ws, "done")
+    replies = events(client, "NOVA_RESPONSE")
+    assert all(r.data.get("estimate") is None for r in replies[:3])  # normal pace: nothing to say
+    last = replies[-1].data
+    assert last["estimate"]["state"] == "hurried" and last["estimate"]["reasons"] == ["aam se tez bole"]
+    assert last["estimate"]["label"] == "shayad jaldi mein" and last["style"] == "brief"
+    wait_for(lambda: len(tts.spoken) >= 4)
+    assert len(tts.spoken[-1]) <= len(replies[-1].message)  # the short spoken version
+    # Nothing about the voice is stored: not in the history, not in the database.
+    convo = client.get("/api/conversations").json()[0]
+    assert set(convo) == {"id", "task_id", "created_at", "source", "user_text", "detected_language", "intent",
+                          "response", "status"}

@@ -24,6 +24,9 @@ def build_response(intent: Intent, assistant_name: str, answer: str | None = Non
         case "greeting":
             to = f" {user_name}" if user_name else ""
             return f"Assalam-o-Alaikum{to}! {assistant_name} online hai. Main aapki kya madad kar sakta hoon?"
+        case "thanks":
+            to = f", {user_name}" if user_name else ""
+            return f"Koi baat nahi{to}! Aur koi kaam ho to batayein."
         case "help":
             return (
                 f"Main {assistant_name} hoon. Main sawalon ke jawab deta hoon, system ki maloomat batata hoon, apps "

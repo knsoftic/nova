@@ -1,13 +1,22 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, fieldErrors } from "../lib/api";
-import type { HistoryPeriod, HistoryRecord, MemoryFact, ShortTermMemory, UserSettings, Workflow } from "../lib/types";
+import type {
+  HabitPatterns,
+  HistoryPeriod,
+  HistoryRecord,
+  MemoryFact,
+  ShortTermMemory,
+  UserSettings,
+  Workflow,
+} from "../lib/types";
 import { OUTCOME_META, RETENTION_OPTIONS, SLOT_LABEL, STEP_KIND, shortDate, workflowCommand } from "../lib/ui";
 
-type Tab = "facts" | "workflows" | "history" | "short";
+type Tab = "facts" | "workflows" | "habits" | "history" | "short";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "facts", label: "Yaadein" },
   { id: "workflows", label: "Workflows" },
+  { id: "habits", label: "Aadatein" },
   { id: "history", label: "History" },
   { id: "short", label: "Abhi ki baat-cheet" },
 ];
@@ -250,6 +259,88 @@ function Workflows({ revision, onRun }: { revision: number; onRun: (command: str
   );
 }
 
+/** What NOVA learned about the user's habits (Phase 10): visible, deletable, and only ever a suggestion. */
+function Habits({ revision }: { revision: number }) {
+  const [data, setData] = useState<HabitPatterns | null>(null);
+  const [message, setMessage] = useState("");
+  const load = () => api.habits().then(setData).catch(() => setData(null));
+  useEffect(() => {
+    void load();
+  }, [revision]);
+
+  const accept = async (r: HabitPatterns["routines"][number]) => {
+    try {
+      const res = await api.saveWorkflow(r.name, r.labels.join(", "));
+      setMessage(`'${res.workflow.name}' workflow ban gaya — "${res.workflow.name} start karo" kahein.`);
+    } catch {
+      setMessage("Workflow nahi bana.");
+    }
+    void load();
+  };
+
+  if (!data) return <Note>Load ho rahi hain...</Note>;
+  return (
+    <div className="flex flex-col gap-3">
+      <Note>
+        NOVA dekhta hai aap kaun si apps, websites aur projects kab kholte hain (isi PC par, history ki tarah mit jati
+        hain). Routine nazar aaye to sirf tajweez deta hai — workflow aap ke "haan" par hi banta hai.
+        {!data.learning && " Abhi seekhna band hai (Settings → Andaz aur aadatein)."}
+      </Note>
+      {message && <span className="text-xs text-emerald-300">{message}</span>}
+      {data.routines.map((r) => (
+        <div key={r.key} className="flex flex-col gap-2 rounded-lg border border-sky-400/20 bg-sky-500/5 px-3 py-2">
+          <span className="text-xs text-sky-100">
+            Routine ({r.name}, {r.days} din): {r.labels.join(", ")}
+          </span>
+          <span className="flex gap-3">
+            <button type="button" className="text-xs text-sky-300 hover:text-sky-200" onClick={() => void accept(r)}>
+              Workflow banao
+            </button>
+            <button
+              type="button"
+              className="text-xs text-slate-400 hover:text-slate-200"
+              onClick={() => void api.declineRoutine(r.key).then(load, load)}
+            >
+              Nahi chahiye
+            </button>
+          </span>
+        </div>
+      ))}
+      {data.items.length === 0 && data.commands.length === 0 ? (
+        <Note>Abhi koi aadat nazar nahi aayi.</Note>
+      ) : (
+        <>
+          <ul className="flex flex-col gap-1.5">
+            {data.items.map((i) => (
+              <li key={`${i.kind}:${i.target}`} className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2">
+                <span className="text-sm text-slate-100">
+                  <span className="mr-1.5 text-slate-500">{STEP_KIND[i.kind].icon}</span>
+                  {i.target}
+                </span>
+                <span className="text-[11px] text-slate-400">
+                  {i.count} dafa · {i.days} din · zyada tar {i.usual_time}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {data.commands.length > 0 && (
+            <span className="text-[11px] text-slate-500">
+              Sab se zyada commands: {data.commands.map((c) => `${c.intent.replaceAll("_", " ")} (${c.count})`).join(", ")}
+            </span>
+          )}
+          <div className="flex justify-end">
+            <ConfirmButton
+              label="Aadatein bhool jao"
+              question="NOVA shuru se seekhega (workflows aur yaadein nahi mitengi). Pakka?"
+              onConfirm={() => void api.forgetHabits().then(load, load)}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function History({
   revision,
   historyDays,
@@ -442,6 +533,7 @@ export function MemoryView({
       </nav>
       {tab === "facts" && <Facts revision={revision} />}
       {tab === "workflows" && <Workflows revision={revision} onRun={onRun} />}
+      {tab === "habits" && <Habits revision={revision} />}
       {tab === "history" && <History revision={revision} historyDays={days} onRetention={setRetention} />}
       {tab === "short" && <ShortTerm revision={revision} />}
     </div>

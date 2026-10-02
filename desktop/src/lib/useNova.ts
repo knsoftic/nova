@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type {
   AiStatus,
+  BehaviorEstimate,
   ChatMessage,
   ConnectionStatus,
   NovaEvent,
@@ -38,6 +39,8 @@ export function useNova() {
   const [memoryRevision, setMemoryRevision] = useState(0);
   // Set while NOVA waits for the answer to its own question asked by voice ("Ye yaad rakhoon?").
   const [voiceFollowUp, setVoiceFollowUp] = useState<string | null>(null);
+  // NOVA's latest estimate of how the user is communicating (only an estimate; null = nothing to show).
+  const [estimate, setEstimate] = useState<BehaviorEstimate | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   // Open permission questions, oldest first.
@@ -140,8 +143,10 @@ export function useNova() {
           awaiting_answer?: boolean;
           quick_replies?: string[];
           source?: string;
+          estimate?: BehaviorEstimate | null;
         };
         const id = nextId();
+        if (msg.type === "NOVA_RESPONSE" && data.source !== undefined) setEstimate(data.estimate ?? null);
         setVoiceFollowUp(data.awaiting_answer && data.source === "voice" ? id : null);
         setMessages((prev) =>
           [
@@ -251,6 +256,7 @@ export function useNova() {
     activityRevision,
     memoryRevision,
     voiceFollowUp,
+    estimate,
     settings,
     aiStatus,
     refreshAiStatus,

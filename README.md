@@ -2,7 +2,7 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 9 (Memory)**. NOVA listens (push-to-talk or wake word), understands
+Current status: **Phase 10 (Emotion/Behavior layer)**. NOVA listens (push-to-talk or wake word), understands
 Urdu / Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in
 an offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
 afterwards). Risky actions — typing, clicking, pasting, closing apps — run only after the user says yes
@@ -13,8 +13,10 @@ rename, move, copy, delete to the Recycle Bin, edit, organize, report, undo) and
 tests, error checks, explaining and fixing errors with a diff shown first). It changes common Windows settings,
 sends WhatsApp messages and emails to contacts the user saved (always asking first), and edits pictures or makes
 simple designs. It remembers what the user asks it to (never silently), keeps a searchable conversation history
-for a chosen number of days, and learns workflows such as "work start karo". See [LOGS.md](LOGS.md) for
-development history and approval status.
+for a chosen number of days, and learns workflows such as "work start karo". It estimates how the user is
+communicating (hurried, frustrated, confused - always shown as an estimate), adapts its tone, and learns which
+apps the user opens together to suggest workflows. See [LOGS.md](LOGS.md) for development history and approval
+status.
 
 ## Voice (offline)
 
@@ -125,6 +127,26 @@ All memory stays on this PC (SQLite in `data/`), and the **Memory** tab shows an
 - **Task memory:** "dobara karo" repeats the last command (asking again if it is risky); "kya kaha" repeats the
   last reply. **System memory** is the system profile (System Profile tab).
 
+## Behavior layer (tone and habits)
+
+Everything here is local; the estimate is never stored, and every part can be switched off in ⚙ Settings →
+*Andaz aur aadatein*.
+
+- **Estimate (only an estimate):** words ("jaldi", "kitni dafa", "samajh nahi aaya", "shukriya"), sentence form,
+  the conversation (the same request again after it failed, several failures, an instant follow-up) and, for voice,
+  speaking speed, loudness and pitch compared with the user's *own* earlier utterances in this session (measured in
+  memory, never saved). Weak evidence stays neutral; voice alone can only give a hedged "shayad ...". The estimate
+  is shown under the avatar ("Andaza: shayad jaldi mein (sirf andaza)") with its reasons in Live Activity.
+- **Tone adaptation:** frustrated → a calm apology and a clear next step; hurried or tired → short replies (the
+  verify note becomes ✓) and a short spoken version; confused → an example; simple commands → just say it is done.
+  The local model gets the same hint for chat answers. The facts never change - only the wording.
+- **Reply style:** *Khud adapt* (default), *Hamesha chhote* or *Hamesha tafseel* - also by voice: "chhote jawab
+  diya karo", "tafseel se bataya karo", "normal jawab diya karo". "shukriya" gets a reply with the user's name.
+- **Habits:** which apps, websites and projects are opened and when, and which commands are used (kept like the
+  history and deleted with it; Memory → *Aadatein*, "meri aadatein batao", "meri aadatein bhool jao" - asked first).
+  When the same things are opened together on 3+ days NOVA asks once: "Inka 'subah' workflow bana doon?" - saved
+  only on "haan"; "nahi" is remembered and not asked again.
+
 ## Layout
 
 ```
@@ -141,6 +163,7 @@ nova/
 │   │   ├── communication/  Communication Agent: contacts, WhatsApp click-to-chat, Outlook/mail drafts
 │   │   ├── design/         Design Agent: image tools and template designs (Pillow)
 │   │   ├── memory/         Memory Agent: short-term memory, facts, history search/retention, workflows
+│   │   ├── behavior/       Behavior Layer: estimate (words, context, voice), tone, habits, routine suggestions
 │   │   ├── files/          allowed folders, search, documents, Recycle Bin, verified file operations + undo
 │   │   ├── coding/         Coding Agent: projects, allowed commands, error parsing, checked code edits
 │   │   ├── browser/        Browser Agent + Playwright controller (NOVA's own Chrome profile)
@@ -230,6 +253,25 @@ Environment variables (backend):
 | `NOVA_ASSISTANT_NAME` | `NOVA` | Assistant name |
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
+
+## Admin manual test (Phase 10, approved)
+
+1. `desktop/` mein `npm start`. ⚙ Settings → **Andaz aur aadatein**: "Khud adapt" aur sab boxes on.
+2. **Jaldi:** `jaldi se Chrome kholo` → avatar ke neeche "Andaza: shayad jaldi mein (sirf andaza)", jawab chhota
+   (verify ki jagah ✓). Live Activity mein Behavior Layer ki wajah.
+3. **Pareshani:** koi bemaani baat do dafa likhein (maslan `flibber jabber`) → doosri dafa "Maaf kijiye ..." aur
+   "Seedha aise kahein, maslan ...". `kitni dafa kahun, RAM batao` bhi try karein.
+4. **Uljhan:** `samajh nahi aaya, file kaise kholoon` → jawab ke sath "(Misaal: ...)".
+5. **Shukriya:** `shukriya` → "Koi baat nahi ...!" (naam yaad ho to naam ke sath).
+6. **Andaz:** `chhote jawab diya karo` → Settings mein "Hamesha chhote"; phir `Chrome kholo` chhota; `normal jawab
+   diya karo` se wapas.
+7. **Awaaz:** mic se 3-4 dafa aam raftaar mein commands, phir ek lambi command bohat tez bol kar → "shayad jaldi
+   mein" aur bola gaya jawab chhota.
+8. **Aadatein:** Memory → **Aadatein** mein jo apps kholi wo nazar aayen; `meri aadatein batao`. Routine ki
+   tajweez ke liye 3 alag din ek saath wahi apps kholni hongi — aaye to Haan/Nahi; Memory tab mein "Workflow banao" /
+   "Nahi chahiye". `meri aadatein bhool jao` → dialog → Haan.
+9. Settings mein "Andaza dikhayein" band karein → label nazar na aaye; "Andaza lagayein" band → jawab aam andaz
+   mein. Sab theek ho to approve karein, warna problem batayein.
 
 ## Admin manual test (Phase 9, approved)
 

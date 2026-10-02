@@ -34,6 +34,13 @@ class UserSettings(BaseModel):
     project_folders: list[str] = Field(default_factory=lambda: [r"C:\xampp\htdocs"], max_length=10)
     # Conversation history is deleted after this many days (0 = kept until the user deletes it).
     history_days: Literal[30, 90, 365, 0] = 90
+    # Behavior layer (Phase 10): reply style, the (estimated) communication state, learned habits.
+    reply_style: Literal["auto", "short", "detailed"] = "auto"
+    emotion_awareness: bool = True  # estimate the user's state and adapt the tone
+    voice_signals: bool = True  # include speaking speed/loudness/pitch (measured live, never stored)
+    show_estimate: bool = True  # show the estimate ("Andaza: ...") in the UI
+    learn_patterns: bool = True  # remember which apps/websites/projects are opened and when
+    suggest_routines: bool = True  # offer a workflow when the same things are opened together on several days
 
     @field_validator("project_folders")
     @classmethod
@@ -84,6 +91,12 @@ class UserSettingsUpdate(BaseModel):
     browser_channel: Literal["chrome", "msedge"] | None = None
     project_folders: list[str] | None = None
     history_days: Literal[30, 90, 365, 0] | None = None
+    reply_style: Literal["auto", "short", "detailed"] | None = None
+    emotion_awareness: bool | None = None
+    voice_signals: bool | None = None
+    show_estimate: bool | None = None
+    learn_patterns: bool | None = None
+    suggest_routines: bool | None = None
 
 
 def load_user_settings(db: Database, default_name: str = "NOVA") -> UserSettings:

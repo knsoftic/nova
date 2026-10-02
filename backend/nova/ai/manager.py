@@ -63,15 +63,15 @@ class ProviderManager:
         }
 
     async def understand(self, text: str, context: list[ConversationTurn] | None = None,
-                         memories: list[str] | None = None) -> Understanding:
+                         memories: list[str] | None = None, style_hint: str | None = None) -> Understanding:
         started = time.perf_counter()
-        result = await self._understand(text, context, memories)
+        result = await self._understand(text, context, memories, style_hint)
         result.latency_ms = int((time.perf_counter() - started) * 1000)
         self.last_latency_ms, self.last_provider = result.latency_ms, result.provider
         return result
 
     async def _understand(self, text: str, context: list[ConversationTurn] | None,
-                          memories: list[str] | None) -> Understanding:
+                          memories: list[str] | None, style_hint: str | None = None) -> Understanding:
         rules = await self.rules.understand(text, context)
         if self.mode == "rules":
             return rules
@@ -84,7 +84,7 @@ class ProviderManager:
             rules.fallback_reason = "model_unavailable"
             return rules
         try:
-            return await self.ollama.understand(text, context, memories)
+            return await self.ollama.understand(text, context, memories, style_hint=style_hint)
         except httpx.TimeoutException:
             reason = "timeout"
         except (httpx.HTTPError, json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:

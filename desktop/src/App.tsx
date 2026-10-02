@@ -13,6 +13,7 @@ import { SettingsDrawer } from "./components/SettingsDrawer";
 import { StatusBar } from "./components/StatusBar";
 import { SystemProfileView } from "./components/SystemProfileView";
 import type { NovaState } from "./lib/types";
+import { estimateText } from "./lib/ui";
 import { useMicrophone } from "./lib/useMicrophone";
 import { useNova } from "./lib/useNova";
 import { useSpeechPlayer } from "./lib/useSpeechPlayer";
@@ -138,6 +139,7 @@ export default function App() {
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
 
   const shownState = previewState ?? nova.state;
+  const estimate = estimateText(nova.estimate);
 
   let voiceNote: string | null = null;
   if (voice.error) voiceNote = voice.error;
@@ -196,6 +198,14 @@ export default function App() {
                 preview={previewState !== null}
                 speaking={player.speaking && previewState === null}
               />
+              {estimate && (
+                <div
+                  className="-mt-2 rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-0.5 text-[11px] text-amber-100"
+                  title={estimate.title}
+                >
+                  {estimate.text} <span className="text-amber-200/60">(sirf andaza)</span>
+                </div>
+              )}
               <div className="min-h-0 w-full max-w-2xl flex-1 overflow-y-auto px-2 pb-2" data-scroll-container>
                 <ErrorBoundary label="Conversation">
                   <Conversation messages={nova.messages} assistantName={nova.assistantName} onQuickReply={send} />

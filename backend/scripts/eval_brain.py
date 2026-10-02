@@ -108,6 +108,13 @@ CASES: list[tuple[str, list[str], dict[str, str] | None]] = [
     ("saari history mita do", ["clear_history"], None),
     ("study workflow banao: YouTube aur Notion", ["save_workflow"], {"workflow": "study"}),
     ("dobara karo", ["repeat_last"], None),
+    # behavior layer (Phase 10)
+    ("shukriya NOVA", ["thanks"], None),
+    ("bohat zabardast kaam kiya", ["thanks"], None),
+    ("chhote jawab diya karo", ["set_reply_style"], {"style": "short"}),
+    ("ab se har cheez tafseel se samjhaya karo", ["set_reply_style"], {"style": "detailed"}),
+    ("meri aadatein batao", ["show_patterns"], None),
+    ("jaldi se Chrome kholo", ["open_app"], {"app": "chrome"}),
 ]
 
 

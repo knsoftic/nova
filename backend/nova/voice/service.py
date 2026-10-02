@@ -14,6 +14,7 @@ import uuid
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Literal
 
+from ..behavior.signals import voice_features
 from ..events import EventBus, EventType, NovaEvent, NovaState
 from .segmenter import Segmenter
 from .stt import SpeechToText
@@ -119,7 +120,11 @@ class VoiceSession:
                                 "audio_s": round(transcript.duration_s, 1), "stt_ms": transcript.latency_ms})
             )
             await self.send({"type": "heard", "text": command})
-            await orch.handle_command(command, source="voice")
+            # How it was said (speed, loudness, pitch): measured here, used once for the estimate, never stored.
+            voice = None
+            if settings.emotion_awareness and settings.voice_signals:
+                voice = await asyncio.to_thread(voice_features, pcm, command)
+            await orch.handle_command(command, source="voice", voice=voice)
             await self._finish(heard=True)
         except Exception as exc:  # never let one bad utterance kill the session
             log.exception("Voice segment failed")
@@ -263,7 +268,8 @@ class VoiceService:
                 source = event.data.get("source", "text")
                 if mode == "always" or (mode == "voice_only" and source == "voice"):
                     try:
-                        await self.speak(event.message, event.task_id)
+                        # The behavior layer may give a shorter spoken version (hurry, short replies).
+                        await self.speak(event.data.get("speech") or event.message, event.task_id)
                     except Exception:
                         log.exception("Speech synthesis failed")
         finally:

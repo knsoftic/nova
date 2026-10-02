@@ -28,7 +28,14 @@ export const AGENTS: AgentInfo[] = [
   { name: "Design Agent", description: "Tasveer resize/convert/watermark, posts aur banners", phase: null },
   { name: "Communication Agent", description: "WhatsApp aur email (har dafa ijazat se)", phase: null },
   { name: "Memory Agent", description: "Aap ki batai baatein, history aur workflows (sab isi PC par)", phase: null },
+  { name: "Behavior Layer", description: "Andaz ka andaza (sirf andaza), jawab ka andaz, aadatein", phase: null },
 ];
+
+/** "shayad jaldi mein" -> "Andaza: shayad jaldi mein" plus the reasons, for the badge under the avatar. */
+export function estimateText(e: { label: string; reasons: string[] } | null): { text: string; title: string } | null {
+  if (!e || !e.label) return null;
+  return { text: `Andaza: ${e.label}`, title: `Sirf andaza, pakki baat nahi. Wajah: ${e.reasons.join(", ")}` };
+}
 
 export const OUTCOME_META: Record<HistoryOutcome, { label: string; tone: string }> = {
   done: { label: "ho gaya", tone: "text-emerald-300" },

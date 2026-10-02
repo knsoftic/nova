@@ -3,6 +3,7 @@ import type {
   AiStatus,
   Contact,
   FileRoot,
+  HabitPatterns,
   HistoryPeriod,
   HistoryRecord,
   LiveStats,
@@ -79,6 +80,9 @@ export const api = {
   deleteHistoryEntry: (taskId: string) =>
     request<{ ok: boolean }>(`/api/history/${encodeURIComponent(taskId)}`, { method: "DELETE" }),
   deleteAllHistory: () => request<{ ok: boolean; removed: number }>("/api/history", { method: "DELETE" }),
+  habits: () => request<HabitPatterns>("/api/behavior/patterns"),
+  forgetHabits: () => request<{ ok: boolean; removed: number }>("/api/behavior/patterns", { method: "DELETE" }),
+  declineRoutine: (key: string) => request<{ ok: boolean }>("/api/behavior/routines/decline", json("POST", { key })),
   shortTerm: () => request<ShortTermMemory>("/api/memory/short-term"),
   clearShortTerm: () => request<{ ok: boolean }>("/api/memory/short-term", { method: "DELETE" }),
   /** Write-only: the backend encrypts the value and only ever returns a masked hint. */

@@ -37,6 +37,7 @@ from .orchestrator import CommandResult, Orchestrator
 from .agents.computer import ComputerAgent, Desktop
 from .browser import BrowserController
 from .browser.agent import BrowserAgent, site_for
+from .behavior.layer import BehaviorLayer
 from .known_folders import known_folder
 from .memory import facts as memory_facts
 from .memory.agent import NAME as MEMORY_AGENT
@@ -117,6 +118,10 @@ class MemoryRequest(BaseModel):
 class WorkflowRequest(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     steps: str = Field(min_length=1, max_length=600)
+
+
+class RoutineRequest(BaseModel):
+    key: str = Field(min_length=3, max_length=800)
 
 
 class SpeakRequest(BaseModel):
@@ -250,7 +255,7 @@ def create_app(
                 bus.clear_history()
             message = {"facts": "Yaadein update hui", "workflows": "Workflows update hue",
                        "history": "History ka ek record mitaya" if data.get("deleted") else "History mitai gayi",
-                       }.get(data.get("what", ""), "Memory update hui")
+                       "patterns": "Aadatein update hui"}.get(data.get("what", ""), "Memory update hui")
             await bus.publish(NovaEvent(type=EventType.MEMORY_CHANGED, agent=MEMORY_AGENT, message=message, data=data))
 
         memory = MemoryAgent(
@@ -262,6 +267,18 @@ def create_app(
             notify=memory_changed,
         )
         app.state.memory = memory
+
+        def resolve_app(name: str) -> str | None:  # "chrome" -> "Google Chrome", so habits group correctly
+            profile = discovery.profile
+            match = find_app(profile.apps, name) if profile else None
+            return match.app.name if match else None
+
+        async def save_settings(patch: dict[str, Any]) -> UserSettings:  # "chhote jawab diya karo"
+            return await update_settings(UserSettingsUpdate(**patch))
+
+        behavior = BehaviorLayer(db, lambda: app.state.user_settings, save_settings=save_settings,
+                                 resolve_app=resolve_app)
+        app.state.behavior = behavior
         app.state.orchestrator = Orchestrator(
             bus, db, providers, assistant_name, discovery, computer, permissions,
             browser=BrowserAgent(browser, engine=lambda: app.state.user_settings.search_engine),
@@ -272,6 +289,7 @@ def create_app(
             communication=communication,
             design=design,
             memory=memory,
+            behavior=behavior,
         )
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
@@ -540,6 +558,23 @@ def create_app(
         log_memory("clear_history", f"saari history mitai ({removed} baatein)")
         await app.state.memory.changed("history", cleared=True, all=True)
         return {"ok": True, "removed": removed}
+
+    @app.get("/api/behavior/patterns")
+    async def behavior_patterns() -> dict[str, Any]:
+        return app.state.behavior.patterns()
+
+    @app.delete("/api/behavior/patterns")
+    async def forget_patterns() -> dict[str, Any]:
+        removed = app.state.db.delete_usage()
+        log_memory("forget_patterns", f"aadatein mitai ({removed} records)")
+        await app.state.memory.changed("patterns")
+        return {"ok": True, "removed": removed}
+
+    @app.post("/api/behavior/routines/decline")
+    async def decline_routine(body: RoutineRequest) -> dict[str, Any]:
+        app.state.db.decline_routine(body.key)
+        await app.state.memory.changed("patterns")
+        return {"ok": True}
 
     @app.get("/api/memory/short-term")
     async def short_term_memory() -> dict[str, Any]:

@@ -39,7 +39,8 @@ export type EventType =
   | "VOICE_TRANSCRIBED"
   | "WAKE_WORD_DETECTED"
   | "NOVA_SPEAK"
-  | "MEMORY_CHANGED";
+  | "MEMORY_CHANGED"
+  | "BEHAVIOR_ESTIMATED";
 
 export type AiMode = "hybrid" | "llm" | "rules";
 
@@ -58,6 +59,28 @@ export interface UserSettings {
   project_folders: string[];
   /** Conversation history is deleted after this many days; 0 = kept until the user deletes it. */
   history_days: 30 | 90 | 365 | 0;
+  reply_style: "auto" | "short" | "detailed";
+  emotion_awareness: boolean;
+  voice_signals: boolean;
+  show_estimate: boolean;
+  learn_patterns: boolean;
+  suggest_routines: boolean;
+}
+
+/** NOVA's estimate of how the user is communicating - only an estimate, never stored. */
+export interface BehaviorEstimate {
+  state: "frustrated" | "hurried" | "confused" | "positive" | "tired";
+  confidence: number;
+  label: string;
+  reasons: string[];
+}
+
+export interface HabitPatterns {
+  learning: boolean;
+  events: number;
+  items: { kind: "app" | "website" | "project"; target: string; count: number; days: number; usual_time: string }[];
+  commands: { intent: string; count: number }[];
+  routines: { key: string; name: string; labels: string[]; days: number; hour: number }[];
 }
 
 /** Something the user asked NOVA to remember (or said "haan" to). Slots hold one value (a new name replaces the old). */

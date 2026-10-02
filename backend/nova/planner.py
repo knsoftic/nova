@@ -108,6 +108,10 @@ CAPABILITIES: dict[str, Capability] = {
     "delete_workflow": Capability("Memory Agent", "delete_workflow", "medium", None, "Workflow mitana"),
     "run_workflow": Capability("Memory Agent", "run_workflow", "low", None, "Workflow chalana"),
     "repeat_last": Capability("Memory Agent", "repeat_last", "low", None, "Pichla kaam dobara"),
+    # Behavior layer (Phase 10): the user's own reply-style choice and a look at their habits.
+    "thanks": Capability("Orchestrator", "respond", "low", None, "Shukriya ka jawab"),
+    "set_reply_style": Capability("Behavior Layer", "set_reply_style", "low", None, "Jawab ka andaz badalna"),
+    "show_patterns": Capability("Behavior Layer", "show_patterns", "low", None, "Aadatein dikhana"),
 }
 
 

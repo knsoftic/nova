@@ -35,6 +35,11 @@ from .discovery.apps import find_app
 from .discovery.models import LiveStats, SystemProfile
 from .discovery.service import DiscoveryService
 from .events import EventBus, EventType, NovaEvent, NovaState
+from .behavior.estimator import Estimate
+from .behavior.layer import BEHAVIOR_INTENTS, BehaviorLayer
+from .behavior.layer import NAME as BEHAVIOR
+from .behavior.patterns import OPEN_KINDS
+from .behavior.signals import VoiceFeatures
 from .language import detect_language
 from .memory.agent import MEMORY_INTENTS, MemoryAgent
 from .memory.agent import NAME as MEMORY
@@ -103,6 +108,7 @@ class Orchestrator:
         design: Any = None,
         memory: MemoryAgent | None = None,
         short_term: ShortTermMemory | None = None,
+        behavior: BehaviorLayer | None = None,
     ) -> None:
         self.permissions = permissions
         self.browser = browser
@@ -113,7 +119,7 @@ class Orchestrator:
         # run(intent, prepared, approved, progress) -> ControlOutcome.
         self.prepared_agents: dict[str, Any] = {}
         for agent, intents in ((settings_agent, SETTINGS_INTENTS), (communication, COMM_INTENTS),
-                               (design, DESIGN_INTENTS), (memory, MEMORY_INTENTS)):
+                               (design, DESIGN_INTENTS), (memory, MEMORY_INTENTS), (behavior, BEHAVIOR_INTENTS)):
             if agent is not None:
                 self.prepared_agents.update(dict.fromkeys(intents, agent))
         self.bus = bus
@@ -127,6 +133,10 @@ class Orchestrator:
         self.memory = memory
         # Short-term memory: the current conversation (context for the AI brain, "dobara karo", open questions).
         self.short_term = short_term or (memory.short_term if memory is not None else ShortTermMemory())
+        # Behavior layer: an estimate of how the user is communicating (RAM only) -> NOVA's tone; habits.
+        self.behavior = behavior
+        if behavior is not None:
+            self.short_term.on_clear(behavior.estimator.forget_mood)
 
     @property
     def rest_state(self) -> NovaState:
@@ -158,7 +168,7 @@ class Orchestrator:
         if self.state in (NovaState.IDLE, NovaState.LISTENING):
             await self.set_state(self.rest_state)
 
-    async def handle_command(self, text: str, source: str = "text") -> CommandResult:
+    async def handle_command(self, text: str, source: str = "text", voice: VoiceFeatures | None = None) -> CommandResult:
         task_id = uuid.uuid4().hex[:12]
         text = text.strip()
         # "haan" / "nahi" while NOVA is waiting for permission answers that question, it is not a new command.
@@ -171,6 +181,10 @@ class Orchestrator:
             self.computer.note_command(source)  # the window hosting NOVA's UI is never a target
         self.short_term.touch()
         asked_before = self.short_term.pending
+        # How the user seems to be communicating (an estimate) decides the tone of the reply.
+        estimate = (self.behavior.estimate(text, self.short_term.recent(), voice) if self.behavior is not None
+                    else Estimate())
+        style = self.behavior.style(estimate) if self.behavior is not None else "normal"
         await self.bus.publish(
             NovaEvent(
                 type=EventType.TASK_STARTED,
@@ -180,6 +194,7 @@ class Orchestrator:
                 data={"text": text, "source": source},
             )
         )
+        await self._publish_estimate(task_id, estimate, style)
         await self.set_state(NovaState.THINKING, task_id)
         await self.bus.publish(
             NovaEvent(type=EventType.NOVA_THINKING, task_id=task_id, agent=ORCHESTRATOR, message="Command samajh raha hai")
@@ -195,7 +210,8 @@ class Orchestrator:
                 understanding = Understanding(intents=followup.intents, provider="memory")
             else:
                 memories = self.memory.context_for(text) if self.memory is not None else None
-                understanding = await self.providers.understand(text, self.short_term.turns(), memories)
+                hint = self.behavior.llm_hint(style) if self.behavior is not None else None
+                understanding = await self.providers.understand(text, self.short_term.turns(), memories, hint)
             names = ", ".join(i.name for i in understanding.intents)
             await self.bus.publish(
                 NovaEvent(
@@ -239,6 +255,12 @@ class Orchestrator:
         response = self._compose(plan, outcomes)
         primary = plan.steps[0].intent
         status = "not_understood" if all(s.intent.name == "unknown" for s in plan.steps) else "understood"
+        outcome = self._outcome(status, plan, outcomes)
+        speech: str | None = None
+        if self.behavior is not None:
+            response, speech = self.behavior.shape(response, style, outcome=outcome, simple=estimate.simple,
+                                                   intents=[s.intent.name for s in plan.steps])
+            response, speech = self._learn(task_id, plan, outcomes, response, speech)
         self.db.add_conversation(
             task_id=task_id,
             source=source,
@@ -252,9 +274,11 @@ class Orchestrator:
         # (only something that ran, or that the user may want to retry after saying no).
         is_command = (followup is None and repeated is None and primary.name != "repeat_last"
                       and any(o.executed or s.status == "denied" for s, o in zip(plan.steps, outcomes)))
-        self.short_term.add_turn(text, response, command=is_command)
+        self.short_term.add_turn(text, response, command=is_command, outcome=outcome)
+        shown = self.behavior is not None and self.behavior.settings().show_estimate and estimate.state != "neutral"
         await self._finish(task_id, source, response, asked_before,
-                           {"intent": primary.name, "steps": plan.summary(), "provider": plan.provider})
+                           {"intent": primary.name, "steps": plan.summary(), "provider": plan.provider,
+                            "speech": speech, "style": style, "estimate": estimate.to_dict() if shown else None})
         return CommandResult(
             task_id=task_id,
             intent=primary,
@@ -279,7 +303,8 @@ class Orchestrator:
                 agent=ORCHESTRATOR,
                 message=response,
                 data={"response": response, "source": source, "awaiting_answer": awaiting,
-                      "quick_replies": ["Haan", "Nahi"] if awaiting and asked.kind == "remember" else [], **data},
+                      "quick_replies": ["Haan", "Nahi"] if awaiting and asked.kind in ("remember", "routine") else [],
+                      **data},
             )
         )
         await self.bus.publish(
@@ -298,13 +323,57 @@ class Orchestrator:
                                  final_result=f"{removed} purani baatein mitai gayin")
         return removed
 
+    @staticmethod
+    def _outcome(status: str, plan: Plan, outcomes: list[AgentOutcome]) -> str:
+        """done | failed | denied | answered | not_understood - how the request ended (for the estimate)."""
+        if status == "not_understood":
+            return "not_understood"
+        if any(o.verification == "failed" for o in outcomes) or any(s.status == "failed" for s in plan.steps):
+            return "failed"
+        if any(o.executed for o in outcomes):
+            return "done"
+        if any(s.status == "denied" for s in plan.steps):
+            return "denied"
+        return "answered"
+
+    async def _publish_estimate(self, task_id: str, estimate: Estimate, style: str) -> None:
+        if self.behavior is None or estimate.state == "neutral" or not self.behavior.settings().show_estimate:
+            return
+        tone = {"calm": "jawab chhota aur pur-sukoon", "brief": "jawab chhota", "helpful": "jawab misaal ke sath",
+                "detailed": "jawab tafseel se"}.get(style, "jawab aam andaz mein")
+        await self.bus.publish(NovaEvent(
+            type=EventType.BEHAVIOR_ESTIMATED, task_id=task_id, agent=BEHAVIOR,
+            message=f"Andaza (sirf andaza): {estimate.label} — {', '.join(estimate.reasons)}. {tone.capitalize()}.",
+            data={**estimate.to_dict(), "style": style}))
+
+    def _learn(self, task_id: str, plan: Plan, outcomes: list[AgentOutcome], response: str,
+               speech: str | None) -> tuple[str, str | None]:
+        """Remember what ran (habits); when a routine shows up, ask once whether to make it a workflow."""
+        assert self.behavior is not None
+        opened = False
+        for step, outcome in zip(plan.steps, outcomes):
+            if outcome.executed and outcome.verification != "failed":
+                self.behavior.record(task_id, step.intent)
+                opened = opened or step.intent.name in OPEN_KINDS
+        if not opened or self.short_term.pending is not None or plan.workflow:
+            return response, speech
+        routine = self.behavior.routine_to_suggest()
+        if routine is None:
+            return response, speech
+        name = self.behavior.routine_name(routine)
+        question = self.behavior.suggestion(routine, name)
+        self.short_term.ask("routine", question, {"name": name, "steps": ", ".join(routine.labels), "key": routine.key},
+                            ttl_s=300)
+        self.behavior.suggested = True
+        return f"{response}\n\n{question}", (f"{speech} {question}" if speech else None)
+
     async def _reply_only(self, task_id: str, text: str, source: str, response: str, asked_before: Any) -> CommandResult:
         """NOVA's question was answered with a plain reply ("nahi" -> "Theek hai, yaad nahi rakha")."""
         self.db.add_conversation(task_id=task_id, source=source, user_text=text, detected_language=detect_language(text),
                                  intent="followup", response=response, status="understood")
         self.db.add_activity(task_id=task_id, task_name="command:followup", agent=MEMORY, action="answer_question",
                              execution_status="responded", final_result="sawal ka jawab")
-        self.short_term.add_turn(text, response, command=False)
+        self.short_term.add_turn(text, response, command=False, outcome="answered")
         await self._finish(task_id, source, response, asked_before, {"intent": "followup", "steps": [],
                                                                      "provider": "memory"})
         return CommandResult(task_id=task_id, intent=None, response=response, status="understood")
@@ -380,7 +449,8 @@ class Orchestrator:
             outcome = AgentOutcome(build_permission_response(intent, step.description), step.agent, step.action,
                                    executed=False)
         else:
-            user_name = self.memory.user_name() if self.memory is not None and intent.name == "greeting" else None
+            named = intent.name in ("greeting", "thanks")
+            user_name = self.memory.user_name() if self.memory is not None and named else None
             outcome = AgentOutcome(build_response(intent, self.assistant_name, plan.answer, user_name), step.agent,
                                    step.action, executed=False)
             if intent.name == "chat" and plan.answer:
@@ -749,6 +819,7 @@ class Orchestrator:
 
     async def _fail(self, task_id: str, text: str, source: str, exc: Exception) -> CommandResult:
         response = build_error_response()
+        self.short_term.add_turn(text, response, command=False, outcome="failed")
         self.db.add_conversation(
             task_id=task_id, source=source, user_text=text, detected_language=None,
             intent=None, response=response, status="failed",

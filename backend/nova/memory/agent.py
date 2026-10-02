@@ -44,6 +44,7 @@ OPEN_VERBS = re.compile(r"\b(?:open\s+kar\s+do|open\s+karo|khol\s+do|kholo|chala
 COMMAND_WORDS = re.compile(r"\?|\b(?:karo|kar\s+do|kardo|batao|bata\s+do|dikhao|bhejo|likho|band|delete|mitao|kya|kaise|"
                            r"kitna|kitni|kyun|search|dhoondo|dhundo|what|how|why)\b", re.IGNORECASE)
 PURGE_EVERY_S = 3600
+HABIT_WORDS = re.compile(r"\b(?:aadat\w*|adat\w*|habits?|patterns?)\b", re.IGNORECASE)
 
 
 @dataclass
@@ -143,6 +144,16 @@ class MemoryAgent:
             if verdict is False:
                 self.short_term.declined.add(F.norm(pending.data["fact"]))
                 return FollowUp(reply="Theek hai, ye baat yaad nahi rakhi.")
+            return None
+        if pending.kind == "routine":  # "Inka workflow bana doon?" after NOVA noticed a habit
+            verdict = yes_no(t)
+            if verdict is True:
+                return FollowUp(intents=[Intent(name="save_workflow", confidence=1.0, language=language,
+                                                provider="memory", entities={"workflow": pending.data["name"],
+                                                                             "steps": pending.data["steps"]})])
+            if verdict is False:
+                self.db.decline_routine(pending.data["key"])
+                return FollowUp(reply="Theek hai, ye tajweez dobara nahi doonga.")
             return None
         if pending.kind == "workflow_steps":
             name, run = pending.data["name"], bool(pending.data.get("run"))
@@ -248,6 +259,14 @@ class MemoryAgent:
     def _prepare_forget(self, e: dict[str, Any]) -> Prepared | Reply:
         if e.get("scope") == "conversation":
             return Prepared("Is conversation ki pichli baatein chhorna", "memory:context", data={"op": "context"})
+        if e.get("scope") == "patterns" or HABIT_WORDS.search(str(e.get("query") or "")):
+            n = len(self.db.list_usage())
+            if not n:
+                return Reply("Abhi koi aadat record nahi.")
+            return Prepared(f"Aadatein ({n} records) hamesha ke liye mitana", "memory:patterns", count=n,
+                            always_ask=True, min_risk="medium",
+                            reasons=["NOVA phir se shuru se seekhega; workflows aur yaadein nahi mitengi"],
+                            data={"op": "patterns"})
         memories = self.db.list_memories()
         if e.get("all"):
             if not memories:
@@ -343,6 +362,13 @@ class MemoryAgent:
                                           "clear_context", True, "not_applicable")
                 if not approved:
                     raise PermissionError("forgetting memories requires the user's permission")
+                if d.get("op") == "patterns":
+                    removed = self.db.delete_usage()
+                    left = len(self.db.list_usage())
+                    await self.changed("patterns")
+                    return ControlOutcome(f"Aadatein bhool gaya ({removed} records)." +
+                                          (" (Verify: ab koi record nahi.)" if not left else ""), "forget_patterns",
+                                          True, "passed" if not left else "failed")
                 return await self._run_forget(d["ids"])
             case "search_history":
                 return self._search(d["query"], d["period"])

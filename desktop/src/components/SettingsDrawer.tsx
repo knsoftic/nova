@@ -453,6 +453,81 @@ function WebSettings({
   );
 }
 
+const REPLY_STYLES: { value: UserSettings["reply_style"]; label: string; hint: string }[] = [
+  { value: "auto", label: "Khud adapt (tajweez)", hint: "Aam tor par normal; jaldi/pareshani mein chhote, uljhan mein misaal ke sath." },
+  { value: "short", label: "Hamesha chhote", hint: "Mukhtasar jawab; verify ka nishan (✓) phir bhi rehta hai." },
+  { value: "detailed", label: "Hamesha tafseel se", hint: "Poori wazahat ke sath." },
+];
+
+const BEHAVIOR_TOGGLES: { key: "emotion_awareness" | "voice_signals" | "show_estimate" | "learn_patterns" | "suggest_routines"; label: string; hint: string }[] = [
+  {
+    key: "emotion_awareness",
+    label: "Andaza lagayein (pareshan, jaldi mein, uljhan...)",
+    hint: "Alfaaz aur baat-cheet se — sirf andaza, kabhi pakki baat nahi. Kahin save nahi hota.",
+  },
+  {
+    key: "voice_signals",
+    label: "Awaaz se bhi (raftaar, zor, pitch)",
+    hint: "Usi waqt PC par hisaab; awaaz ya ye numbers save nahi hote.",
+  },
+  { key: "show_estimate", label: "Andaza dikhayein", hint: "\"Andaza: shayad jaldi mein\" label aur Live Activity mein wajah." },
+  {
+    key: "learn_patterns",
+    label: "Aadatein seekhein",
+    hint: "Kaun si apps/websites/projects kab kholte hain — isi PC par, history ki tarah mit jati hain (Memory → Aadatein).",
+  },
+  { key: "suggest_routines", label: "Routine dikhe to workflow ki tajweez", hint: "Sirf aap ke \"haan\" par workflow banta hai." },
+];
+
+/** Tone and habits (Phase 10). Saved with the rest of the form. */
+function BehaviorSettings({
+  draft,
+  set,
+}: {
+  draft: UserSettings;
+  set: <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => void;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2 border-t border-white/10 pt-4">
+      <legend className="mb-1 text-xs font-medium text-slate-300">Andaz aur aadatein</legend>
+      {REPLY_STYLES.map((s) => (
+        <label key={s.value} className="flex items-start gap-2">
+          <input
+            type="radio"
+            name="reply_style"
+            className="mt-1"
+            checked={draft.reply_style === s.value}
+            onChange={() => set("reply_style", s.value)}
+          />
+          <span className="flex flex-col">
+            <span className="text-sm text-slate-200">{s.label}</span>
+            <span className="text-xs text-slate-500">{s.hint}</span>
+          </span>
+        </label>
+      ))}
+      {BEHAVIOR_TOGGLES.map((t) => (
+        <label key={t.key} className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft[t.key]}
+            disabled={
+              (t.key === "voice_signals" || t.key === "show_estimate") && !draft.emotion_awareness
+                ? true
+                : t.key === "suggest_routines" && !draft.learn_patterns
+            }
+            onChange={(e) => set(t.key, e.target.checked)}
+          />
+          <span className="flex flex-col">
+            <span className="text-xs font-medium text-slate-300">{t.label}</span>
+            <span className="text-xs text-slate-500">{t.hint}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 /** Where the File and Coding agents may work. Project folders are saved with the rest of the form. */
 function FileSettings({
   draft,
@@ -693,6 +768,8 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
             <WebSettings draft={draft} set={set} errors={errors} open={open} />
 
             <FileSettings draft={draft} set={set} errors={errors} open={open} />
+
+            <BehaviorSettings draft={draft} set={set} />
 
             <fieldset className="flex flex-col gap-2 border-t border-white/10 pt-4">
               <legend className="mb-1 text-xs font-medium text-slate-300">AI brain (local, PC se bahar kuch nahi jata)</legend>

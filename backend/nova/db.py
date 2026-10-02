@@ -119,6 +119,17 @@ CREATE TABLE IF NOT EXISTS workflows (
     last_run TEXT
 );
 
+-- Behavior patterns: what the user opened (apps, websites, projects) and which commands ran, with time.
+-- Kept and deleted together with the conversation history.
+CREATE TABLE IF NOT EXISTS usage_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    target TEXT NOT NULL,
+    task_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_activity_task ON activity_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_task ON conversations(task_id);
@@ -437,6 +448,7 @@ class Database:
             removed = self._conn.execute("DELETE FROM conversations WHERE 1 = 1" + when, tuple(params)).rowcount
             self._conn.execute("DELETE FROM activity_log WHERE 1 = 1" + activity, tuple(activity_params))
             self._conn.execute("DELETE FROM permission_requests WHERE 1 = 1" + when, tuple(params))
+            self._conn.execute("DELETE FROM usage_events WHERE 1 = 1" + when, tuple(params))
             self._conn.commit()
         return removed
 
@@ -445,8 +457,31 @@ class Database:
             removed = self._conn.execute("DELETE FROM conversations WHERE task_id = ?", (task_id,)).rowcount
             self._conn.execute("DELETE FROM activity_log WHERE task_id = ?", (task_id,))
             self._conn.execute("DELETE FROM permission_requests WHERE task_id = ?", (task_id,))
+            self._conn.execute("DELETE FROM usage_events WHERE task_id = ?", (task_id,))
             self._conn.commit()
         return removed > 0
+
+    # behavior patterns
+    def add_usage(self, kind: str, target: str, task_id: str | None = None) -> None:
+        self._execute("INSERT INTO usage_events(created_at, kind, target, task_id) VALUES (?, ?, ?, ?)",
+                      (_now(), kind, target[:120], task_id))
+
+    def list_usage(self, since: str | None = None) -> list[dict[str, Any]]:
+        if since:
+            return self._query("SELECT * FROM usage_events WHERE created_at >= ? ORDER BY id", (since,))
+        return self._query("SELECT * FROM usage_events ORDER BY id")
+
+    def delete_usage(self) -> int:
+        return self._execute("DELETE FROM usage_events").rowcount
+
+    def declined_routines(self) -> set[str]:
+        try:
+            return set(json.loads(self.get_setting("declined_routines") or "[]"))
+        except ValueError:
+            return set()
+
+    def decline_routine(self, key: str) -> None:
+        self.set_setting("declined_routines", json.dumps(sorted(self.declined_routines() | {key}), ensure_ascii=False))
 
     # system profile (latest few kept for comparison)
     def save_system_profile(self, profile_json: str, keep: int = 5) -> None:

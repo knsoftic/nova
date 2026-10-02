@@ -13,7 +13,8 @@ def test_settings_defaults(client):
                  "startup_mode": "active", "ai_mode": "hybrid", "ai_model": "qwen3:4b",
                  "stt_language": "ur", "tts_voice": "ur_PK-fasih-medium", "speak_responses": "voice_only",
                  "search_engine": "google", "browser_channel": "chrome", "project_folders": ["C:\\xampp\\htdocs"],
-                 "history_days": 90}
+                 "history_days": 90, "reply_style": "auto", "emotion_awareness": True, "voice_signals": True,
+                 "show_estimate": True, "learn_patterns": True, "suggest_routines": True}
 
 
 def test_settings_partial_update_persists_and_logs(client):

@@ -100,7 +100,7 @@ mail message monitor mute night notepad original outbox outlook paint phone pict
 printers privacy radio region rotated sale scanners security send sent sleep startup story subject theme thumbnail
 time touchpad twitter uac unmute visiting volume wallpaper webp white wi x youtube
 cnic com conversation deleting forgetting github manager memories notion office pin records reminder study term
-workflows
+workflows behavior layer record routine energy solar notes
 """.split())
 
 
@@ -114,7 +114,9 @@ def test_every_template_word_is_covered():
               "coding/editor.py", "coding/diagnostics.py", "agents/settings_agent.py", "control/settings.py",
               "communication/agent.py", "communication/contacts.py", "communication/email.py",
               "communication/whatsapp.py", "design/agent.py", "design/images.py", "memory/agent.py",
-              "memory/facts.py", "memory/history.py", "memory/workflows.py", "memory/short_term.py"]:
+              "memory/facts.py", "memory/history.py", "memory/workflows.py", "memory/short_term.py",
+              "behavior/layer.py", "behavior/style.py", "behavior/patterns.py", "behavior/estimator.py",
+              "behavior/signals.py"]:
         tree = ast.parse((root / f).read_text(encoding="utf-8"))
         # Docstrings are developer documentation, never spoken.
         skipped = {
@@ -131,7 +133,7 @@ def test_every_template_word_is_covered():
             model_facing = (
                 isinstance(n, (ast.Assign, ast.AugAssign)) and any(
                     isinstance(t, ast.Name) and (t.id.endswith(("_SYSTEM", "_EXAMPLE")) or t.id in (
-                        "_META", "prompt", "PERSONALIZE", "STOPWORDS", "QUESTION_WORDS"))  # word lists for matching
+                        "_META", "prompt", "PERSONALIZE", "STOPWORDS", "QUESTION_WORDS", "LLM_HINTS"))  # word lists, model hints
                     for t in (n.targets if isinstance(n, ast.Assign) else [n.target]))
             ) or (isinstance(n, ast.Call) and (
                 (isinstance(n.func, ast.Attribute) and n.func.attr in model_calls)

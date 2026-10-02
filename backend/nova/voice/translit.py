@@ -140,6 +140,13 @@ LEXICON: dict[str, str] = {
     "mitai": "مٹائی", "mitana": "مٹانا", "mitane": "مٹانے", "parega": "پڑے گا", "pichle": "پچھلے", "rahegi": "رہے گی",
     "rakhi": "رکھی", "rakhni": "رکھنی", "rakho": "رکھو", "rakhoon": "رکھوں", "rakhta": "رکھتا", "saari": "ساری",
     "sire": "سرے", "tasveerein": "تصویریں", "yaadein": "یادیں",
+    # Phase 10: behavior layer
+    "aadat": "عادت", "aadatein": "عادتیں", "aam": "عام", "aayengi": "آئیں گی", "aksar": "اکثر", "andaz": "انداز",
+    "andaza": "اندازہ", "bole": "بولے", "dekha": "دیکھا", "dheere": "دھیرے", "doon": "دوں", "doonga": "دوں گا",
+    "halat": "حالت", "halki": "ہلکی", "kahi": "کہی", "kholte": "کھولتے", "lagte": "لگتے", "mitengi": "مٹیں گی",
+    "mutabiq": "مطابق", "naraazgi": "ناراضگی", "oonchi": "اونچی", "pur": "پر", "seedha": "سیدھا",
+    "seekhega": "سیکھے گا", "sukoon": "سکون", "tafseel": "تفصیل", "tar": "تر", "tez": "تیز", "thakan": "تھکن",
+    "uljhan": "الجھن", "zor": "زور",
 }
 # "ki" appears twice above (possessive and "did"); both are written the same in Urdu.
 

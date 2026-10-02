@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from ..ai.base import ConversationTurn
+from ..behavior.estimator import Turn
 
 IDLE_RESET_S = 30 * 60
 MAX_TURNS = 4
@@ -33,6 +34,7 @@ class ShortTermMemory:
         self.idle_reset_s = idle_reset_s
         self.clock = clock
         self._turns: deque[ConversationTurn] = deque(maxlen=MAX_TURNS)
+        self._meta: deque[tuple[str, float]] = deque(maxlen=MAX_TURNS)  # (outcome, time) of each turn
         self.pending: PendingQuestion | None = None
         self.last_command: str | None = None  # the last real command (not an answer, not "dobara karo")
         self.last_response: str | None = None
@@ -54,6 +56,7 @@ class ShortTermMemory:
 
     def clear(self) -> None:
         self._turns.clear()
+        self._meta.clear()
         self.pending = None
         self.last_command = self.last_response = None
         self.last_memory_id = None
@@ -64,11 +67,16 @@ class ShortTermMemory:
     def turns(self) -> list[ConversationTurn]:
         return list(self._turns)
 
-    def add_turn(self, user: str, assistant: str, command: bool = True) -> None:
+    def add_turn(self, user: str, assistant: str, command: bool = True, outcome: str = "answered") -> None:
         self._turns.append(ConversationTurn(user=user[:500], assistant=assistant[:500]))
+        self._meta.append((outcome, self.clock()))
         self.last_response = assistant
         if command:
             self.last_command = user
+
+    def recent(self) -> list[Turn]:
+        """The turns with how they ended and when - for the behavior estimate."""
+        return [Turn(t.user, outcome, at) for t, (outcome, at) in zip(self._turns, self._meta)]
 
     def user_texts(self) -> list[str]:
         """What the user said in this conversation, newest first."""

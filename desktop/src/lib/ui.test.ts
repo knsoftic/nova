@@ -7,6 +7,7 @@ import {
   OUTCOME_META,
   RETENTION_OPTIONS,
   aiLabel,
+  estimateText,
   formatBytes,
   formatDuration,
   linkParts,
@@ -178,5 +179,16 @@ describe("memory helpers", () => {
     expect(workflowCommand("study")).toBe("study workflow chalao");
     expect(RETENTION_OPTIONS.map((o) => o.value)).toEqual([30, 90, 365, 0]);
     expect(Object.keys(OUTCOME_META).sort()).toEqual(["answered", "denied", "done", "failed", "not_understood"]);
+  });
+});
+
+describe("behavior estimate badge", () => {
+  it("is only shown for a real estimate and says it is an estimate", () => {
+    expect(estimateText(null)).toBeNull();
+    expect(estimateText({ label: "", reasons: [] })).toBeNull();
+    const shown = estimateText({ label: "shayad jaldi mein", reasons: ["jaldi wale alfaaz", "aam se tez bole"] });
+    expect(shown?.text).toBe("Andaza: shayad jaldi mein");
+    expect(shown?.title).toContain("Sirf andaza");
+    expect(shown?.title).toContain("aam se tez bole");
   });
 });

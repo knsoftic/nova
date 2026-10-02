@@ -616,3 +616,65 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 9 commit `f7013be`, `main` mein merge `8ad40f9`.
+
+---
+
+### Task: Phase 10 — Emotion/Behavior Layer (context analysis, tone adaptation, behavior patterns, personalization)
+
+Status: Complete (branch `phase-10-emotion-behavior`, approval ke baad `main` mein merge)
+
+Admin ke faisle (is phase ke shuru mein): andaza **alfaaz + awaaz** se (awaaz ke numbers kabhi save nahi), andaza **dikhaya jaye** (Settings se band), aadatein **seekhein + tajweez** (sirf "haan" par workflow), jawab ka andaz **khud adapt**.
+
+Kaam:
+- **Conversation context analysis (andaza — kabhi pakki baat nahi):**
+  - Alfaaz aur jumle: naraazgi ("kitni dafa", "kaam nahi kar raha", "bakwas", "!!", BARE HAROOF), jaldi ("jaldi", "foran"), uljhan ("samajh nahi aaya", "kya matlab", "??"), shukriya/tareef, thakan — Roman Urdu, English, Urdu/Hindi script.
+  - Baat-cheet: wahi baat dobara jab pehli dafa kaam nahi hua, pichle 3 mein se 2 kaam nahi hue, foran agli command.
+  - Awaaz: bolne ki raftaar (alfaaz/second), zor (dB) aur pitch — **aap ki apni pichli 3+ baaton ke muqable mein** (sirf RAM mein, awaaz aur ye numbers kabhi save nahi). Sirf awaaz se zyada se zyada "shayad ...".
+  - Kamzor ishara "neutral" rehta hai; label hamesha "shayad jaldi mein" / "jaldi mein lagte hain" aur wajah ke sath; pichla andaza agli baat mein thora sa rehta hai phir khatam. Andaza kahin save nahi hota (na history, na database).
+- **Tone adaptation:** pareshani → "Maaf kijiye." + saaf agla qadam ("Seedha aise kahein, maslan ..." / "dobara karo"); jaldi/thakan → chhota jawab (verify ki lambi baat ki jagah ✓, how-to hint hata), bola gaya jawab aur chhota; uljhan → "(Misaal: ...)"; seedhi chhoti command → bas "ho gaya" bolna. Local AI ke chat jawab ko bhi wahi hidayat. **Haqeeqat kabhi nahi badalti** — kya hua, kya verify hua, kya nahi hua.
+- **Response personalization:** jawab ka andaz — Khud adapt (default) / Hamesha chhote / Hamesha tafseel (Settings ya awaaz se: "chhote jawab diya karo", "tafseel se bataya karo", "normal jawab diya karo" — verify ke sath). "shukriya" → "Koi baat nahi, <naam>!" (Phase 9 ka naam).
+- **User behavior patterns (aadatein):** kaun si apps/websites/projects kab kholi aur kaun si commands chalti hain — isi PC par, history ki tarah 90 din aur history ke sath mitti hain; NOVA ke apne baare ki commands (bhoolna, history waghera) aadat nahi ginti. "meri aadatein batao", Memory → **Aadatein** (kitni dafa, kitne din, zyada tar subah/shaam...). "meri aadatein bhool jao" — ijazat se.
+- **Routine → workflow tajweez:** jo cheezein 3+ alag dinon par ek saath (10 minute ke andar) khulti hain → aik dafa poochta hai "Main ne dekha hai aap aksar subah ... ek saath kholte hain (3 din). Inka 'subah' workflow bana doon? (haan/nahi)" — Haan/Nahi buttons; haan par hi workflow; nahi yaad rehta (us ke hisson ki bhi dobara tajweez nahi); jo workflow mein pehle se ho us ki tajweez nahi; naam kisi maujooda workflow se nahi takrata.
+- **UI:** avatar ke neeche "Andaza: shayad jaldi mein (sirf andaza)" (wajah tooltip mein), Live Activity mein Behavior Layer ki line, Settings → **Andaz aur aadatein** (jawab ka andaz + 5 switches), Memory → **Aadatein** (list, routine: "Workflow banao" / "Nahi chahiye", "Aadatein bhool jao"), agents mein Behavior Layer.
+- **AI brain:** 3 naye intents (thanks, set_reply_style, show_patterns) rules + LLM; "aadatein bhool jao" bhoolne mein.
+
+Test:
+- Backend automated tests: 588/588 pass (38 naye) — alfaaz/Urdu script ke ishare, awaaz ke features (asli sine-wave audio se pitch/zor/raftaar), andaza (hedged, kamzor ishara neutral, sirf awaaz max "shayad", apni pichli awaaz se muqabla, pichla andaza fade), tone (calm/brief/helpful, haqeeqat wahi, ✓ rehta hai), routines (3 din, workflow mein ho to nahi, nahi ke baad hisson ki bhi nahi, 30 din), aadat summary, rules/LLM, API flows (jaldi → chhota jawab + label; label band → phir bhi adapt; andaza band → aam), do dafa nakaami → "Maaf kijiye" + agla qadam, shukriya naam ke sath, jawab ka andaz awaaz se + verify, aadatein record/dikhana/bhoolna (ijazat), routine → haan par workflow, nahi yaad, history mitane par aadatein bhi, chat jawab ko style hint, **awaaz end-to-end: 3 aam baaton ke baad tez boli lambi command → "shayad jaldi mein" aur chhota bola gaya jawab; awaaz ka kuch save nahi**.
+- Frontend: 18/18 tests, typecheck aur build successful.
+- AI brain eval (86 commands, 6 naye): sirf rules 80/86, **hybrid 85/86** (median 15.1s; ek ghalti "har cheez tafseel se samjhaya karo" — rule add kiya), sirf LLM 83/86 (median 11.0s; teen ghaltiyan hybrid mein rules sambhalte hain).
+- **Is PC par asli test:** (sirf test data; pehle aadatein 0 thin)
+  - "jaldi se Calculator kholo" → "Calculator khul gaya hai. ✓" (chhota). Bemaani command do dafa (local AI ke zariye) → doosri dafa "... Seedha aise kahein, maslan ...".
+  - "samajh nahi aaya, file kaise kholoon" → local AI ka seedha jawab misaal ke sath. "shukriya" → "Koi baat nahi! ...".
+  - "chhote jawab diya karo" → Settings mein short (verify) → "normal jawab diya karo" → wapas auto.
+  - "meri aadatein batao" → Calculator, usual time. Do pichle din ki test aadatein daal kar "Calculator kholo" + "example.com kholo" → "Main ne dekha hai aap aksar subah Calculator aur example.com ek saath kholte hain (3 din). Inka 'subah' workflow bana doon?" → haan → workflow bana (verify).
+  - "meri aadatein bhool jao" → ijazat (medium) → 13 records mit gaye (verify).
+  - UI: avatar ke neeche "Andaza: shayad jaldi mein (sirf andaza)", Live Activity mein Behavior Layer ki wajah, Settings → Andaz aur aadatein, Memory → Aadatein.
+  - Electron app launch: window, backend aur Behavior API theek; band karne par backend bhi band.
+  - Test ke baad: test ki 15 history records aur aadatein hata di, test workflow mitaya, settings pehle jaisi, test ke Calculator band.
+  - Awaaz se asli test (mic) browser pane mein mumkin nahi — admin test mein aap karein (automated voice test chal raha hai).
+
+Bugs jo test ke dauran mile aur fix kiye gaye:
+- "jaldi se Chrome kholo" mein app ka naam "se Chrome" ban raha tha (purana bug: "jaldi" "jaldi se" se pehle check hota tha) — fix.
+- Kamyab command dobara kehna (maslan "Chrome kholo" do dafa) naraazgi gina ja raha tha — ab sirf tab jab pehli dafa kaam nahi hua.
+- Chhote jawab mein how-to hint ke sath verify ka nishan bhi hat jata — ab sirf hint hat'ta hai, ✓ rehta hai.
+- "aadatein bhool jao" khud ek aadat ban kar record ho jata — NOVA ke apne baare ki commands ab aadat nahi.
+- Routine "Workflow banao" kisi purane isi naam ke workflow ko badal sakta tha — ab naam takrata nahi.
+- Voice test: NOVA ke bolte waqt mic band rehta hai (sahi) — test ab NOVA ke chup hone ka intezar karta hai.
+
+Maloom hadood (limitations):
+- Andaza sirf andaza hai: mazaq ya Urdu ke mukhtalif andaz ko ghalat samajh sakta hai — is liye hamesha "shayad" aur sirf andaz badalta hai, kaam nahi.
+- Awaaz ka muqabla sirf usi session mein pichli baaton se (restart par phir se seekhta hai); pehli 3 baaton mein awaaz se kuch nahi (sirf bohat tez raftaar ka kamzor ishara).
+- Pitch ka andaza shor wale kamre mein kamzor; is ka wazan kam rakha hai.
+- Routine ke liye kam az kam 3 din chahiye; files ki routine abhi nahi (sirf apps, websites, projects).
+
+Verification:
+- Jawab ka andaz badalna: Settings dobara parh kar; aadatein bhoolna: baad mein 0 records; routine se bana workflow: workflow save verify (Phase 9). Andaza kuch nahi badalta, is liye us ka verification nahi — sirf dikhaya jata hai.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

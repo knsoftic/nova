@@ -596,7 +596,7 @@ def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDeskto
                  permission_timeout_s: float = 0.5, browser: FakeBrowser | None = None, web: FakeWeb | None = None,
                  trash: FakeTrash | None = None, coding: FakeCoding | None = None, opened: list | None = None,
                  settings: FakeSettings | None = None, whatsapp: FakeWhatsApp | None = None,
-                 mailer: FakeMailer | None = None, design: FakeDesign | None = None):
+                 mailer: FakeMailer | None = None, design: FakeDesign | None = None, logs_path=None, readme_path=None):
     ollama = ollama or FakeOllama(models=[])  # reachable but no model: rules only, deterministic
     browser = browser or FakeBrowser()
     browser.downloads_dir = tmp_path / "Downloads" / "NOVA"
@@ -605,7 +605,8 @@ def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDeskto
     opened = opened if opened is not None else []
     # Short permission timeout: an unanswered question resolves to "no" quickly in tests.
     app = create_app(Settings(data_dir=tmp_path, discovery_on_startup=False, permission_timeout_s=permission_timeout_s,
-                              reports_dir=tmp_path / "Research"),
+                              reports_dir=tmp_path / "Research", self_test_on_startup=False, logs_path=logs_path,
+                              readme_path=readme_path),
                      scanner=make_profile, stats=fake_stats, ollama_transport=ollama.transport,
                      desktop=desktop, browser_controller=browser,
                      web_transport=(web or FakeWeb()).transport, web_resolver=fake_resolver,

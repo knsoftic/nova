@@ -8,6 +8,8 @@ import {
   RETENTION_OPTIONS,
   aiLabel,
   estimateText,
+  LIFECYCLE,
+  lifecycleIndex,
   formatBytes,
   formatDuration,
   linkParts,
@@ -190,5 +192,15 @@ describe("behavior estimate badge", () => {
     expect(shown?.text).toBe("Andaza: shayad jaldi mein");
     expect(shown?.title).toContain("Sirf andaza");
     expect(shown?.title).toContain("aam se tez bole");
+  });
+});
+
+describe("admin lifecycle", () => {
+  it("orders the stages and sends problems back to the start", () => {
+    expect(LIFECYCLE.map((s) => s.id)).toEqual(["implemented", "automated_test", "verified", "admin_tested", "approved"]);
+    expect(lifecycleIndex("approved")).toBe(4);
+    expect(lifecycleIndex("verified")).toBe(2);
+    expect(lifecycleIndex("problem")).toBe(0);
+    expect(lifecycleIndex("whatever")).toBe(0);
   });
 });

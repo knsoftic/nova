@@ -9,6 +9,7 @@ import logging
 import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -38,6 +39,9 @@ from .agents.computer import ComputerAgent, Desktop
 from .browser import BrowserController
 from .browser.agent import BrowserAgent, site_for
 from .behavior.layer import BehaviorLayer
+from .admin.docs import DocFile
+from .admin.selftest import SelfTest, build_checks
+from .admin.service import BUG_STATUSES, AdminError, AdminService
 from .known_folders import known_folder
 from .memory import facts as memory_facts
 from .memory.agent import NAME as MEMORY_AGENT
@@ -61,6 +65,24 @@ log = logging.getLogger("nova")
 
 MAX_COMMAND_LENGTH = 2000
 MAX_AUDIO_FRAME_BYTES = 64_000  # 2 s of 16 kHz int16 per frame is far more than the UI sends
+
+
+async def _admin_upkeep(admin: AdminService, settings: Settings) -> None:
+    """Quiet self-test after start (only problems are reported); the daily LOGS.md summary, checked hourly."""
+    try:
+        await asyncio.sleep(settings.self_test_delay_s)  # let the scan and the models load first
+        if settings.self_test_on_startup:
+            await admin.run_tests("startup", quiet=True)
+        while True:
+            try:
+                await asyncio.to_thread(admin.write_daily_summaries)
+            except OSError as exc:
+                log.warning("Daily summary not written: %s", exc)
+            await asyncio.sleep(3600)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("Admin upkeep failed")
 
 
 async def _background_scan(discovery: DiscoveryService) -> None:
@@ -118,6 +140,26 @@ class MemoryRequest(BaseModel):
 class WorkflowRequest(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     steps: str = Field(min_length=1, max_length=600)
+
+
+class ApproveRequest(BaseModel):
+    confirm: bool  # the admin pressed "Haan, approve" in the panel
+    note: str = Field(default="", max_length=300)
+
+
+class ProblemRequest(BaseModel):
+    title: str = Field(min_length=3, max_length=160)
+    details: str = Field(default="", max_length=2000)
+    phase: str | None = Field(default=None, max_length=10)
+
+
+class BugStatusRequest(BaseModel):
+    status: str = Field(pattern="^(open|fixed|closed|reopened)$")
+    note: str = Field(default="", max_length=500)
+
+
+class SelfTestRequest(BaseModel):
+    scope: str = Field(default="full", max_length=12, pattern=r"^[A-Za-z0-9]+$")
 
 
 class RoutineRequest(BaseModel):
@@ -225,11 +267,11 @@ def create_app(
 
         desk = computer.desktop
         comm = comm_overrides or {}
+        app.state.whatsapp = comm.get("whatsapp") or WhatsAppDesktop(desk.list_windows, desk.focus, desk.foreground_hwnd,
+                                                                     lambda: desk.hotkey("enter"))
+        app.state.mailer = comm.get("mailer") or Mailer()
         communication = CommunicationAgent(
-            db,
-            comm.get("whatsapp") or WhatsAppDesktop(desk.list_windows, desk.focus, desk.foreground_hwnd,
-                                                    lambda: desk.hotkey("enter")),
-            comm.get("mailer") or Mailer(),
+            db, app.state.whatsapp, app.state.mailer,
             providers.ollama.complete_json, providers.ollama.is_available,
             resolve_file=files.resolve_target,
         )
@@ -279,13 +321,14 @@ def create_app(
         behavior = BehaviorLayer(db, lambda: app.state.user_settings, save_settings=save_settings,
                                  resolve_app=resolve_app)
         app.state.behavior = behavior
+        app.state.windows_settings = windows_settings or WindowsSettings()
         app.state.orchestrator = Orchestrator(
             bus, db, providers, assistant_name, discovery, computer, permissions,
             browser=BrowserAgent(browser, engine=lambda: app.state.user_settings.search_engine),
             research=research,
             files=files,
             coding=coding,
-            settings_agent=SettingsAgent(windows_settings or WindowsSettings(), window_titles=window_titles),
+            settings_agent=SettingsAgent(app.state.windows_settings, window_titles=window_titles),
             communication=communication,
             design=design,
             memory=memory,
@@ -294,6 +337,12 @@ def create_app(
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
         app.state.orchestrator.purge_history(force=True)  # history older than the chosen number of days
+        # Phase 11: self-test, bug tracking, approvals and LOGS.md upkeep.
+        app.state.db_path, app.state.data_dir, app.state.tools = settings.db_path, settings.data_dir, tools
+        admin = AdminService(db, bus, DocFile(settings.logs_path), DocFile(settings.readme_path),
+                             SelfTest(build_checks(app.state)))
+        app.state.admin = admin
+        app.state.orchestrator.on_crash = admin.report_crash
         voice = VoiceService(
             bus,
             app.state.orchestrator,
@@ -316,6 +365,7 @@ def create_app(
         app.state.background = {asyncio.create_task(_prepare_ai(providers, bus)), asyncio.create_task(voice.prepare())}
         if startup_scan:
             app.state.background.add(startup_scan)
+        app.state.background.add(asyncio.create_task(_admin_upkeep(admin, settings)))
         log.info("NOVA backend ready on %s:%s", settings.host, settings.port)
         try:
             yield
@@ -586,6 +636,82 @@ def create_app(
         await app.state.memory.changed("short_term")
         return {"ok": True}
 
+    # ------------------------------------------------------------------ admin (Phase 11): tests, bugs, approvals
+
+    def admin_service() -> AdminService:
+        return app.state.admin
+
+    def refused(exc: AdminError) -> HTTPException:
+        return HTTPException(status_code=409, detail=str(exc))
+
+    @app.get("/api/admin/features")
+    async def admin_features() -> list[dict[str, Any]]:
+        return admin_service().features()
+
+    @app.post("/api/admin/features/{phase}/test")
+    async def admin_test_feature(phase: str) -> dict[str, Any]:
+        if not re.fullmatch(r"\d+[A-Za-z]?", phase):
+            raise HTTPException(status_code=422, detail="Phase sahi nahi")
+        return await admin_service().run_tests(phase.upper())
+
+    @app.post("/api/admin/features/{phase}/approve")
+    async def admin_approve(phase: str, body: ApproveRequest) -> dict[str, Any]:
+        if not body.confirm:
+            raise HTTPException(status_code=422, detail="Approve karne ke liye pakka karein")
+        try:
+            return await admin_service().approve(phase.upper(), body.note)
+        except AdminError as exc:
+            raise refused(exc) from exc
+
+    @app.post("/api/admin/features/{phase}/problem")
+    async def admin_problem(phase: str, body: ProblemRequest) -> dict[str, Any]:
+        try:
+            return await admin_service().report_problem(phase.upper(), body.title, body.details)
+        except AdminError as exc:
+            raise refused(exc) from exc
+
+    @app.post("/api/admin/features/{phase}/retest")
+    async def admin_retest(phase: str) -> dict[str, Any]:
+        try:
+            return await admin_service().retest(phase.upper())
+        except AdminError as exc:
+            raise refused(exc) from exc
+
+    @app.get("/api/admin/bugs")
+    async def admin_bugs(status: str | None = None) -> list[dict[str, Any]]:
+        if status not in (None, "active", *BUG_STATUSES):
+            raise HTTPException(status_code=422, detail="Status sahi nahi")
+        return app.state.db.list_bugs(status)
+
+    @app.post("/api/admin/bugs")
+    async def admin_new_bug(body: ProblemRequest) -> dict[str, Any]:
+        try:
+            return await admin_service().report_problem(body.phase.upper() if body.phase else None, body.title,
+                                                        body.details)
+        except AdminError as exc:
+            raise refused(exc) from exc
+
+    @app.put("/api/admin/bugs/{bug_id}")
+    async def admin_bug_status(bug_id: int, body: BugStatusRequest) -> dict[str, Any]:
+        try:
+            return await admin_service().set_bug_status(bug_id, body.status, body.note)
+        except AdminError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/admin/selftest")
+    async def admin_selftest(body: SelfTestRequest) -> dict[str, Any]:
+        return await admin_service().run_tests(body.scope if body.scope in ("full", "startup") else body.scope.upper())
+
+    @app.get("/api/admin/selftest/last")
+    async def admin_selftest_last() -> dict[str, Any] | None:
+        return app.state.db.last_test_run()
+
+    @app.get("/api/admin/summary")
+    async def admin_summary() -> dict[str, Any]:
+        day = datetime.now().strftime("%Y-%m-%d")
+        return {"date": day, "counts": app.state.db.day_counts(day), "line": admin_service().summary_line(day),
+                "logs_md": admin_service().logs.available}
+
     @app.get("/api/files/roots")
     async def file_roots() -> list[dict[str, Any]]:
         """Folders the File/Coding agents may use (shown in Settings)."""
@@ -675,8 +801,10 @@ def create_app(
         return await orchestrator().handle_command(req.text, req.source)
 
     @app.get("/api/activity")
-    async def activity(limit: int = 100) -> list[dict[str, Any]]:
-        return app.state.db.list_activity(max(1, min(limit, 500)))
+    async def activity(limit: int = 100, kind: str | None = None, agent: str | None = None,
+                       q: str | None = None) -> list[dict[str, Any]]:
+        return app.state.db.list_activity(max(1, min(limit, 500)), kind, agent[:40] if agent else None,
+                                          q[:100] if q else None)
 
     @app.get("/api/conversations")
     async def conversations(limit: int = 50) -> list[dict[str, Any]]:

@@ -145,6 +145,13 @@ class MemoryAgent:
                 self.short_term.declined.add(F.norm(pending.data["fact"]))
                 return FollowUp(reply="Theek hai, ye baat yaad nahi rakhi.")
             return None
+        if pending.kind == "retry":  # "Kya main ek dafa aur koshish karoon?" after a safe action failed twice
+            verdict = yes_no(t)
+            if verdict is True:
+                return FollowUp(intents=[Intent(**d) for d in pending.data["intents"]])
+            if verdict is False:
+                return FollowUp(reply="Theek hai, dobara koshish nahi ki. Wajah Activity Log mein hai.")
+            return None
         if pending.kind == "routine":  # "Inka workflow bana doon?" after NOVA noticed a habit
             verdict = yes_no(t)
             if verdict is True:

@@ -129,7 +129,45 @@ CREATE TABLE IF NOT EXISTS usage_events (
     task_id TEXT
 );
 
+-- Bug tracking (Phase 11): problems the admin reports, crashes and failed self-tests, with their history.
+CREATE TABLE IF NOT EXISTS bugs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    phase TEXT,
+    title TEXT NOT NULL,
+    details TEXT,
+    source TEXT NOT NULL,
+    status TEXT NOT NULL,
+    signature TEXT,
+    occurrences INTEGER NOT NULL DEFAULT 1,
+    task_id TEXT,
+    history_json TEXT NOT NULL DEFAULT '[]'
+);
+
+-- Admin decisions from the Admin panel (approve / problem / retest), the audit trail of the approval system.
+CREATE TABLE IF NOT EXISTS approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phase TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    note TEXT,
+    decided_at TEXT NOT NULL,
+    source TEXT NOT NULL
+);
+
+-- Self-test runs (startup, full, per feature).
+CREATE TABLE IF NOT EXISTS test_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    passed INTEGER NOT NULL,
+    warned INTEGER NOT NULL,
+    failed INTEGER NOT NULL,
+    results_json TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events(created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bugs_signature ON bugs(signature) WHERE signature IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_activity_task ON activity_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at);
 CREATE INDEX IF NOT EXISTS idx_conversations_task ON conversations(task_id);
@@ -224,7 +262,7 @@ class Database:
         execution_status: str,
         test_status: str = "not_run",
         verification_status: str = "not_applicable",
-        admin_status: str = "pending",
+        admin_status: str = "not_required",  # set by the Admin panel for its own decisions
         error: str | None = None,
         final_result: str | None = None,
     ) -> None:
@@ -250,8 +288,28 @@ class Database:
             ),
         )
 
-    def list_activity(self, limit: int = 100) -> list[dict[str, Any]]:
-        return self._query("SELECT * FROM activity_log ORDER BY id DESC LIMIT ?", (limit,))
+    ACTIVITY_FILTERS = {
+        "failed": "(execution_status = 'failed' OR verification_status = 'failed' OR error IS NOT NULL)",
+        "unverified": "verification_status IN ('failed', 'unverified')",
+        "permission": "task_name = 'permission_request'",
+        "denied": "permission_status IN ('denied', 'timeout', 'refused_by_nova')",
+        "tests": "(test_status <> 'not_run' OR task_name = 'self_test')",
+        "admin": "admin_status NOT IN ('pending', 'not_required')",
+    }
+
+    def list_activity(self, limit: int = 100, kind: str | None = None, agent: str | None = None,
+                      q: str | None = None) -> list[dict[str, Any]]:
+        sql, params = "SELECT * FROM activity_log WHERE 1 = 1", []
+        if kind in self.ACTIVITY_FILTERS:
+            sql += f" AND {self.ACTIVITY_FILTERS[kind]}"
+        if agent:
+            sql += " AND agent = ?"
+            params.append(agent)
+        if q:
+            sql += (" AND (task_name LIKE ? ESCAPE '\\' OR action LIKE ? ESCAPE '\\' OR IFNULL(final_result, '') LIKE ? "
+                    "ESCAPE '\\' OR task_id = ?)")
+            params += [_like(q)] * 3 + [q]
+        return self._query(sql + " ORDER BY id DESC LIMIT ?", tuple(params + [limit]))
 
     # permissions: remembered approvals and the audit trail of every request
     def add_permission_rule(self, intent: str, scope: str, description: str) -> None:
@@ -460,6 +518,110 @@ class Database:
             self._conn.execute("DELETE FROM usage_events WHERE task_id = ?", (task_id,))
             self._conn.commit()
         return removed > 0
+
+    # bug tracking
+    @staticmethod
+    def _bug_row(row: dict[str, Any]) -> dict[str, Any]:
+        row["history"] = json.loads(row.pop("history_json") or "[]")
+        return row
+
+    def add_bug(self, title: str, source: str, *, phase: str | None = None, details: str | None = None,
+                signature: str | None = None, task_id: str | None = None) -> dict[str, Any]:
+        """New bug - or, for a known signature (the same crash again), one more occurrence (reopened if closed)."""
+        now = _now()
+        if signature and (old := self._query("SELECT * FROM bugs WHERE signature = ?", (signature,))):
+            bug = self._bug_row(old[0])
+            status = "reopened" if bug["status"] in ("fixed", "closed") else bug["status"]
+            history = bug["history"] + ([{"at": now, "status": status, "by": source, "note": "phir hua"}]
+                                        if status != bug["status"] else [])
+            self._execute("UPDATE bugs SET occurrences = occurrences + 1, updated_at = ?, status = ?, task_id = ?, "
+                          "history_json = ? WHERE id = ?",
+                          (now, status, task_id or bug["task_id"], json.dumps(history, ensure_ascii=False), bug["id"]))
+            return self.get_bug(bug["id"]) or {}
+        history = [{"at": now, "status": "open", "by": source, "note": ""}]
+        cur = self._execute(
+            "INSERT INTO bugs(created_at, updated_at, phase, title, details, source, status, signature, task_id, "
+            "history_json) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)",
+            (now, now, phase, redact(title), redact(details), source, signature, task_id,
+             json.dumps(history, ensure_ascii=False)))
+        return self.get_bug(int(cur.lastrowid or 0)) or {}
+
+    def get_bug(self, bug_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM bugs WHERE id = ?", (bug_id,))
+        return self._bug_row(rows[0]) if rows else None
+
+    def list_bugs(self, status: str | None = None, phase: str | None = None) -> list[dict[str, Any]]:
+        sql, params = "SELECT * FROM bugs WHERE 1 = 1", []
+        if status == "active":
+            sql += " AND status IN ('open', 'reopened', 'fixed')"
+        elif status:
+            sql += " AND status = ?"
+            params.append(status)
+        if phase:
+            sql += " AND phase = ?"
+            params.append(phase)
+        return [self._bug_row(r) for r in self._query(sql + " ORDER BY id DESC", tuple(params))]
+
+    def set_bug_status(self, bug_id: int, status: str, by: str, note: str = "") -> dict[str, Any] | None:
+        bug = self.get_bug(bug_id)
+        if bug is None:
+            return None
+        now = _now()
+        history = bug["history"] + [{"at": now, "status": status, "by": by, "note": redact(note) or ""}]
+        self._execute("UPDATE bugs SET status = ?, updated_at = ?, history_json = ? WHERE id = ?",
+                      (status, now, json.dumps(history, ensure_ascii=False), bug_id))
+        return self.get_bug(bug_id)
+
+    # approvals and self-test runs
+    def add_approval(self, phase: str, decision: str, note: str | None, source: str) -> None:
+        self._execute("INSERT INTO approvals(phase, decision, note, decided_at, source) VALUES (?, ?, ?, ?, ?)",
+                      (phase, decision, redact(note), _now(), source))
+
+    def list_approvals(self, phase: str | None = None) -> list[dict[str, Any]]:
+        if phase:
+            return self._query("SELECT * FROM approvals WHERE phase = ? ORDER BY id DESC", (phase,))
+        return self._query("SELECT * FROM approvals ORDER BY id DESC")
+
+    def add_test_run(self, scope: str, results: list[dict[str, Any]]) -> dict[str, Any]:
+        counts = {s: sum(r["status"] == s for r in results) for s in ("pass", "warn", "fail")}
+        cur = self._execute(
+            "INSERT INTO test_runs(started_at, scope, passed, warned, failed, results_json) VALUES (?, ?, ?, ?, ?, ?)",
+            (_now(), scope, counts["pass"], counts["warn"], counts["fail"], json.dumps(results, ensure_ascii=False)))
+        return {"id": int(cur.lastrowid or 0), "scope": scope, "passed": counts["pass"], "warned": counts["warn"],
+                "failed": counts["fail"], "results": results}
+
+    def last_test_run(self, scope: str | None = None) -> dict[str, Any] | None:
+        sql = "SELECT * FROM test_runs" + (" WHERE scope = ?" if scope else "") + " ORDER BY id DESC LIMIT 1"
+        rows = self._query(sql, (scope,) if scope else ())
+        if not rows:
+            return None
+        row = rows[0]
+        row["results"] = json.loads(row.pop("results_json"))
+        return row
+
+    def day_counts(self, day: str) -> dict[str, int]:
+        """Counts only (never text) for the daily summary in LOGS.md."""
+        def one(sql: str, *params: Any) -> int:
+            return int(self._query(sql, params)[0]["n"])
+
+        like = f"{day}%"
+        return {
+            "commands": one("SELECT COUNT(*) AS n FROM conversations WHERE created_at LIKE ?", like),
+            "voice": one("SELECT COUNT(*) AS n FROM conversations WHERE created_at LIKE ? AND source = 'voice'", like),
+            "done": one("SELECT COUNT(*) AS n FROM activity_log WHERE date = ? AND task_name LIKE 'command:%' AND "
+                        "execution_status = 'success'", day),
+            "failed": one("SELECT COUNT(*) AS n FROM activity_log WHERE date = ? AND (execution_status = 'failed' OR "
+                          "verification_status = 'failed')", day),
+            "asked": one("SELECT COUNT(*) AS n FROM activity_log WHERE date = ? AND task_name = 'permission_request'", day),
+            "denied": one("SELECT COUNT(*) AS n FROM activity_log WHERE date = ? AND task_name = 'permission_request' "
+                          "AND permission_status IN ('denied', 'timeout')", day),
+            "bugs": one("SELECT COUNT(*) AS n FROM bugs WHERE created_at LIKE ?", like),
+            "tests": one("SELECT COUNT(*) AS n FROM test_runs WHERE started_at LIKE ?", like),
+            "test_failures": one("SELECT COALESCE(SUM(failed), 0) AS n FROM test_runs WHERE started_at LIKE ?", like),
+        }
+
+    def activity_days(self) -> list[str]:
+        return [r["date"] for r in self._query("SELECT DISTINCT date FROM activity_log ORDER BY date")]
 
     # behavior patterns
     def add_usage(self, kind: str, target: str, task_id: str | None = None) -> None:

@@ -30,6 +30,12 @@ class Settings:
     stt_model: str = "small"
     permission_timeout_s: float = 60.0  # no answer = "no"
     reports_dir: Path | None = None  # research reports; default Documents\NOVA\Research
+    # The admin's record (Phase 11): approvals and the daily summary go into LOGS.md, test steps come from README.md.
+    # None = not used (tests); the real app points them at the project root.
+    logs_path: Path | None = None
+    readme_path: Path | None = None
+    self_test_on_startup: bool = True
+    self_test_delay_s: float = 25.0  # let the system scan and the models load first
 
     @property
     def db_path(self) -> Path:
@@ -54,4 +60,7 @@ def load_settings() -> Settings:
         stt_model=os.environ.get("NOVA_STT_MODEL", "small"),
         discovery_on_startup=os.environ.get("NOVA_DISCOVERY_ON_STARTUP", "1").lower() not in ("0", "false", "no"),
         allowed_origins=DEFAULT_ALLOWED_ORIGINS + extra_origins,
+        logs_path=Path(os.environ.get("NOVA_LOGS_PATH", PROJECT_ROOT / "LOGS.md")),
+        readme_path=Path(os.environ.get("NOVA_README_PATH", PROJECT_ROOT / "README.md")),
+        self_test_on_startup=os.environ.get("NOVA_SELF_TEST", "1").lower() not in ("0", "false", "no"),
     )

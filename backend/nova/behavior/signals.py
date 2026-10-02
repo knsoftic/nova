@@ -101,8 +101,9 @@ def voice_features(pcm: bytes, text: str) -> VoiceFeatures | None:
         return None
     frames = samples[: n * FRAME].reshape(n, FRAME)
     rms = np.sqrt((frames ** 2).mean(axis=1))
-    floor = float(np.percentile(rms, 20))
-    voiced = rms > max(250.0, floor * 3.0)
+    # Speech = frames at least a quarter as loud as the loudest part (robust even when a push-to-talk segment has
+    # almost no silence in it; a "quietest 20% is the room" rule then took the voice itself for background noise).
+    voiced = rms > max(250.0, 0.25 * float(np.percentile(rms, 90)))
     voiced_s = float(voiced.sum()) * FRAME / SAMPLE_RATE
     words = len(text.split())
     if voiced_s < 0.4 or not words:

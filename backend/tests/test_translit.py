@@ -101,6 +101,8 @@ printers privacy radio region rotated sale scanners security send sent sleep sta
 time touchpad twitter uac unmute visiting volume wallpaper webp white wi x youtube
 cnic com conversation deleting forgetting github manager memories notion office pin records reminder study term
 workflows behavior layer record routine energy solar notes
+admin allowed api bug bugs checks count crash database fix font handle integrity logs md models pending
+pillow pitch problem pull retest secrets self sqlite tables tasks token tools voice whisper could
 """.split())
 
 
@@ -116,7 +118,7 @@ def test_every_template_word_is_covered():
               "communication/whatsapp.py", "design/agent.py", "design/images.py", "memory/agent.py",
               "memory/facts.py", "memory/history.py", "memory/workflows.py", "memory/short_term.py",
               "behavior/layer.py", "behavior/style.py", "behavior/patterns.py", "behavior/estimator.py",
-              "behavior/signals.py"]:
+              "behavior/signals.py", "admin/service.py", "admin/selftest.py", "admin/docs.py"]:
         tree = ast.parse((root / f).read_text(encoding="utf-8"))
         # Docstrings are developer documentation, never spoken.
         skipped = {
@@ -128,7 +130,7 @@ def test_every_template_word_is_covered():
         # (and regular expressions are patterns, not sentences)
         # (and PowerShell commands / registry paths are machine text)
         model_calls = ("_ask", "complete_json", "complete", "compile", "sub", "search", "match", "fullmatch",
-                       "_powershell", "OpenKey")
+                       "_powershell", "OpenKey", "execute", "redact")
         for n in ast.walk(tree):
             model_facing = (
                 isinstance(n, (ast.Assign, ast.AugAssign)) and any(

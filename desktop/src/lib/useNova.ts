@@ -39,6 +39,9 @@ export function useNova() {
   const [memoryRevision, setMemoryRevision] = useState(0);
   // Set while NOVA waits for the answer to its own question asked by voice ("Ye yaad rakhoon?").
   const [voiceFollowUp, setVoiceFollowUp] = useState<string | null>(null);
+  // Bumped on self-test runs, bugs and admin decisions; adminAlert = something for the admin to look at.
+  const [adminRevision, setAdminRevision] = useState(0);
+  const [adminAlert, setAdminAlert] = useState(false);
   // NOVA's latest estimate of how the user is communicating (only an estimate; null = nothing to show).
   const [estimate, setEstimate] = useState<BehaviorEstimate | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -102,6 +105,12 @@ export function useNova() {
         }
       }
       if (msg.type === "TASK_COMPLETED" || msg.type === "TASK_FAILED") setMemoryRevision((n) => n + 1);
+      if (msg.type === "SELF_TEST" || msg.type === "BUG_LOGGED" || msg.type === "ADMIN_DECISION") {
+        setAdminRevision((n) => n + 1);
+        const d = msg.data as { failed?: number; warned?: number; bug?: { status?: string } };
+        if (msg.type === "SELF_TEST") setAdminAlert(Boolean(d.failed || d.warned));
+        if (msg.type === "BUG_LOGGED" && d.bug?.status !== "closed") setAdminAlert(true);
+      }
       if (msg.type === "SETTINGS_CHANGED") {
         const next = msg.data as unknown as UserSettings;
         setSettings(next);
@@ -227,6 +236,7 @@ export function useNova() {
 
 
   const clearEvents = useCallback(() => setEvents([]), []);
+  const clearAdminAlert = useCallback(() => setAdminAlert(false), []);
 
   /** Tell the backend NOVA's voice is playing, so the microphone pipeline ignores it. */
   const sendPlayback = useCallback((active: boolean) => {
@@ -257,6 +267,9 @@ export function useNova() {
     memoryRevision,
     voiceFollowUp,
     estimate,
+    adminRevision,
+    adminAlert,
+    clearAdminAlert,
     settings,
     aiStatus,
     refreshAiStatus,

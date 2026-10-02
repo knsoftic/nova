@@ -9,7 +9,7 @@ PENDING_CAPABILITY_PHASE = {
     "open_app": 6,
     "web_search": 8,
     "create_folder": 8,
-    "system_info": 2,
+    "change_setting": 7,
     "run_workflow": 9,
 }
 
@@ -21,15 +21,16 @@ def build_response(intent: Intent, assistant_name: str) -> str:
             return f"Assalam-o-Alaikum! {assistant_name} online hai. Main aapki kya madad kar sakta hoon?"
         case "help":
             return (
-                f"Abhi {assistant_name} Phase 1 (Foundation) mein hai. Main aapki commands samajh kar "
-                "unka intent bata sakta hoon. Application kholna, search, files aur system check "
-                "agle phases mein add honge."
+                f"Abhi {assistant_name} Phase 2 mein hai. Main aapke system ki maloomat de sakta hoon "
+                "(CPU, RAM, GPU, storage, Windows, mic/speaker/camera, browsers, installed apps) aur bata sakta "
+                "hoon ke koi application installed hai ya nahi. Application kholna, search aur files agle "
+                "phases mein add honge."
             )
-        case "open_app":
-            app = e.get("app", "application")
+        case "change_setting":
             return (
-                f"Main samajh gaya, aap {app} open karwana chahte hain. Application launch ki capability "
-                f"Phase {PENDING_CAPABILITY_PHASE['open_app']} mein aayegi, is liye abhi koi action nahi kiya gaya."
+                "Main samajh gaya, aap ek setting change karwana chahte hain. Settings change karne se pehle "
+                f"Permission Engine zaroori hai jo Phase {PENDING_CAPABILITY_PHASE['change_setting']} mein aayega, "
+                "is liye abhi koi setting change nahi ki gayi."
             )
         case "web_search":
             query = e.get("query")
@@ -45,11 +46,6 @@ def build_response(intent: Intent, assistant_name: str) -> str:
             return (
                 f"Main samajh gaya, aap {target} banwana chahte hain. File Agent abhi available nahi hai, "
                 "is liye koi folder create nahi kiya gaya."
-            )
-        case "system_info":
-            return (
-                "Main samajh gaya, aap system ki maloomat chahte hain. System Discovery "
-                f"Phase {PENDING_CAPABILITY_PHASE['system_info']} mein add hogi."
             )
         case "run_workflow":
             return (

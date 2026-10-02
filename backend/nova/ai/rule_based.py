@@ -24,10 +24,47 @@ HELP = re.compile(
     re.IGNORECASE,
 )
 
-SYSTEM_INFO = re.compile(
-    r"\b(?:system|ram|cpu|memory|storage|disk|windows version|profile)\b|سسٹم|सिस्टम",
+# Ordered: the first matching topic wins ("kaun si apps chal rahi hain" is running apps, not installed apps).
+SYSTEM_TOPICS: list[tuple[str, re.Pattern[str]]] = [
+    (topic, re.compile(pattern, re.IGNORECASE))
+    for topic, pattern in [
+        ("running", r"chal rah[eiy]|running|khul[ei] hu[ei]|open (?:apps|windows)"),
+        ("browsers", r"\bbrowsers?\b|براؤزر|ब्राउज़र"),
+        ("apps", r"\b(?:apps?|applications?|softwares?|programs?)\b|ایپس|ایپلیکیشن"),
+        ("ram", r"\bram\b|\bmemory\b|ریم|میموری|रैम"),
+        ("cpu", r"\bcpu\b|processor|پروسیسر|प्रोसेसर"),
+        ("gpu", r"\bgpu\b|graphics?|گرافکس|ग्राफिक्स"),
+        ("storage", r"storage|\bdisk\b|\bdrives?\b|hard ?disk|\bspace\b|اسٹوریج|سٹوریج|स्टोरेज"),
+        ("windows", r"\bwindows\b|ونڈوز|विंडोज"),
+        ("devices", r"\bmic\b|microphone|speakers?|camera|webcam|مائیک|کیمرہ|स्पीकर|कैमरा"),
+        ("displays", r"monitors?|displays?|screens?"),
+        ("network", r"network|internet|wi-?fi|انٹرنیٹ|इंटरनेट"),
+        ("admin", r"\badmin(?:istrator)?\b|permissions?"),
+    ]
+]
+
+SYSTEM_INFO = re.compile(r"\b(?:system|profile|pc|computer|laptop)\b|سسٹم|सिस्टम|کمپیوٹر", re.IGNORECASE)
+
+RESCAN = re.compile(r"\b(?:re-?scan|scan)\b|اسکین|स्कैन", re.IGNORECASE)
+
+APP_CHECK = [
+    re.compile(r"^(?:kya\s+)?(?:mere\s+(?:pc|system|computer|laptop)\s+(?:mein|me|par|pe)\s+)?(?P<app>.+?)\s+installed\s+(?:hai|he|h|hain)\b", re.IGNORECASE),
+    re.compile(r"^is\s+(?P<app>.+?)\s+installed\b", re.IGNORECASE),
+    re.compile(r"^(?:do\s+i\s+have|have\s+i\s+got)\s+(?P<app>.+?)(?:\s+installed)?$", re.IGNORECASE),
+]
+NOT_AN_APP = re.compile(r"\b(?:apps?|applications?|softwares?|programs?|kaun|kon|konse|kaunse|which|what|kitn[ei])\b", re.IGNORECASE)
+
+CHANGE_SETTING = re.compile(
+    r"\b(?:default|settings?)\b.*\b(?:bana|set|change|badal|make)\b|\b(?:set|make|change)\b.*\bdefault\b",
     re.IGNORECASE,
 )
+
+
+def system_topic(text: str) -> str | None:
+    for topic, pattern in SYSTEM_TOPICS:
+        if pattern.search(text):
+            return topic
+    return None
 
 CREATE_FOLDER = [
     re.compile(r"\b(?:create|make|new)\s+(?:a\s+)?folder(?:\s+(?:named|called)\s+(?P<name>.+))?$", re.IGNORECASE),
@@ -115,8 +152,19 @@ class RuleBasedProvider(AIProvider):
             if m := pattern.search(cleaned):
                 return make("open_app", 0.85, app=_clean_entity(m.group("app")))
 
-        if SYSTEM_INFO.search(cleaned):
-            return make("system_info", 0.75)
+        if CHANGE_SETTING.search(cleaned):
+            return make("change_setting", 0.7, request=cleaned)
+
+        for pattern in APP_CHECK:
+            if (m := pattern.search(cleaned)) and not NOT_AN_APP.search(m.group("app")):
+                return make("app_check", 0.85, app=_clean_entity(m.group("app")))
+
+        if RESCAN.search(cleaned):
+            return make("rescan_system", 0.8)
+
+        topic = system_topic(cleaned)
+        if topic or SYSTEM_INFO.search(cleaned):
+            return make("system_info", 0.8, topic=topic or "summary")
 
         if HELP.search(cleaned):
             return make("help", 0.8)

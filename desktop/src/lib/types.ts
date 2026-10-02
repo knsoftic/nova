@@ -24,7 +24,76 @@ export type EventType =
   | "VERIFICATION_PASSED"
   | "NOVA_RESPONSE"
   | "TASK_FAILED"
-  | "TASK_COMPLETED";
+  | "TASK_COMPLETED"
+  | "DISCOVERY_STARTED"
+  | "DISCOVERY_COMPLETED"
+  | "DISCOVERY_FAILED";
+
+export interface DriveInfo {
+  mountpoint: string;
+  filesystem: string | null;
+  total_bytes: number;
+  free_bytes: number;
+}
+
+export interface AppEntry {
+  name: string;
+  version: string | null;
+  publisher: string | null;
+  sources: string[];
+  app_id: string | null;
+  executable: string | null;
+}
+
+export interface Recommendation {
+  key: string;
+  value: string;
+  reason: string;
+  auto_applied: boolean;
+}
+
+export interface SystemProfile {
+  scanned_at: string;
+  scan_duration_ms: number;
+  platform: string;
+  cpu: { name: string | null; manufacturer: string | null; cores: number | null; threads: number | null; max_clock_mhz: number | null };
+  ram_total_bytes: number | null;
+  gpus: { name: string; memory_bytes: number | null; driver_version: string | null; vendor: string | null; dedicated: boolean | null }[];
+  drives: DriveInfo[];
+  windows: {
+    caption: string | null;
+    version: string | null;
+    build: string | null;
+    display_version: string | null;
+    architecture: string | null;
+    computer_name: string | null;
+    manufacturer: string | null;
+    model: string | null;
+  };
+  microphones: { name: string }[];
+  speakers: { name: string }[];
+  cameras: string[];
+  displays: { name: string; primary: boolean; width: number | null; height: number | null }[];
+  network: { name: string; is_up: boolean; ipv4: string[] }[];
+  network_connected: boolean;
+  apps: AppEntry[];
+  browsers: { name: string; executable: string | null; is_default: boolean }[];
+  running_apps: { name: string; title: string | null; pid: number }[];
+  startup_items: { name: string; location: string; command: string | null }[];
+  services: { name: string; display_name: string | null; status: string | null; start_type: string | null }[];
+  permissions: { is_elevated: boolean; user_is_admin: boolean };
+  recommendations: Recommendation[];
+  errors: string[];
+}
+
+export interface LiveStats {
+  cpu_percent: number;
+  ram_total_bytes: number;
+  ram_available_bytes: number;
+  ram_percent: number;
+  drives: DriveInfo[];
+  uptime_seconds: number;
+}
 
 export interface NovaEvent {
   type: EventType;

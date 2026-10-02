@@ -24,6 +24,7 @@ class Settings:
     data_dir: Path = PROJECT_ROOT / "data"
     assistant_name: str = "NOVA"
     ai_provider: str = "rule_based"
+    discovery_on_startup: bool = True
     allowed_origins: tuple[str, ...] = field(default=DEFAULT_ALLOWED_ORIGINS)
 
     @property
@@ -42,5 +43,6 @@ def load_settings() -> Settings:
         data_dir=Path(os.environ.get("NOVA_DATA_DIR", PROJECT_ROOT / "data")),
         assistant_name=os.environ.get("NOVA_ASSISTANT_NAME", "NOVA"),
         ai_provider=os.environ.get("NOVA_AI_PROVIDER", "rule_based"),
+        discovery_on_startup=os.environ.get("NOVA_DISCOVERY_ON_STARTUP", "1").lower() not in ("0", "false", "no"),
         allowed_origins=DEFAULT_ALLOWED_ORIGINS + extra_origins,
     )

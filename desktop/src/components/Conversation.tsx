@@ -21,7 +21,7 @@ export function Conversation({ messages, assistantName }: { messages: ChatMessag
       {messages.map((m) => (
         <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
           <div
-            className={`max-w-[85%] rounded-xl px-4 py-2 text-sm ${
+            className={`max-w-[85%] whitespace-pre-line rounded-xl px-4 py-2 text-sm ${
               m.role === "user"
                 ? "bg-sky-500/15 text-sky-50"
                 : m.failed

@@ -20,7 +20,7 @@ export interface AgentInfo {
 
 export const AGENTS: AgentInfo[] = [
   { name: "Orchestrator", description: "Command samajhna aur route karna", phase: null },
-  { name: "System Agent", description: "System maloomat aur Windows actions", phase: 8 },
+  { name: "System Agent", description: "System maloomat (read-only). Windows actions Phase 8 mein", phase: null },
   { name: "Browser Agent", description: "Browser, search, websites", phase: 8 },
   { name: "File Agent", description: "Files aur folders", phase: 8 },
   { name: "Coding Agent", description: "VS Code, projects, errors", phase: 8 },
@@ -28,6 +28,19 @@ export const AGENTS: AgentInfo[] = [
   { name: "Design Agent", description: "Design tools", phase: 8 },
   { name: "Communication Agent", description: "Messages (permission ke sath)", phase: 8 },
 ];
+
+export function formatBytes(n: number | null | undefined): string {
+  if (!n) return "?";
+  const gb = n / 1024 ** 3;
+  if (gb >= 1) return gb < 10 ? `${gb.toFixed(1)} GB` : `${Math.round(gb)} GB`;
+  return `${Math.round(n / 1024 ** 2)} MB`;
+}
+
+export function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
 export function formatTime(iso: string): string {
   const d = new Date(iso);

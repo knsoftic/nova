@@ -2,7 +2,7 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 8C (System settings + Communication + Design)** — all Phase 8 agents. NOVA listens (push-to-talk or wake word), understands
+Current status: **Phase 9 (Memory)**. NOVA listens (push-to-talk or wake word), understands
 Urdu / Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in
 an offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
 afterwards). Risky actions — typing, clicking, pasting, closing apps — run only after the user says yes
@@ -12,7 +12,9 @@ or writes research reports from web sources. It manages files in the user's fold
 rename, move, copy, delete to the Recycle Bin, edit, organize, report, undo) and works on code projects (VS Code,
 tests, error checks, explaining and fixing errors with a diff shown first). It changes common Windows settings,
 sends WhatsApp messages and emails to contacts the user saved (always asking first), and edits pictures or makes
-simple designs. See [LOGS.md](LOGS.md) for development history and approval status.
+simple designs. It remembers what the user asks it to (never silently), keeps a searchable conversation history
+for a chosen number of days, and learns workflows such as "work start karo". See [LOGS.md](LOGS.md) for
+development history and approval status.
 
 ## Voice (offline)
 
@@ -101,6 +103,28 @@ Measure the brain against real commands:
   designs (post, story, banner, thumbnail, poster...) saved to `Pictures\NOVA\Designs`; open a file in Photoshop,
   Paint, Word, VS Code... Roman Urdu/English text only (Urdu script needs a text-shaping library not installed).
 
+## Memory
+
+All memory stays on this PC (SQLite in `data/`), and the **Memory** tab shows and deletes all of it.
+
+- **Short-term memory:** the current conversation (last few turns) in RAM only — so "isko", "dobara karo" and
+  NOVA's own questions are understood. Cleared after 30 minutes of silence, on restart, or with "naya topic".
+- **Long-term memory:** only what the user asks for ("yaad rakho ke meri wife ki birthday 5 March ko hai"), or
+  says "haan" to — after a personal statement ("mera naam Ahmed hai") NOVA asks "Ye yaad rakhoon?". Passwords,
+  PINs, card/CNIC/account numbers are refused. A new name/city replaces the old one; NOVA greets by name. Related
+  memories are given to the local model as context. Forgetting ("chai wali baat bhool jao") is asked first;
+  forgetting everything is high risk.
+- **Conversation history:** every request with date, time, response, actions, permission, verification, error and
+  completion status; searchable by voice ("kal maine kya kaha tha", "history mein report dhoondo") or in the
+  Memory tab. Deleted automatically after 90 days (30 days / 1 year / forever in the Memory tab). Deleting all
+  history is high risk and also removes its activity log.
+- **Workflows:** the first "work start karo" asks which apps to open and remembers the answer; later it opens
+  them all (each verified). Workflows only open things — apps, websites, code projects, folders — and may set a
+  fixed volume/brightness; nothing that deletes, sends or edits. Names: "study workflow banao: YouTube aur
+  Notion", "study start karo", "work workflow mein Spotify bhi add karo".
+- **Task memory:** "dobara karo" repeats the last command (asking again if it is risky); "kya kaha" repeats the
+  last reply. **System memory** is the system profile (System Profile tab).
+
 ## Layout
 
 ```
@@ -116,6 +140,7 @@ nova/
 │   │   ├── permissions/    risk classification, asking the user, remembered approvals, audit
 │   │   ├── communication/  Communication Agent: contacts, WhatsApp click-to-chat, Outlook/mail drafts
 │   │   ├── design/         Design Agent: image tools and template designs (Pillow)
+│   │   ├── memory/         Memory Agent: short-term memory, facts, history search/retention, workflows
 │   │   ├── files/          allowed folders, search, documents, Recycle Bin, verified file operations + undo
 │   │   ├── coding/         Coding Agent: projects, allowed commands, error parsing, checked code edits
 │   │   ├── browser/        Browser Agent + Playwright controller (NOVA's own Chrome profile)
@@ -127,8 +152,8 @@ nova/
 │   │   ├── ai/             Provider Manager (hybrid/llm/rules), Ollama provider, rule-based provider
 │   │   ├── language.py     Urdu / Hindi / Roman Urdu / English detection
 │   │   ├── responses.py    Roman Urdu response catalog
-│   │   ├── user_settings.py assistant name, wake word, listening, startup mode
-│   │   ├── db.py           SQLite (settings, conversations, activity_log)
+│   │   ├── user_settings.py assistant name, wake word, listening, AI mode, history retention
+│   │   ├── db.py           SQLite (settings, conversations, activity log, memories, workflows)
 │   │   └── redaction.py    secret scrubbing before logging
 │   └── tests/
 ├── desktop/            Electron + React + TypeScript + Tailwind
@@ -205,6 +230,27 @@ Environment variables (backend):
 | `NOVA_ASSISTANT_NAME` | `NOVA` | Assistant name |
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
+
+## Admin manual test (Phase 9, approved)
+
+1. `desktop/` mein `npm start`. Beech mein naya **Memory** tab nazar aaye (Yaadein, Workflows, History, Abhi ki
+   baat-cheet).
+2. **Yaad rakhna:** `yaad rakho ke meri wife ki birthday 5 March ko hai` → "Yaad kar liya". Phir `meri biwi ki
+   salgirah kab hai` / `yaad hai ke ... kab hai` → wahi baat. Memory → Yaadein mein nazar aaye.
+3. **Tajweez:** `mera naam <aap ka naam> hai` → NOVA poochay "naam yaad rakhoon?" (Haan/Nahi buttons) → **Haan**.
+   `salam` → "Assalam-o-Alaikum <naam>!". `mera naam kya hai` → naam. `mujhe chai pasand hai` → **Nahi** → yaad
+   nahi hona chahiye. `yaad rakho ke mera ATM pin 1234 hai` → inkaar.
+4. **Bhoolna:** `chai wali baat bhool jao` (ya koi aur) → dialog mein wahi baat → Haan → Yaadein se gayab.
+5. **Workflow:** `work start karo` → "Kaun se applications open karoon?" → maslan `Chrome, VS Code aur WhatsApp`
+   → workflow save ho aur sab khulein. Apps band karein, phir dobara `work start karo` → bina pooche sab khulein.
+   Memory → Workflows mein "Chalao / Badlo / Hatao". `study workflow banao: YouTube aur Downloads folder`,
+   `study start karo`.
+6. **History:** kuch commands ke baad `aaj kya kya kiya`, `history mein Chrome dhoondo`. Memory → History mein
+   search, din (Aaj/Kal/7 din) aur ek record "Mitao". "History kitni der rakhein" 90 din hai. (Saari history
+   mitane ka test sirf **Nahi** daba kar karein, warna sab mit jayega.)
+7. **Dobara:** `RAM batao`, phir `dobara karo`; `kya kaha`. `naya topic` → Abhi ki baat-cheet saaf.
+8. **Awaaz:** mic se `mera naam ... hai` kahein → NOVA bol kar poochay aur mic khud khule → "haan" kahein.
+9. **Activity Log** mein memory ke kaam; sab theek ho to approve karein, warna problem batayein.
 
 ## Admin manual test (Phase 8C, approved)
 

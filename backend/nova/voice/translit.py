@@ -133,6 +133,13 @@ LEXICON: dict[str, str] = {
     "dabayenge": "دبائیں گے", "dekhna": "دیکھنا", "dikhana": "دکھانا", "ghumao": "گھماؤ", "haroof": "حروف",
     "hatana": "ہٹانا", "hona": "ہونا", "jayenge": "جائیں گے", "khulne": "کھلنے", "lag": "لگ", "lamba": "لمبا",
     "paas": "پاس", "pakka": "پکا", "rang": "رنگ", "waisi": "ویسی", "yahi": "یہی",
+    # Phase 9: memory, history, workflows
+    "baaton": "باتوں", "bas": "بس", "bhool": "بھول", "cheezon": "چیزوں", "chhor": "چھوڑ", "chhorna": "چھوڑنا",
+    "daal": "ڈال", "dilana": "دلانا", "dunga": "دوں گا", "inhein": "انہیں", "jaoon": "جاؤں", "kahunga": "کہوں گا",
+    "keh": "کہہ", "kehne": "کہنے", "kholoon": "کھولوں", "lambi": "لمبی", "lunga": "لوں گا", "maine": "میں نے",
+    "mitai": "مٹائی", "mitana": "مٹانا", "mitane": "مٹانے", "parega": "پڑے گا", "pichle": "پچھلے", "rahegi": "رہے گی",
+    "rakhi": "رکھی", "rakhni": "رکھنی", "rakho": "رکھو", "rakhoon": "رکھوں", "rakhta": "رکھتا", "saari": "ساری",
+    "sire": "سرے", "tasveerein": "تصویریں", "yaadein": "یادیں",
 }
 # "ki" appears twice above (possessive and "did"); both are written the same in Urdu.
 

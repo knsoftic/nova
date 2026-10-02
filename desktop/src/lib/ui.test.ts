@@ -3,7 +3,19 @@ import { matchesActivity } from "./activityFilter";
 import { computeLevel, smoothLevel } from "./audio";
 import { emptyHistory, navigateHistory, pushHistory } from "./commandHistory";
 import type { AiStatus, EventType, NovaEvent } from "./types";
-import { aiLabel, formatBytes, formatDuration, linkParts, messageBlocks, providerLabel, showPhone } from "./ui";
+import {
+  OUTCOME_META,
+  RETENTION_OPTIONS,
+  aiLabel,
+  formatBytes,
+  formatDuration,
+  linkParts,
+  messageBlocks,
+  providerLabel,
+  shortDate,
+  showPhone,
+  workflowCommand,
+} from "./ui";
 
 const ev = (type: EventType, agent: string | null = "Orchestrator"): NovaEvent => ({
   type,
@@ -151,5 +163,20 @@ describe("showPhone", () => {
     expect(showPhone("923001234567")).toBe("+92 300 1234567");
     expect(showPhone("971501234567")).toBe("+971501234567");
     expect(showPhone(null)).toBe("");
+  });
+});
+
+describe("memory helpers", () => {
+  it("formats memory and history dates", () => {
+    expect(shortDate("2026-10-02T14:05:00")).toBe("2 Oct");
+    expect(shortDate("2026-03-05")).toBe("5 Mar");
+    expect(shortDate(null)).toBe("");
+    expect(shortDate("not a date")).toBe("");
+  });
+
+  it("runs a workflow through a normal command and offers every retention choice", () => {
+    expect(workflowCommand("study")).toBe("study workflow chalao");
+    expect(RETENTION_OPTIONS.map((o) => o.value)).toEqual([30, 90, 365, 0]);
+    expect(Object.keys(OUTCOME_META).sort()).toEqual(["answered", "denied", "done", "failed", "not_understood"]);
   });
 });

@@ -3,13 +3,18 @@ import type {
   AiStatus,
   Contact,
   FileRoot,
+  HistoryPeriod,
+  HistoryRecord,
   LiveStats,
+  MemoryFact,
   PermissionRequest,
   PermissionRule,
+  ShortTermMemory,
   SystemProfile,
   UserSettings,
   VoiceStatus,
   WebStatus,
+  Workflow,
 } from "./types";
 
 export const API_BASE = import.meta.env.VITE_NOVA_API_URL ?? "http://127.0.0.1:8765";
@@ -61,6 +66,21 @@ export const api = {
   addContact: (contact: { name: string; phone?: string; email?: string }) =>
     request<Contact>("/api/contacts", json("POST", contact)),
   deleteContact: (id: number) => request<{ ok: boolean }>(`/api/contacts/${id}`, { method: "DELETE" }),
+  memoryFacts: () => request<MemoryFact[]>("/api/memory/facts"),
+  addMemoryFact: (text: string) => request<MemoryFact>("/api/memory/facts", json("POST", { text })),
+  deleteMemoryFact: (id: number) => request<{ ok: boolean }>(`/api/memory/facts/${id}`, { method: "DELETE" }),
+  deleteAllMemoryFacts: () => request<{ ok: boolean; removed: number }>("/api/memory/facts", { method: "DELETE" }),
+  workflows: () => request<Workflow[]>("/api/workflows"),
+  saveWorkflow: (name: string, steps: string) =>
+    request<{ workflow: Workflow; problems: string[]; summary: string }>("/api/workflows", json("PUT", { name, steps })),
+  deleteWorkflow: (id: number) => request<{ ok: boolean }>(`/api/workflows/${id}`, { method: "DELETE" }),
+  history: (q = "", period: HistoryPeriod = "", limit = 50) =>
+    request<HistoryRecord[]>(`/api/history?q=${encodeURIComponent(q)}&period=${period}&limit=${limit}`),
+  deleteHistoryEntry: (taskId: string) =>
+    request<{ ok: boolean }>(`/api/history/${encodeURIComponent(taskId)}`, { method: "DELETE" }),
+  deleteAllHistory: () => request<{ ok: boolean; removed: number }>("/api/history", { method: "DELETE" }),
+  shortTerm: () => request<ShortTermMemory>("/api/memory/short-term"),
+  clearShortTerm: () => request<{ ok: boolean }>("/api/memory/short-term", { method: "DELETE" }),
   /** Write-only: the backend encrypts the value and only ever returns a masked hint. */
   setSecret: (name: string, value: string) =>
     request<{ ok: boolean; masked: string }>(`/api/secrets/${encodeURIComponent(name)}`, json("PUT", { value })),

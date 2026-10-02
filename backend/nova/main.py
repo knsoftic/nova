@@ -36,8 +36,14 @@ from .events import EventBus, EventType, NovaEvent
 from .orchestrator import CommandResult, Orchestrator
 from .agents.computer import ComputerAgent, Desktop
 from .browser import BrowserController
-from .browser.agent import BrowserAgent
+from .browser.agent import BrowserAgent, site_for
 from .known_folders import known_folder
+from .memory import facts as memory_facts
+from .memory.agent import NAME as MEMORY_AGENT
+from .memory.agent import MemoryAgent
+from .memory.history import PERIODS
+from .memory.short_term import ShortTermMemory
+from .memory.workflows import MAX_STEPS, StepResolver, numbered, workflow_key
 from .research import ResearchAgent
 from .secret_store import KNOWN_SECRETS, delete_secret, get_secret, masked, set_secret
 from .permissions import PermissionEngine
@@ -102,6 +108,15 @@ class ContactRequest(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     phone: str | None = Field(default=None, max_length=30)
     email: str | None = Field(default=None, max_length=120)
+
+
+class MemoryRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=memory_facts.MAX_FACT_CHARS)
+
+
+class WorkflowRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=40)
+    steps: str = Field(min_length=1, max_length=600)
 
 
 class SpeakRequest(BaseModel):
@@ -217,6 +232,36 @@ def create_app(
         design_kwargs.update(design_overrides or {})
         design = DesignAgent(scope, designs_dir=lambda: known("pictures") / "NOVA" / "Designs",
                              resolve_file=files.resolve_target, remember=remember, **design_kwargs)
+
+        short_term = ShortTermMemory()
+
+        def forget_current_file() -> None:  # "isko" belongs to the conversation that just ended
+            files.ctx.last_results, files.ctx.last_path, files.ctx.last_folder = [], None, None
+
+        short_term.on_clear(forget_current_file)
+
+        async def ensure_profile() -> None:
+            if discovery.profile is None:
+                with contextlib.suppress(Exception):
+                    await discovery.run_scan(reason="first_use")
+
+        async def memory_changed(data: dict[str, Any]) -> None:
+            if data.get("cleared"):
+                bus.clear_history()
+            message = {"facts": "Yaadein update hui", "workflows": "Workflows update hue",
+                       "history": "History ka ek record mitaya" if data.get("deleted") else "History mitai gayi",
+                       }.get(data.get("what", ""), "Memory update hui")
+            await bus.publish(NovaEvent(type=EventType.MEMORY_CHANGED, agent=MEMORY_AGENT, message=message, data=data))
+
+        memory = MemoryAgent(
+            db, short_term,
+            StepResolver(apps=lambda: discovery.profile.apps if discovery.profile else None, projects=coding.find,
+                         folder=files.resolve_folder, site_for=site_for),
+            ensure_profile=ensure_profile,
+            history_days=lambda: app.state.user_settings.history_days,
+            notify=memory_changed,
+        )
+        app.state.memory = memory
         app.state.orchestrator = Orchestrator(
             bus, db, providers, assistant_name, discovery, computer, permissions,
             browser=BrowserAgent(browser, engine=lambda: app.state.user_settings.search_engine),
@@ -226,9 +271,11 @@ def create_app(
             settings_agent=SettingsAgent(windows_settings or WindowsSettings(), window_titles=window_titles),
             communication=communication,
             design=design,
+            memory=memory,
         )
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
+        app.state.orchestrator.purge_history(force=True)  # history older than the chosen number of days
         voice = VoiceService(
             bus,
             app.state.orchestrator,
@@ -317,6 +364,8 @@ def create_app(
         orchestrator().apply_settings(new.assistant_name, new.wake_word)
         app.state.voice.apply_settings(new)
         changed = sorted(k for k, v in update.model_dump(exclude_none=True).items())
+        if "history_days" in changed:  # a shorter period applies right away
+            orchestrator().purge_history(force=True)
         if {"ai_mode", "ai_model"} & set(changed):
             app.state.providers.configure(mode=new.ai_mode, model=new.ai_model)
             task = asyncio.create_task(_prepare_ai(app.state.providers, app.state.bus))
@@ -397,6 +446,109 @@ def create_app(
         app.state.db.add_activity(task_id="contacts", task_name="delete_contact", agent="Communication Agent",
                                   action="delete_contact", permission_status="user_initiated",
                                   execution_status="success", final_result=f"contact {contact_id} hataya")
+        return {"ok": True}
+
+    # ------------------------------------------------------------------ memory (the user controls what NOVA keeps)
+
+    def memory_error(field: str, message: str) -> RequestValidationError:
+        # Built by hand: the user's text is never echoed back in the error.
+        return RequestValidationError([{"loc": ("body", field), "msg": message, "type": "value_error"}])
+
+    def log_memory(action: str, result: str) -> None:
+        app.state.db.add_activity(task_id="memory", task_name=action, agent=MEMORY_AGENT, action=action,
+                                  permission_status="user_initiated", execution_status="success", final_result=result)
+
+    @app.get("/api/memory/facts")
+    async def list_memory_facts() -> list[dict[str, Any]]:
+        return app.state.db.list_memories()
+
+    @app.post("/api/memory/facts")
+    async def add_memory_fact(body: MemoryRequest) -> dict[str, Any]:
+        text = memory_facts.clean(body.text)
+        if why := memory_facts.problem(text):
+            raise memory_error("text", why)
+        fact = memory_facts.to_fact(text)
+        if app.state.memory.find_same(fact):
+            raise memory_error("text", "Ye pehle se yaad hai")
+        row = app.state.db.add_memory(fact.text, "user_ui", fact.slot, fact.value)
+        log_memory("remember_fact", f"yaad {row['id']} save hui")
+        await app.state.memory.changed("facts")
+        return row
+
+    @app.delete("/api/memory/facts/{memory_id}")
+    async def delete_memory_fact(memory_id: int) -> dict[str, Any]:
+        if not app.state.db.delete_memories([memory_id]):
+            raise HTTPException(status_code=404, detail="Ye yaad nahi mili")
+        log_memory("forget_memory", f"yaad {memory_id} mitai")
+        await app.state.memory.changed("facts")
+        return {"ok": True}
+
+    @app.delete("/api/memory/facts")
+    async def delete_all_memory_facts() -> dict[str, Any]:
+        removed = app.state.db.delete_all_memories()
+        log_memory("forget_memory", f"saari {removed} yaadein mitai")
+        await app.state.memory.changed("facts")
+        return {"ok": True, "removed": removed}
+
+    @app.get("/api/workflows")
+    async def list_workflows() -> list[dict[str, Any]]:
+        return app.state.db.list_workflows()
+
+    @app.put("/api/workflows")
+    async def save_workflow(body: WorkflowRequest) -> dict[str, Any]:
+        memory: MemoryAgent = app.state.memory
+        name = workflow_key(body.name)
+        if not name:
+            raise memory_error("name", "Workflow ka naam dein")
+        if memory.ensure_profile is not None:
+            await memory.ensure_profile()
+        steps, problems = await asyncio.to_thread(memory.resolver.resolve_all, body.steps)
+        if not steps:
+            raise memory_error("steps", "Kuch nahi mila: " + "; ".join(problems))
+        if len(steps) > MAX_STEPS:
+            raise memory_error("steps", f"Ek workflow mein {MAX_STEPS} cheezon tak ho sakti hain")
+        row = app.state.db.save_workflow(name, [s.to_dict() for s in steps])
+        log_memory("save_workflow", f"{name}: {len(steps)} cheezein")
+        await memory.changed("workflows")
+        return {"workflow": row, "problems": problems, "summary": numbered(steps)}
+
+    @app.delete("/api/workflows/{workflow_id}")
+    async def delete_workflow(workflow_id: int) -> dict[str, Any]:
+        if not app.state.db.delete_workflow(workflow_id):
+            raise HTTPException(status_code=404, detail="Workflow nahi mila")
+        log_memory("delete_workflow", f"workflow {workflow_id} mitaya")
+        await app.state.memory.changed("workflows")
+        return {"ok": True}
+
+    @app.get("/api/history")
+    async def history(q: str = "", period: str = "", limit: int = 50) -> list[dict[str, Any]]:
+        if period not in ("", *PERIODS):
+            raise HTTPException(status_code=422, detail="Period sahi nahi")
+        return app.state.memory.history(q[:100], "" if period == "all" else period, max(1, min(limit, 200)), raw=True)
+
+    @app.delete("/api/history/{task_id}")
+    async def delete_history_entry(task_id: str) -> dict[str, Any]:
+        if not app.state.db.delete_task_history(task_id):
+            raise HTTPException(status_code=404, detail="Ye record nahi mila")
+        await app.state.memory.changed("history", deleted=task_id)
+        return {"ok": True}
+
+    @app.delete("/api/history")
+    async def delete_all_history() -> dict[str, Any]:
+        removed = app.state.db.delete_history()
+        app.state.memory.short_term.clear()
+        log_memory("clear_history", f"saari history mitai ({removed} baatein)")
+        await app.state.memory.changed("history", cleared=True, all=True)
+        return {"ok": True, "removed": removed}
+
+    @app.get("/api/memory/short-term")
+    async def short_term_memory() -> dict[str, Any]:
+        return app.state.memory.short_term.snapshot()
+
+    @app.delete("/api/memory/short-term")
+    async def clear_short_term_memory() -> dict[str, Any]:
+        app.state.memory.short_term.clear()
+        await app.state.memory.changed("short_term")
         return {"ok": True}
 
     @app.get("/api/files/roots")

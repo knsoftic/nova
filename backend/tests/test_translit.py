@@ -99,6 +99,8 @@ drafts email facebook fi firewall format full grand hd header headphones instagr
 mail message monitor mute night notepad original outbox outlook paint phone picture png post power powerpoint
 printers privacy radio region rotated sale scanners security send sent sleep startup story subject theme thumbnail
 time touchpad twitter uac unmute visiting volume wallpaper webp white wi x youtube
+cnic com conversation deleting forgetting github manager memories notion office pin records reminder study term
+workflows
 """.split())
 
 
@@ -111,7 +113,8 @@ def test_every_template_word_is_covered():
               "files/scope.py", "files/documents.py", "coding/agent.py", "coding/runner.py", "coding/projects.py",
               "coding/editor.py", "coding/diagnostics.py", "agents/settings_agent.py", "control/settings.py",
               "communication/agent.py", "communication/contacts.py", "communication/email.py",
-              "communication/whatsapp.py", "design/agent.py", "design/images.py"]:
+              "communication/whatsapp.py", "design/agent.py", "design/images.py", "memory/agent.py",
+              "memory/facts.py", "memory/history.py", "memory/workflows.py", "memory/short_term.py"]:
         tree = ast.parse((root / f).read_text(encoding="utf-8"))
         # Docstrings are developer documentation, never spoken.
         skipped = {
@@ -127,8 +130,8 @@ def test_every_template_word_is_covered():
         for n in ast.walk(tree):
             model_facing = (
                 isinstance(n, (ast.Assign, ast.AugAssign)) and any(
-                    isinstance(t, ast.Name) and (t.id.endswith(("_SYSTEM", "_EXAMPLE")) or t.id in ("_META", "prompt",
-                                                                                               "PERSONALIZE"))
+                    isinstance(t, ast.Name) and (t.id.endswith(("_SYSTEM", "_EXAMPLE")) or t.id in (
+                        "_META", "prompt", "PERSONALIZE", "STOPWORDS", "QUESTION_WORDS"))  # word lists for matching
                     for t in (n.targets if isinstance(n, ast.Assign) else [n.target]))
             ) or (isinstance(n, ast.Call) and (
                 (isinstance(n.func, ast.Attribute) and n.func.attr in model_calls)

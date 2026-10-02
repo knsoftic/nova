@@ -95,9 +95,44 @@ CREATE TABLE IF NOT EXISTS contacts (
     created_at TEXT NOT NULL
 );
 
+-- Long-term memory: only what the user asked NOVA to remember (or approved). Slots (name, city, ...) hold one value.
+CREATE TABLE IF NOT EXISTS memories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    text TEXT NOT NULL,
+    slot TEXT,
+    value TEXT,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    uses INTEGER NOT NULL DEFAULT 0,
+    last_used TEXT
+);
+
+-- Workflow memory: named routines of exact, already-resolved "open" steps.
+CREATE TABLE IF NOT EXISTS workflows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    steps_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    runs INTEGER NOT NULL DEFAULT 0,
+    last_run TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_activity_task ON activity_log(task_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at);
+CREATE INDEX IF NOT EXISTS idx_conversations_task ON conversations(task_id);
+CREATE INDEX IF NOT EXISTS idx_activity_date ON activity_log(date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_memories_slot ON memories(slot) WHERE slot IS NOT NULL;
 """
+
+
+def _now() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def _like(term: str) -> str:
+    return "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
 class Database:
@@ -278,6 +313,140 @@ class Database:
 
     def delete_contact(self, contact_id: int) -> bool:
         return self._execute("DELETE FROM contacts WHERE id = ?", (contact_id,)).rowcount > 0
+
+    # long-term memory
+    def add_memory(self, text: str, source: str, slot: str | None = None, value: str | None = None) -> dict[str, Any]:
+        """Save a memory; a slot memory (name, city...) replaces the previous one for that slot."""
+        now = _now()
+        with self._lock:
+            if slot:
+                cur = self._conn.execute(
+                    "INSERT INTO memories(text, slot, value, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(slot) WHERE slot IS NOT NULL DO UPDATE SET text = excluded.text, value = excluded.value, "
+                    "source = excluded.source, updated_at = excluded.updated_at RETURNING id",
+                    (text, slot, value, source, now, now))
+            else:
+                cur = self._conn.execute(
+                    "INSERT INTO memories(text, source, created_at, updated_at) VALUES (?, ?, ?, ?) RETURNING id",
+                    (text, source, now, now))
+            memory_id = cur.fetchone()[0]
+            self._conn.commit()
+        return self.get_memory(memory_id) or {}
+
+    def get_memory(self, memory_id: int) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM memories WHERE id = ?", (memory_id,))
+        return rows[0] if rows else None
+
+    def memory_for_slot(self, slot: str) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM memories WHERE slot = ?", (slot,))
+        return rows[0] if rows else None
+
+    def list_memories(self) -> list[dict[str, Any]]:
+        return self._query("SELECT * FROM memories ORDER BY id DESC")
+
+    def touch_memories(self, ids: list[int]) -> None:
+        for memory_id in ids:
+            self._execute("UPDATE memories SET uses = uses + 1, last_used = ? WHERE id = ?", (_now(), memory_id))
+
+    def delete_memories(self, ids: list[int]) -> int:
+        if not ids:
+            return 0
+        marks = ",".join("?" * len(ids))
+        return self._execute(f"DELETE FROM memories WHERE id IN ({marks})", tuple(ids)).rowcount
+
+    def delete_all_memories(self) -> int:
+        return self._execute("DELETE FROM memories").rowcount
+
+    # workflows
+    def save_workflow(self, name: str, steps: list[dict[str, Any]]) -> dict[str, Any]:
+        now = _now()
+        self._execute(
+            "INSERT INTO workflows(name, steps_json, created_at, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(name) DO UPDATE SET steps_json = excluded.steps_json, updated_at = excluded.updated_at",
+            (name, json.dumps(steps, ensure_ascii=False), now, now),
+        )
+        return self.get_workflow(name) or {}
+
+    @staticmethod
+    def _workflow_row(row: dict[str, Any]) -> dict[str, Any]:
+        row["steps"] = json.loads(row.pop("steps_json"))
+        return row
+
+    def get_workflow(self, name: str) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM workflows WHERE name = ? COLLATE NOCASE", (name,))
+        return self._workflow_row(rows[0]) if rows else None
+
+    def list_workflows(self) -> list[dict[str, Any]]:
+        return [self._workflow_row(r) for r in self._query("SELECT * FROM workflows ORDER BY name COLLATE NOCASE")]
+
+    def delete_workflow(self, workflow_id: int) -> bool:
+        return self._execute("DELETE FROM workflows WHERE id = ?", (workflow_id,)).rowcount > 0
+
+    def mark_workflow_run(self, workflow_id: int) -> None:
+        self._execute("UPDATE workflows SET runs = runs + 1, last_run = ? WHERE id = ?", (_now(), workflow_id))
+
+    # conversation history: conversations + the activity of each task, searchable; deleted together
+    @staticmethod
+    def _range(column: str, start: str | None, end: str | None) -> tuple[str, list[Any]]:
+        sql, params = "", []
+        if start:
+            sql += f" AND {column} >= ?"
+            params.append(start)
+        if end:
+            sql += f" AND {column} < ?"
+            params.append(end)
+        return sql, params
+
+    def search_conversations(self, terms: list[str], start: str | None = None, end: str | None = None,
+                             limit: int = 20, exclude_intents: tuple[str, ...] = ()) -> list[dict[str, Any]]:
+        sql, params = "SELECT * FROM conversations WHERE 1 = 1", []
+        for term in terms:
+            sql += (" AND (user_text LIKE ? ESCAPE '\\' OR response LIKE ? ESCAPE '\\' OR IFNULL(intent, '') LIKE ? "
+                    "ESCAPE '\\')")
+            params += [_like(term)] * 3
+        for intent in exclude_intents:
+            sql += " AND IFNULL(intent, '') <> ?"
+            params.append(intent)
+        when, extra = self._range("created_at", start, end)
+        return self._query(sql + when + " ORDER BY id DESC LIMIT ?", tuple(params + extra + [limit]))
+
+    def activity_for_tasks(self, task_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        out: dict[str, list[dict[str, Any]]] = {t: [] for t in task_ids}
+        if not task_ids:
+            return out
+        marks = ",".join("?" * len(task_ids))
+        for row in self._query(f"SELECT * FROM activity_log WHERE task_id IN ({marks}) ORDER BY id", tuple(task_ids)):
+            out[row["task_id"]].append(row)
+        return out
+
+    def history_span(self, start: str | None = None, end: str | None = None) -> tuple[str | None, str | None]:
+        when, params = self._range("created_at", start, end)
+        row = self._query("SELECT MIN(created_at) AS a, MAX(created_at) AS b FROM conversations WHERE 1 = 1" + when,
+                          tuple(params))[0]
+        return row["a"], row["b"]
+
+    def count_history(self, start: str | None = None, end: str | None = None) -> int:
+        when, params = self._range("created_at", start, end)
+        return int(self._query("SELECT COUNT(*) AS n FROM conversations WHERE 1 = 1" + when, tuple(params))[0]["n"])
+
+    def delete_history(self, start: str | None = None, end: str | None = None) -> int:
+        """Conversations, their activity records and permission questions in the range. Returns conversations removed."""
+        when, params = self._range("created_at", start, end)
+        activity, activity_params = self._range("date || 'T' || time", start, end)
+        with self._lock:
+            removed = self._conn.execute("DELETE FROM conversations WHERE 1 = 1" + when, tuple(params)).rowcount
+            self._conn.execute("DELETE FROM activity_log WHERE 1 = 1" + activity, tuple(activity_params))
+            self._conn.execute("DELETE FROM permission_requests WHERE 1 = 1" + when, tuple(params))
+            self._conn.commit()
+        return removed
+
+    def delete_task_history(self, task_id: str) -> bool:
+        with self._lock:
+            removed = self._conn.execute("DELETE FROM conversations WHERE task_id = ?", (task_id,)).rowcount
+            self._conn.execute("DELETE FROM activity_log WHERE task_id = ?", (task_id,))
+            self._conn.execute("DELETE FROM permission_requests WHERE task_id = ?", (task_id,))
+            self._conn.commit()
+        return removed > 0
 
     # system profile (latest few kept for comparison)
     def save_system_profile(self, profile_json: str, keep: int = 5) -> None:

@@ -550,3 +550,69 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 8C commit `5335070`, `main` mein merge `76cc7f6`.
+
+---
+
+### Task: Phase 9 — Memory (short-term, long-term, conversation history, workflows, preferences)
+
+Status: Complete (branch `phase-9-memory`, approval ke baad `main` mein merge)
+
+Admin ke faisle (is phase ke shuru mein): long-term memory **"kahne par + tajweez"** (NOVA sirf "yaad rakho" par ya apne sawal "Ye yaad rakhoon?" ke jawab mein "haan" par yaad rakhta hai — kabhi chupke se nahi), history **90 din** (badal sakte hain), workflows **sirf kholne wale kaam**.
+
+Kaam:
+- **Short-term memory** (sirf RAM): pichli 4 baatein AI brain ke liye, "dobara karo" ke liye aakhri command, aur NOVA ka khula sawal — taa ke agla jawab ("haan", "Chrome aur VS Code") usi sawal ka jawab samjha jaye. 30 minute khamoshi, restart, ya "naya topic" par saaf; saath mein "isko" wali pichli file bhi bhool jati hai.
+- **Long-term memory (Memory Agent):**
+  - "yaad rakho ke meri wife ki birthday 5 March ko hai" → save aur dobara parh kar verify. "ye yaad rakho" → abhi kahi hui baat.
+  - Tajweez: "mera naam Ahmed hai", "main Lahore mein rehta hoon", "mujhe chai pasand hai" jaisi baat par NOVA poochta hai "Ye yaad rakhoon? (haan/nahi)" — UI mein Haan/Nahi buttons, awaaz par mic khud khulta hai. "Nahi" ke baad usi session mein dobara nahi poochta.
+  - Naam/shehar/kaam/birthday ek hi rehte hain (naya naam purane ki jagah, user ko bataya jata hai). NOVA naam se salam karta hai ("Assalam-o-Alaikum Ahmed!"), "mera naam kya hai" ka seedha jawab.
+  - Yaad dilana: "meri biwi ki salgirah kab hai" (hum-maani alfaaz: biwi/wife, salgirah/birthday), "tumhe mere baare mein kya yaad hai".
+  - **Passwords, PIN, OTP, card/CNIC/account numbers, keys kabhi yaad nahi** — inkaar. Reminder ("yaad dilana") abhi nahi — saaf bata deta hai.
+  - Mutaliqa yaadein local AI ko context ke tor par (sirf jo baat se milti hon, max 5) — data, hidayat nahi.
+  - **Bhoolna hamesha poocha jata hai** (dialog mein wahi baatein), kabhi "yaad" nahi rakha jata; "sab bhool jao" high risk.
+- **Conversation history:** har command ka record — date, time, request, NOVA ka jawab, actions (agent), ijazat, verification, error, nateeja (ho gaya / nahi hua / ijazat nahi mili / jawab). Awaaz se: "aaj kya kya kiya", "kal maine kya kaha tha", "history mein report dhoondo"; Memory tab mein search + din. **90 din** baad khud mit jati hai (30 din / 1 saal / hamesha — Memory tab se). "Saari history mita do" **high risk** (dialog mein kitni baatein aur kab se kab tak) aur activity log + ijazat ke records bhi mitata hai; screen ki conversation bhi saaf.
+- **Workflow memory:** pehli dafa "work start karo" → "Kaun se applications open karoon?" → jawab ("Chrome, VS Code aur WhatsApp") → workflow save aur sab khul jata hai. Agli dafa seedha chalta hai — har qadam normal plan, ijazat aur verification se. Sirf kholne wale qadam: apps (PC par mili hui), websites, code projects, folders, aur volume/brightness ka tay level — delete/bhejna/badalna kabhi nahi. Naam se workflows ("study workflow banao: YouTube aur Downloads folder", "study start karo"), add/remove, list, delete (ijazat se). Na milne wali cheez saaf batai jati hai.
+- **Task memory:** "dobara karo" pichla asli kaam dobara (khatre wala ho to phir poochta hai; workflow bhi), "kya kaha" pichla jawab dobara.
+- **Preferences:** naam (salam), pasand/napasand (AI ke jawab mein), aur pehle se maujood Settings (search engine, browser, awaaz, history ki muddat). **System memory:** System Profile (Phase 2).
+- **UI:** naya **Memory** tab — Yaadein (add, bhool jao, sab mitao), Workflows (Chalao / Badlo / Hatao, naya), History (search, din, ek record mitao, sab mitao, kitni der rakhein), Abhi ki baat-cheet (kya yaad hai, "dobara karo" kya karega, abhi saaf karein). Har mitana UI mein ek dafa aur poochta hai. Memory Agent agents ki list mein.
+- **AI brain:** 9 naye intents (rules + LLM): remember_fact, recall_memory, forget_memory, search_history, clear_history, save_workflow, list_workflows, delete_workflow, repeat_last; run_workflow ab chalta hai. LLM agar kisi aam baat ko "explicit" kahe to bhi wo sirf tab save hoti hai jab user ne khud "yaad" kaha ho.
+
+Test:
+- Backend automated tests: 550/550 pass (76 naye) — facts/tajweez/secret inkaar, short-term expiry, step resolver, history periods/nateeje, rules aur LLM parsing, explicit save + verify, "haan"/"nahi", naya command sawal ko khatam karta hai, naam se salam, naam badalna, bhoolna (ijazat, high risk), history search/records, saari history mitana (high, sab records + events), 90 din purge aur setting, workflow pehli dafa (pooch kar save + chalana), dobara bina pooche, ghalat cheezein, naam wale workflows add/remove/delete, dobara karo / kya kaha, Memory API (secret wapas echo nahi hota), mutaliqa yaadein hi LLM tak.
+- Frontend: 17/17 tests, typecheck aur build successful. Electron app launch: "NOVA Command Center" window, backend health ok, Memory API chal rahi; band karne par backend bhi band.
+- AI brain eval (80 commands, 10 naye): sirf rules 75/80 (baqi 4 aam sawal + ek lamba history sawal), **hybrid 80/80** (median 11.2s), sirf LLM 75/80 (median 10.0s). LLM ki do ghaltiyan ("kal" = aaj, "study workflow" naam) prompt/parsing se theek ki — dobara check mein sahi; baqi hybrid mein rules sambhalte hain.
+- **Is PC par asli test** (sirf test data "nova9test"/"Nova Tester"; aap ki memory pehle khaali thi):
+  - yaad rakhna + verify, "yaad hai ke ... kab hai", naam ki tajweez → haan → "Assalam-o-Alaikum Nova Tester!", "mera naam kya hai", tajweez → nahi (save nahi), ATM pin → inkaar, sab yaadein list.
+  - Local AI ko mutaliqa yaad gayi: "aaj raat ke khane mein kya banaun jo mujhe pasand ho" → biryani wala jawab.
+  - Bhoolna dialog (medium, yaad nahi rakha ja sakta) → Haan → mit gayi (verify).
+  - RAM batao → dobara karo → kya kaha; "aaj kya kya kiya", "history mein nova9test dhoondo", LLM se "pichle hafte maine kaun si files delete ki thi" (24s).
+  - "saari history mita do" → high risk dialog ("176 baatein: 2 Oct 08:47 se 19:08 tak ...") → **Nahi** — aap ki history mehfooz.
+  - "nova9test workflow chalao" → sawal → "Calculator aur example.com" → save + Calculator khula (verify) + example.com (verify); "nova9test start karo" → bina pooche dobara; "mere workflows dikhao".
+  - UI (browser pane): Memory tab ke chaaron hisse, Chalao button se workflow chala, Haan/Nahi buttons, History search aur ek record "Mitao".
+  - Test ke baad: test yaadein, workflow aur test ki 37 history records hata diye, short-term saaf, test ke Calculator band (sirf test ke waqt khule hue).
+
+Bugs jo test ke dauran mile aur fix kiye gaye:
+- **Asli test mein:** "nova9test meeting wali baat bhool jao" ne do yaadein chun li (dono mein "nova9test" tha; dialog mein dono dikhi thin) — ab sirf sab se zyada milti hui baat chuni jati hai.
+- **Asli test mein:** lambi conversation ke baad local AI 45s timeout ho raha tha (pichle lambe jawab context mein jate the) — ab har pichli baat ka sirf shuru ka hissa jata hai (24-33s; PC par anjaan `cmd.exe` CPU le raha tha).
+- **Asli test mein:** "dobara karo" ek aam baat ("mujhe ... pasand hai") ko dobara karna samajhta — ab sirf woh command jo chali (ya jis ki ijazat nahi mili thi).
+- "dobara karo" ke baad workflow "save nahi" keh deta — ab dobara workflow chalta hai. "kya kaha" pichli command ki jagah le leta — fix. "ye yaad rakho" do dafa kehne par khud "ye yaad rakho" save ho jata — fix. "naya topic" par ijazat maangi ja rahi thi — fix. History search mein purane "history" jawab bhi aa rahe the — fix.
+- **Phase 8C ka bug:** local AI se window minimize/maximize mein app ka naam chhoot jata tha (code ghalat jagah tha) — theek, regression test.
+- "History mitane" ke dialog mein kuch nazar nahi aata tha — ab kitni baatein aur kab se kab tak.
+
+Maloom hadood (limitations):
+- Reminders (waqt par yaad dilana) abhi nahi.
+- Tajweez sirf saaf jumlon par (naam, shehar, kaam, birthday, pasand); baqi ke liye "yaad rakho ke ..." kahein.
+- History search alfaaz se hai (maane se nahi); Roman Urdu ke mukhtalif hijje ("dhoondo"/"dhundo") alag samjhe ja sakte hain.
+- Workflow sirf kholta hai; apps PC par maujood hon to hi (save ke waqt check). Kisi workflow ka naam kisi installed app jaisa ho to workflow pehle.
+- Chhota local model kabhi yaadon ko ajeeb jumle mein milata hai — sirf jawab ke alfaaz, koi kaam nahi.
+
+Verification:
+- Yaad: save ke baad dobara parhna; bhoolna/mitana: baad mein check ke ab nahi; workflow: save ke baad wahi qadam parhna, har qadam ka apna verify (window/page); history mitana: baad mein ginti 0. Activity log mein sab.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-02, admin ne chat mein approve kiya)

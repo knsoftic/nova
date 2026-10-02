@@ -34,6 +34,10 @@ export function useNova() {
   const [profileRevision, setProfileRevision] = useState(0);
   // Bumped when something lands in the persisted activity log.
   const [activityRevision, setActivityRevision] = useState(0);
+  // Bumped when memories, workflows or history change (the Memory tab refetches).
+  const [memoryRevision, setMemoryRevision] = useState(0);
+  // Set while NOVA waits for the answer to its own question asked by voice ("Ye yaad rakhoon?").
+  const [voiceFollowUp, setVoiceFollowUp] = useState<string | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   // Open permission questions, oldest first.
@@ -85,6 +89,16 @@ export function useNova() {
       }
       setEvents((prev) => [msg, ...prev].slice(0, MAX_EVENTS));
       if (msg.type === "DISCOVERY_STARTED") setScanning(true);
+      if (msg.type === "MEMORY_CHANGED") {
+        setMemoryRevision((n) => n + 1);
+        const d = msg.data as { cleared?: boolean; all?: boolean };
+        // The user deleted all history: what is on screen goes too.
+        if (d.cleared && d.all) {
+          setMessages([]);
+          setEvents([msg]);
+        }
+      }
+      if (msg.type === "TASK_COMPLETED" || msg.type === "TASK_FAILED") setMemoryRevision((n) => n + 1);
       if (msg.type === "SETTINGS_CHANGED") {
         const next = msg.data as unknown as UserSettings;
         setSettings(next);
@@ -120,18 +134,27 @@ export function useNova() {
       }
       if (msg.type === "NOVA_RESPONSE" || msg.type === "TASK_FAILED") {
         const text = msg.message ?? "";
-        const data = msg.data as { provider?: string; steps?: PlanStepSummary[] };
+        const data = msg.data as {
+          provider?: string;
+          steps?: PlanStepSummary[];
+          awaiting_answer?: boolean;
+          quick_replies?: string[];
+          source?: string;
+        };
+        const id = nextId();
+        setVoiceFollowUp(data.awaiting_answer && data.source === "voice" ? id : null);
         setMessages((prev) =>
           [
             ...prev,
             {
-              id: nextId(),
+              id,
               role: "nova" as const,
               text,
               timestamp: msg.timestamp,
               failed: msg.type === "TASK_FAILED",
               provider: data.provider,
               steps: data.steps,
+              quickReplies: data.awaiting_answer ? data.quick_replies : undefined,
             },
           ].slice(-MAX_MESSAGES),
         );
@@ -226,6 +249,8 @@ export function useNova() {
     scanning,
     profileRevision,
     activityRevision,
+    memoryRevision,
+    voiceFollowUp,
     settings,
     aiStatus,
     refreshAiStatus,

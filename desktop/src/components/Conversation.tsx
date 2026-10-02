@@ -19,6 +19,7 @@ function stepNote(s: PlanStepSummary): string {
   if (s.status === "done" && s.permission === "rule") return "ho gaya (pehle di gayi ijazat se)";
   if (s.status === "done" && s.permission === "approved") return "ijazat se ho gaya";
   if (s.status === "done") return "ho gaya";
+  if (s.status === "skipped") return "sirf jawab";
   return s.status;
 }
 
@@ -55,7 +56,15 @@ function PlanSteps({ steps }: { steps: PlanStepSummary[] }) {
   );
 }
 
-export function Conversation({ messages, assistantName }: { messages: ChatMessage[]; assistantName: string }) {
+export function Conversation({
+  messages,
+  assistantName,
+  onQuickReply,
+}: {
+  messages: ChatMessage[];
+  assistantName: string;
+  onQuickReply?: (text: string) => void;
+}) {
   const endRef = useRef<HTMLDivElement>(null);
   // Scroll only our own container: scrollIntoView would also scroll overflow-hidden ancestors and
   // push the view tabs out of sight on short windows.
@@ -74,8 +83,10 @@ export function Conversation({ messages, assistantName }: { messages: ChatMessag
 
   return (
     <div className="flex w-full flex-col gap-3">
-      {messages.map((m) => {
+      {messages.map((m, index) => {
         const provider = providerLabel(m.provider);
+        // One-tap answers only while this is still the latest message (the question is still open).
+        const replies = index === messages.length - 1 && onQuickReply ? (m.quickReplies ?? []) : [];
         const showSteps = m.steps && (m.steps.length > 1 || m.steps.some((s) => s.status !== "done"));
         return (
           <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -127,6 +138,20 @@ export function Conversation({ messages, assistantName }: { messages: ChatMessag
                 </div>
               )}
               {showSteps && m.steps && <PlanSteps steps={m.steps} />}
+              {replies.length > 0 && (
+                <div className="mt-2 flex gap-2">
+                  {replies.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => onQuickReply?.(r)}
+                      className="rounded-md border border-sky-400/30 bg-sky-500/15 px-3 py-1 text-xs text-sky-100 hover:bg-sky-500/25"
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         );

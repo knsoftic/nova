@@ -32,6 +32,8 @@ class UserSettings(BaseModel):
     browser_channel: Literal["chrome", "msedge"] = "chrome"  # installed browser NOVA drives (own profile)
     # Code project folders the File/Coding agents may use (besides Desktop, Documents, Downloads, ...).
     project_folders: list[str] = Field(default_factory=lambda: [r"C:\xampp\htdocs"], max_length=10)
+    # Conversation history is deleted after this many days (0 = kept until the user deletes it).
+    history_days: Literal[30, 90, 365, 0] = 90
 
     @field_validator("project_folders")
     @classmethod
@@ -81,6 +83,7 @@ class UserSettingsUpdate(BaseModel):
     search_engine: Literal["google", "bing", "duckduckgo"] | None = None
     browser_channel: Literal["chrome", "msedge"] | None = None
     project_folders: list[str] | None = None
+    history_days: Literal[30, 90, 365, 0] | None = None
 
 
 def load_user_settings(db: Database, default_name: str = "NOVA") -> UserSettings:

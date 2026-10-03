@@ -57,6 +57,12 @@ export function stepSettled(changedAt: number, now: number): boolean {
 }
 
 /** Multi-PC: seconds left on the joining code, counted down locally since the status was fetched. */
+/** Setup wizard: the mic waits for the wake word when chosen - and always for a silent start (NOVA then waits in
+ * the tray and is only reached by voice). */
+export function listensAfterSetup(micOn: boolean, startWithWindows: boolean, mode: "silent" | "active"): boolean {
+  return micOn || (startWithWindows && mode === "silent");
+}
+
 export function pairingTimeLeft(expiresIn: number, fetchedAt: number, now: number): number {
   return Math.max(0, expiresIn - Math.floor((now - fetchedAt) / 1000));
 }

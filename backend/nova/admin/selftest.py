@@ -252,10 +252,10 @@ def build_checks(app: Any) -> list[Check]:
         info = install_info(s.settings)
         kind = "installed" if info["packaged"] else "development"
         missing = [n for n, ok in info["voice_models"].items() if not ok]
+        if missing and info["packaged"]:  # the bigger problem is reported first
+            return "fail", "program ke sath voice models nahi: " + ", ".join(missing)
         if s.user_settings.start_with_windows and info["packaged"] and not info["startup_registered"]:
             return "warn", "Settings mein 'Windows ke sath start' on hai lekin Windows mein NOVA registered nahi"
-        if missing and info["packaged"]:
-            return "fail", "program ke sath voice models nahi: " + ", ".join(missing)
         start = "Windows ke sath start" if info["startup_registered"] else "khud start nahi"
         return "pass", f"{kind} · Python {info['python'].split()[0]} · {start}"
 

@@ -852,3 +852,44 @@ Complete
 
 Admin Approval:
 Approved (2026-10-03, admin ne chat mein approve kiya)
+
+Git:
+- Phase 13 commit `5b5af6b`, `main` mein merge `123bdf4`; GitHub (`knsoftic/nova`, `main`) par push.
+
+---
+
+### Task: Phase 13B — Mic aur Windows ke sath start pehle se on (installer 0.13.1)
+
+Status: Complete (branch `nova-autostart-mic`, approval ke baad `main` mein merge)
+
+Admin ki darkhwast: "exe bana ke do; pehle is mein mic bhi on ho aur Windows on karne par software on ho jaye (auto on)."
+
+Kaam:
+- **Pehle se on:** naye NOVA mein *Windows ke sath start* (Active: window + "Assalam-o-Alaikum. NOVA online hai.") aur **mic hamesha on** ("Hey NOVA" ka intezar) default. Installed NOVA pehli dafa khulte hi Windows ki startup list mein apna naam likh deta hai — setup wizard chhor dein ("Abhi nahi") tab bhi.
+- **Setup wizard:** "Windows start hone par" mein naya ✓ **Mic hamesha on — "Hey NOVA" kehne par sune** (pehle se ✓; Silent start mein zaroori, is liye wahan hamesha on); "Tayyar" mein mic ka haal.
+- **Pehle se laga NOVA (update):** purani save settings par ek dafa mic aur Windows start on (settings_version 2). Is ke baad aap Settings mein band karein to wo band hi rehta hai — dobara khud on nahi hota.
+- Self-test "Installation": voice models gum hon to pehle wo (fail) bataya jata hai, phir startup ki warning.
+- Version 0.13.1.
+
+Test:
+- Backend automated tests: 622/622 pass (1 naya: purani settings par ek dafa on, baqi settings wese hi, band karne ke baad band, settings_version UI se nahi badalta); naye defaults ke tests update.
+- Frontend: 23/23 tests (1 naya: mic ka faisla — chuna ho to on, Silent start mein hamesha on), typecheck aur build — `scripts/check_all.py` sab THEEK.
+- Browser preview (alag test backend, asli settings ko haath nahi lagaya): naye data par page khulte hi mic maanga gaya; wizard mein Windows start aur Mic hamesha on dono pehle se ✓.
+- **Installer + asli install test** (`desktop/release/NOVA-Setup-0.13.1.exe`, 787 MB; alag test folder, baad mein uninstall aur test data saaf):
+  - Install (172s) ke baad pehli dafa kholte hi: mic aur Windows start dono on, Windows ki startup list mein `"...\NOVA.exe" --startup` khud likha gaya, aur mic khud on ("Microphone on — sun raha hoon") — koi click nahi.
+  - Windows login wala start (`--startup`): window khud khuli, NOVA ne "Assalam-o-Alaikum. NOVA online hai." kaha, mic on.
+  - Uninstall: program, startup entry aur Apps entry khatam; koi NOVA process baqi nahi.
+- Build ke dauran: ek atka hua `cmd.exe` (admin, CPU 100%) ki wajah se installer do dafa nahi ban saka (makensis 0xC0000142); admin ki ijazat se PC restart ke baad 6 minute mein ban gaya.
+
+Bugs jo mile aur fix kiye gaye:
+- Self-test "Installation" mein startup ki warning voice models ki kami (fail) ko chhupa deti thi — tarteeb theek.
+
+Maloom hadood (limitations):
+- Mic hamesha on hone ka matlab: jab NOVA chal raha ho (tray mein bhi) mic khula rehta hai; sirf "Hey NOVA" ke baad wali baat command banti hai, baqi na save hoti hai na dikhai jati hai. Windows mein "apps ko microphone ki ijazat" on honi chahiye.
+- Windows ke sath start sirf installed NOVA mein (development copy mein setting save hoti hai).
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-03, admin ne chat mein approve kiya)

@@ -14,6 +14,9 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from .db import Database
 
 SETTINGS_KEY = "user_settings"
+# 2 (0.13.1, admin's request): the microphone listens for the wake word and NOVA starts with Windows - on by default,
+# and switched on once for settings saved before. Turning them off later is respected.
+SETTINGS_VERSION = 2
 FORBIDDEN_PROJECT_ROOTS = tuple(os.path.normcase(p) for p in (
     r"C:\Windows", r"C:\Program Files", r"C:\Program Files (x86)", r"C:\ProgramData"))
 
@@ -21,10 +24,10 @@ FORBIDDEN_PROJECT_ROOTS = tuple(os.path.normcase(p) for p in (
 class UserSettings(BaseModel):
     assistant_name: str = Field(default="NOVA", min_length=1, max_length=24)
     wake_word: str = Field(default="Hey NOVA", min_length=2, max_length=40)
-    continuous_listening: bool = False  # takes effect when voice arrives (Phase 5)
+    continuous_listening: bool = True  # the mic waits for the wake word whenever NOVA runs
     # Windows login (Phase 12): silent = in the tray, waiting for the wake word; active = window + spoken greeting.
     startup_mode: Literal["silent", "active"] = "active"
-    start_with_windows: bool = False  # asked in the first-run setup; applied by the desktop app (installed NOVA)
+    start_with_windows: bool = True  # shown in the first-run setup; applied by the desktop app (installed NOVA)
     setup_done: bool = False  # the first-run setup was completed or skipped
     ai_mode: Literal["hybrid", "llm", "rules"] = "hybrid"
     ai_model: str = Field(default="qwen3:4b", min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._:/\-]+$")
@@ -47,6 +50,7 @@ class UserSettings(BaseModel):
     # Multi-PC (Phase 13): off until the user turns it on; the name other PCs see ("" = the Windows computer name).
     multi_pc: bool = False
     pc_name: str = Field(default="", max_length=40)
+    settings_version: int = SETTINGS_VERSION  # not user-editable: which one-time default changes were applied
 
     @field_validator("pc_name")
     @classmethod
@@ -121,8 +125,17 @@ def load_user_settings(db: Database, default_name: str = "NOVA") -> UserSettings
     raw = db.get_setting(SETTINGS_KEY)
     if raw:
         try:
-            return UserSettings.model_validate_json(raw)
-        except ValidationError:
+            data = json.loads(raw)
+            if not isinstance(data, dict):
+                raise ValueError("settings are not an object")
+            migrate = int(data.get("settings_version") or 1) < 2
+            if migrate:  # once: mic on (wake word) and start with Windows, as the admin asked
+                data.update(continuous_listening=True, start_with_windows=True, settings_version=SETTINGS_VERSION)
+            settings = UserSettings.model_validate(data)
+            if migrate:
+                save_user_settings(db, settings)
+            return settings
+        except (ValidationError, ValueError, TypeError):
             pass  # corrupted/old value: fall back to defaults rather than refusing to start
     return UserSettings(assistant_name=default_name, wake_word=f"Hey {default_name}")
 

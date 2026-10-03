@@ -792,3 +792,63 @@ Complete
 
 Admin Approval:
 Approved (2026-10-03, admin ne chat mein approve kiya)
+
+Git:
+- Phase 12 commit `bfc3681`, `main` mein merge `e74f223`.
+
+---
+
+## 2026-10-03
+
+### Task: Phase 13 — Multi-PC (PC ki pehchan, network par dhoondna, jorna, encrypted raabta, remote kaam)
+
+Status: Complete (branch `phase-13-multi-pc`, approval ke baad `main` mein merge)
+
+Admin ke faisle (is phase ke shuru mein): **remote kaam** — maloomat (RAM, battery, disk) aur kholne wale kaam foran; jin kaamon ki ijazat chahiye wo **bhejne wale PC par** poochhe jayein; mitana, message bhejna aur khatarnak kaam remote se **kabhi nahi**; har jure PC ke liye ye ijazat alag se on (shuru mein off). **Sirf Private network** (ghar/office); Public par khud band. Test ke liye **doosra PC** usi Wi-Fi par hai.
+
+Kaam:
+- **PC ki pehchan:** har NOVA ki apni random id aur naam (default Windows computer ka naam; PCs tab se badal sakte hain).
+- **Network par dhoondna:** chhota UDP beacon (port 8771) sirf Private network par: "NOVA yahan hai" — id, naam, port, jorne ke liye tayyar ya nahi. Is mein koi secret nahi; beacon par bharosa nahi, bharosa sirf jorne ke baad.
+- **Jorna (pairing):** jis PC ko jorna hai us par *Is PC ko jorne do* → 12 haroof ka code (5 minute, sirf ek PC, 5 koshishein). Doosre PC par list se PC chun kar (ya IP likh kar) code likhein. Code network par nahi jata: dono taraf us se key banti hai (PBKDF2), jo sirf ek TLS session kholti hai; us ke andar naya random 32-byte jor (link) key diya jata hai, jo Windows DPAPI se encrypted save hota hai.
+- **Encrypted raabta:** TLS 1.3 + pre-shared key (Python ka apna `ssl`, koi certificate/naya package nahi), port 8770, sirf Private network ke pate par. NOVA ki asal API pehle ki tarah sirf 127.0.0.1 par. Key ke baghair handshake hi nahi hota; andar dono PC naye nonce par HMAC se apni pehchan sabit karte hain, aur command tab bheji jati hai jab doosra PC sabit kar de; certificate wala jawab (koi aur beech mein) mana.
+- **Remote kaam:** "Office PC par Chrome kholo", "Office PC ka haal batao", "mere PCs dikhao". Doosre PC ki pehchan AI brain se **pehle** aur sirf jure hue PC ke naam se hoti hai — is liye doosre PC ka kaam ghalti se is PC par nahi chal sakta (jo PC jura nahi us ka jawab "jura hua nahi"; "Desktop" jaise naam ke liye "PC" kehna zaroori, warna wo folder hai). Doosra PC command khud samajhta hai aur khud faisla karta hai (allow-list): maloomat aur kholna foran; app band karna, ijazat wali settings, rename/move → ijazat **yahan** (kabhi yaad nahi rakhi jati); mitana, message, type/click, code chalana, screen parhna aur har high-risk kaam → mana. "Remote kaam" off ho to sirf online/offline.
+- **Doosre PC par record:** Live Activity ("Laptop ne kaha: ..."), history (source "remote"), Activity Log (`approved_by_remote_user`, mana kiye gaye kaam `remote_refused`). Wahan kuch nahi poochha jata.
+- **PCs tab:** is PC ka naam, Multi-PC on/off, network ka haal (Public ho to wajah aur Windows Settings ka rasta), code dikhana (ulti ginti), mile PCs, IP se jorna, jure PCs (online, Remote kaam on/off, "Haal dekho", "Hatao" — dono taraf se jor khatam). Agent panel mein Multi-PC Agent.
+- **Self-test:** naya check "Multi-PC" (asli TLS-PSK raabta 127.0.0.1 par + haal). Version 0.13.0.
+
+Test:
+- Backend automated tests: 621/621 pass (10 naye) — code/key/saboot, TLS-PSK raabta, beacon ki jaanch (ghalat id/port/bara packet), remote policy, command pehchanna (folder "Desktop" bamuqabla PC "Desktop", na jura PC), Public network par band, **do poore NOVA asli encrypted raabta par** (jorna, ijazat ke baghair mana, Chrome khulna, haal, ijazat yahan → band karna, mana wale kaam aur un ka record, hatana dono taraf), ghalat code 5 dafa → code band, anjaan key aur saada TCP mana, beacon se dhoondna, self-test.
+- Frontend: 22/22 tests (2 naye), typecheck aur build — `scripts/check_all.py` sab THEEK.
+- **Is PC par asli test** (do alag NOVA backend, loopback test mode, alag data folder — asli settings/data/LOGS.md ko haath nahi lagaya):
+  - UI se naam "Laptop" + Multi-PC on → beacon ne "Office PC — jorne ke liye tayyar" dikhaya → code likh kar jor gaye.
+  - Ijazat ke baghair "Office PC par calculator kholo" → mana ("ijazat nahi ... Remote kaam on karein").
+  - Remote kaam on → Calculator khula (verify ✓); "Office PC ka haal batao" → CPU, RAM, C:, battery.
+  - "Office PC par calculator band karo" → ijazat ka sawal **Laptop par** (darmiyana khatra, "aage se na poochho" nahi) → Haan → band (verify: window nahi). Office PC par koi sawal nahi.
+  - Delete wali command → mana; Office PC ke Activity Log mein bhi record.
+  - Hatao → dono PCs ki list khali; code wala hissa (5 minute ki ulti ginti) — Live Activity mein code kabhi nahi.
+  - Test ke baad: dono test backend band, test data mitaya, test ka khola Calculator band.
+- Installer `desktop/release/NOVA-Setup-0.13.0.exe` bana (787 MB): us ke apne Python mein runtime check 23 modules theek, aur encrypted raabta (TLS-PSK) bhi chala.
+
+Bugs jo test ke dauran mile aur fix kiye gaye:
+- **Beacon behra ho jata tha:** Windows par UDP packet aise port par jaye jahan koi na sune to "port unreachable" aata hai, aur asyncio us ke baad socket parhna hamesha ke liye band kar deta tha — ab SIO_UDP_CONNRESET band (ctypes WSAIoctl) (test).
+- Ghalat code par Windows `ConnectionResetError` deta hai, `SSLError` nahi — jawab "raabta nahi" aata tha; ab "Code ghalat hai" (test).
+- Mana kiye gaye remote kaam ka doosre PC par record nahi banta tha — ab Activity Log + Live Activity (test).
+- Likhte waqt pakra: ijazat ke helper ka naam variable se takra raha tha (UnboundLocalError) — naam badla.
+- Agent panel mein Multi-PC Agent nahi tha — shamil kiya.
+
+Maloom hadood (limitations):
+- Sirf Private network — aap ka Wi-Fi abhi Public hai; Windows Settings se khud Private karna hoga. Pehli dafa Windows Firewall "Python" ke liye poochhega (sirf Private par Allow).
+- Sirf ek hi network/subnet par (ghar ka Wi-Fi); internet ke paar (doosre ghar/shehar) nahi.
+- "<PC> par ..." ke baad poora jumla us PC par hota hai (aadha yahan, aadha wahan ek jumle mein nahi).
+- Remote ijazatein kabhi yaad nahi rakhi jatin; screen parhna/screenshot, type/click, files mitana, message, code chalana remote se nahi.
+- Jor ki key isi Windows user ki DPAPI se — data doosre user/PC par copy ho to dobara jorna hoga.
+- Dono PCs par NOVA chalna chahiye (tray mein bhi chalta rehta hai).
+
+Verification:
+- Har remote kaam doosre PC par usi ke verification ke sath (window khuli/band); jawab mein nateeja aur verify; jorne/hatane ke baad dono taraf list check.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-03, admin ne chat mein approve kiya)

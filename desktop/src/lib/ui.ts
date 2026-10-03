@@ -29,6 +29,7 @@ export const AGENTS: AgentInfo[] = [
   { name: "Communication Agent", description: "WhatsApp aur email (har dafa ijazat se)", phase: null },
   { name: "Memory Agent", description: "Aap ki batai baatein, history aur workflows (sab isi PC par)", phase: null },
   { name: "Behavior Layer", description: "Andaz ka andaza (sirf andaza), jawab ka andaz, aadatein", phase: null },
+  { name: "Multi-PC Agent", description: "Jure hue PCs: haal aur kaam (encrypted, ijazat se)", phase: null },
   { name: "Admin", description: "Self-test, bugs aur approvals (LOGS.md)", phase: null },
 ];
 
@@ -53,6 +54,16 @@ export const STEP_GUARD_MS = 400;
 
 export function stepSettled(changedAt: number, now: number): boolean {
   return now - changedAt >= STEP_GUARD_MS;
+}
+
+/** Multi-PC: seconds left on the joining code, counted down locally since the status was fetched. */
+export function pairingTimeLeft(expiresIn: number, fetchedAt: number, now: number): number {
+  return Math.max(0, expiresIn - Math.floor((now - fetchedAt) / 1000));
+}
+
+/** Example commands for a paired PC, shown in the PCs tab. */
+export function pcExamples(name: string): string[] {
+  return [`${name} par Chrome kholo`, `${name} ka haal batao`, "mere PCs dikhao"];
 }
 
 export const CHECK_TONE: Record<string, string> = {

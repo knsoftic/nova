@@ -45,7 +45,9 @@ export type EventType =
   | "BUG_LOGGED"
   | "ADMIN_DECISION"
   | "RETRY"
-  | "SETUP_PROGRESS";
+  | "SETUP_PROGRESS"
+  | "PEERS_CHANGED"
+  | "REMOTE_TASK";
 
 export interface SelfTestResult {
   id: string;
@@ -134,6 +136,10 @@ export interface UserSettings {
   show_estimate: boolean;
   learn_patterns: boolean;
   suggest_routines: boolean;
+  /** Multi-PC (Phase 13): off until turned on; only works on a Private network. */
+  multi_pc: boolean;
+  /** The name other PCs see ("" = the Windows computer name). */
+  pc_name: string;
 }
 
 /** NOVA's estimate of how the user is communicating - only an estimate, never stored. */
@@ -475,4 +481,48 @@ export interface SetupProgress {
   message: string;
   done?: boolean;
   ok?: boolean;
+}
+
+/** Multi-PC (Phase 13): this PC, the network, PCs found nearby and paired PCs. */
+export interface PcNetwork {
+  ip: string;
+  alias: string;
+  category: string;
+  name: string;
+  private: boolean;
+}
+
+export interface FoundPc {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  version: string;
+  /** It is showing a code and waiting to be joined. */
+  pairing: boolean;
+}
+
+export interface PairedPc {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  online: boolean;
+  /** THIS PC lets that PC run tasks here. */
+  remote_allowed: boolean;
+  /** That PC lets this PC run tasks there (last known; null = not known yet). */
+  allows_us: boolean | null;
+  paired_at: string;
+  last_seen: string | null;
+}
+
+export interface PcsStatus {
+  this: { id: string; name: string; version: string; port: number | null };
+  enabled: boolean;
+  running: boolean;
+  reason: string | null;
+  networks: PcNetwork[];
+  pairing: { code: string; expires_in: number } | null;
+  found: FoundPc[];
+  peers: PairedPc[];
 }

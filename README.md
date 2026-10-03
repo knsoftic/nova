@@ -2,7 +2,7 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 12 (Windows EXE)**. NOVA listens (push-to-talk or wake word), understands
+Current status: **Phase 13 (Multi-PC)**. NOVA listens (push-to-talk or wake word), understands
 Urdu / Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in
 an offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
 afterwards). Risky actions — typing, clicking, pasting, closing apps — run only after the user says yes
@@ -17,7 +17,9 @@ for a chosen number of days, and learns workflows such as "work start karo". It 
 communicating (hurried, frustrated, confused - always shown as an estimate), adapts its tone, and learns which
 apps the user opens together to suggest workflows. An Admin panel runs self-tests, tracks bugs and records the
 administrator's approvals in LOGS.md. It installs from one offline setup file (NOVA-Setup.exe) on any personal
-Windows PC, can start with Windows (silent or active) and lives in the tray. See [LOGS.md](LOGS.md) for
+Windows PC, can start with Windows (silent or active) and lives in the tray. Several PCs running NOVA on the same
+home/office network can be paired with a one-time code and then talk over an encrypted link: "Office PC par Chrome
+kholo" runs on the other PC, asking here first when the task needs permission. See [LOGS.md](LOGS.md) for
 development history and approval status.
 
 ## Voice (offline)
@@ -204,6 +206,30 @@ the model only when you click.
 - **Uninstall:** Windows Settings → Apps → *NOVA (KN Softic)*, or the Start-menu uninstaller. It removes the program
   and the "start with Windows" entry, stops NOVA's backend first, and asks whether to delete the data (default: keep).
 
+## Multi-PC
+
+Off until turned on (NOVA → **PCs** tab → *Multi-PC on*), and only on a network Windows calls **Private** (home or
+office). On a Public network (cafe, hotel) it stays off and says why; making a network Private is the user's own
+choice in Windows Settings → Network & internet → the network's properties.
+
+- **PC identity:** each NOVA has a random id and a name the user picks (default: the Windows computer name).
+- **Finding PCs:** a small UDP beacon (port 8771) on the Private network says "NOVA is here" - id, name, port, whether
+  it is waiting to be joined. Nothing secret; a PC is trusted only after pairing.
+- **Pairing:** on the PC to be joined, *Is PC ko jorne do* shows a 12-character code (5 minutes, one PC, 5 tries).
+  On the other PC, pick it from the list (or type its IP) and enter the code. The code never travels over the
+  network: both sides derive a key from it (PBKDF2) that opens one TLS session, inside which a fresh random link key
+  is handed over. Link keys are stored encrypted with Windows DPAPI.
+- **Encrypted link:** TLS 1.3 with the per-pair pre-shared key (Python's own `ssl`, no certificates), port 8770, only
+  on the Private network's address - NOVA's main API stays on 127.0.0.1. A PC without the key cannot finish the
+  handshake; inside the session both sides also prove their identity (HMAC over fresh nonces) before any request.
+- **Remote tasks:** "\<PC\> par \<command\>", "\<PC\> ka haal batao", "mere PCs dikhao". A command names a *paired* PC,
+  and this is decided before the AI brain, so it can never run on the wrong PC. The other PC understands the command
+  itself and decides what it allows - and only if its user turned on *Remote kaam* for this PC:
+  information and opening things run directly; closing apps, settings that need permission and renaming/moving
+  files are asked **on the sending PC** (never remembered); deleting, messages, typing/clicking, running code and
+  anything high-risk are never done for another PC. Both PCs log everything.
+- **Unpair:** *Hatao* on either PC removes the link key on both (when the other is on).
+
 ## Layout
 
 ```
@@ -223,6 +249,7 @@ nova/
 │   │   ├── behavior/       Behavior Layer: estimate (words, context, voice), tone, habits, routine suggestions
 │   │   ├── admin/          self-test, bug tracking, approvals, LOGS.md/README.md upkeep
 │   │   ├── install.py      installed NOVA: paths, Windows startup registration, Ollama/model status
+│   │   ├── multipc/        Multi-PC: identity, beacon, pairing, TLS-PSK link, remote-task policy, Multi-PC Agent
 │   │   ├── files/          allowed folders, search, documents, Recycle Bin, verified file operations + undo
 │   │   ├── coding/         Coding Agent: projects, allowed commands, error parsing, checked code edits
 │   │   ├── browser/        Browser Agent + Playwright controller (NOVA's own Chrome profile)
@@ -313,6 +340,34 @@ Environment variables (backend):
 | `NOVA_ASSISTANT_NAME` | `NOVA` | Assistant name |
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
+| `NOVA_PEER_PORT` | `8770` | Multi-PC encrypted link (TCP, Private networks only) |
+| `NOVA_BEACON_PORT` | `8771` | Multi-PC beacon (UDP); `0` = off |
+| `NOVA_PEER_LOOPBACK` | `0` | Test mode: two NOVAs on one PC pair over 127.0.0.1 |
+| `NOVA_BEACON_TARGETS` | | Test mode: the other instances' beacon ports, e.g. `8781` |
+
+## Admin manual test (Phase 13, approved)
+
+Do PC chahiye, dono ek hi Wi-Fi par (ye PC aur doosra PC). Misaal mein ye PC "Laptop" aur doosra "Office PC" hai.
+
+1. **Install:** `desktop/release/NOVA-Setup-0.13.0.exe` dono PCs par lagayein (is PC par purane NOVA ke upar install
+   ho jayega, data rahega). Doosre PC par pehli dafa setup wizard aayega.
+2. **Network Private:** dono PCs par Windows Settings → Network & internet → Wi-Fi → apne Wi-Fi ki *Properties* →
+   **Private network** (ye aap khud karein; abhi is PC ka Wi-Fi Public hai).
+3. **Dono PCs:** NOVA → **PCs** tab → naam likh kar *Save* ("Laptop" / "Office PC") → **Multi-PC on**. Windows
+   Firewall "Python" ke liye poochhe to sirf **Private networks** par *Allow*. Status: "Chal raha hai".
+4. **Jorna:** Office PC par *Is PC ko jorne do* → code dikhega. Laptop par *Refresh* → "Office PC — jorne ke liye
+   tayyar" → *Jorein* → code likhein → "jur gaya". Dono taraf "Jure hue PCs" mein doosra PC (● online).
+5. **Ijazat ke baghair:** Laptop par "Office PC par Notepad kholo" → jawab: Office PC par ijazat nahi.
+6. **Remote kaam on:** Office PC par Laptop ke liye *Remote kaam* on. Laptop par: "Office PC par Notepad kholo" →
+   Office PC par Notepad khule (Office PC ki Live Activity: "Laptop ne kaha: ..."); "Office PC ka haal batao" → CPU,
+   RAM, battery; "mere PCs dikhao".
+7. **Ijazat yahan:** Laptop par "Office PC par Notepad band karo" → ijazat ka sawal **Laptop** par → *Haan* →
+   Office PC par Notepad band (kuch likha ho to Notepad wahin save ka poochhega).
+8. **Kabhi nahi:** "Office PC par koi file delete karo" / "Office PC par Ali ko message bhejo" → "doosre PC se nahi
+   hota".
+9. **Ghalat code:** Office PC par naya code; Laptop par ghalat code 5 dafa → code band ho jaye.
+10. **Hatao:** Laptop → Office PC → *Hatao* → *Haan* → dono PCs ki list khali.
+11. Admin → *Poora test chalayein* → "Multi-PC" theek. Sab theek ho to approve karein, warna problem batayein.
 
 ## Admin manual test (Phase 12, approved)
 

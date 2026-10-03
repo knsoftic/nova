@@ -9,6 +9,7 @@ import { AdminView } from "./components/AdminView";
 import { MemoryView } from "./components/MemoryView";
 import { MIC_LABEL, MicControl } from "./components/MicControl";
 import { NovaCore } from "./components/NovaCore";
+import { PcsView } from "./components/PcsView";
 import { PermissionDialog } from "./components/PermissionDialog";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { SetupWizard } from "./components/SetupWizard";
@@ -22,13 +23,14 @@ import { useNova } from "./lib/useNova";
 import { useSpeechPlayer } from "./lib/useSpeechPlayer";
 import { useVoice, type ListenMode } from "./lib/useVoice";
 
-type CenterView = "conversation" | "system" | "log" | "memory" | "admin";
+type CenterView = "conversation" | "system" | "log" | "memory" | "pcs" | "admin";
 
 const VIEWS: { id: CenterView; label: string }[] = [
   { id: "conversation", label: "Conversation" },
   { id: "system", label: "System Profile" },
   { id: "log", label: "Activity Log" },
   { id: "memory", label: "Memory" },
+  { id: "pcs", label: "PCs" },
   { id: "admin", label: "Admin" },
 ];
 
@@ -252,6 +254,10 @@ export default function App() {
               ) : view === "admin" ? (
                 <ErrorBoundary label="Admin">
                   <AdminView revision={nova.adminRevision} />
+                </ErrorBoundary>
+              ) : view === "pcs" ? (
+                <ErrorBoundary label="PCs">
+                  <PcsView revision={nova.pcsRevision} settings={nova.settings} onRun={(command) => void send(command)} />
                 </ErrorBoundary>
               ) : view === "memory" ? (
                 <ErrorBoundary label="Memory">

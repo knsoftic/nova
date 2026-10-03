@@ -259,6 +259,19 @@ def build_checks(app: Any) -> list[Check]:
         start = "Windows ke sath start" if info["startup_registered"] else "khud start nahi"
         return "pass", f"{kind} · Python {info['python'].split()[0]} · {start}"
 
+    async def multi_pc() -> tuple[str, str]:
+        from ..multipc.link import loopback_selftest
+
+        if not await loopback_selftest():  # the encrypted link itself (TLS 1.3 + pre-shared key) on 127.0.0.1
+            return "fail", "Encrypted link (TLS-PSK) is Python mein nahi chal raha"
+        st = s.multipc.status()
+        if not st["enabled"]:
+            return "info", "band hai (PCs tab se on karein) · encrypted link theek"
+        if not st["running"]:
+            return "warn", st["reason"] or "chal nahi raha"
+        online = sum(p["online"] for p in st["peers"])
+        return "pass", f"{len(st['peers'])} PC jure, {online} online · port {st['this']['port']}"
+
     return [
         Check("install", "12", "Installation aur Windows startup", thread(install)),
         Check("database", "1", "Database (SQLite) theek hai", thread(database)),
@@ -283,4 +296,5 @@ def build_checks(app: Any) -> list[Check]:
         Check("behavior", "10", "Behavior layer (andaza, awaaz)", thread(behavior)),
         Check("logs_md", "11", "LOGS.md parh/likh sakte hain", thread(logs_md)),
         Check("redaction", "11", "Logs mein secrets chhupaye jate hain", thread(redaction)),
+        Check("multi_pc", "13", "Multi-PC (doosre PCs se encrypted jor)", multi_pc),
     ]

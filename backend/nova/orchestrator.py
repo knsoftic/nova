@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,10 @@ from .language import detect_language
 from .memory.agent import MEMORY_INTENTS, MemoryAgent
 from .memory.agent import NAME as MEMORY
 from .memory.short_term import ShortTermMemory
+from .multipc import MULTIPC_INTENTS
+from .multipc.policy import ALLOWED as REMOTE_ALLOWED
+from .multipc.policy import REFUSED as REMOTE_REFUSED
+from .multipc.policy import verdict as remote_verdict
 from .permissions import PermissionEngine, TargetContext
 from .permissions.engine import classify
 from .planner import Plan, PlanStep, build_plan
@@ -68,6 +73,12 @@ RESEARCH_INTENTS = {"research", "web_answer"}
 # Sending, deleting, typing, clicking or anything the user had to approve is never repeated on its own.
 SAFE_RETRY = {"open_app", "focus_app", "window_control", "open_website", "read_page", "open_project", "open_file",
               "change_setting"}
+REMOTE_PLAN_TTL_S = 180  # a paired PC's plan must be run (or dropped) within this time
+
+
+def is_approved(step: PlanStep) -> bool:
+    """Approved by the user here, by a remembered rule, or (a paired PC's task) by the user on that PC."""
+    return step.permission in ("approved", "rule", "remote")
 
 
 class CommandResult(BaseModel):
@@ -113,6 +124,7 @@ class Orchestrator:
         memory: MemoryAgent | None = None,
         short_term: ShortTermMemory | None = None,
         behavior: BehaviorLayer | None = None,
+        multipc: Any = None,
     ) -> None:
         self.permissions = permissions
         self.browser = browser
@@ -123,7 +135,8 @@ class Orchestrator:
         # run(intent, prepared, approved, progress) -> ControlOutcome.
         self.prepared_agents: dict[str, Any] = {}
         for agent, intents in ((settings_agent, SETTINGS_INTENTS), (communication, COMM_INTENTS),
-                               (design, DESIGN_INTENTS), (memory, MEMORY_INTENTS), (behavior, BEHAVIOR_INTENTS)):
+                               (design, DESIGN_INTENTS), (memory, MEMORY_INTENTS), (behavior, BEHAVIOR_INTENTS),
+                               (multipc, MULTIPC_INTENTS)):
             if agent is not None:
                 self.prepared_agents.update(dict.fromkeys(intents, agent))
         self.bus = bus
@@ -139,6 +152,9 @@ class Orchestrator:
         self.short_term = short_term or (memory.short_term if memory is not None else ShortTermMemory())
         # Behavior layer: an estimate of how the user is communicating (RAM only) -> NOVA's tone; habits.
         self.behavior = behavior
+        # Multi-PC: "<paired PC> par ..." is recognised before the AI brain, so it can never run here by mistake.
+        self.multipc = multipc
+        self._remote_plans: dict[str, tuple[Plan, str, str, str, float]] = {}  # plans a paired PC asked for
         # Set by the app: a crash while handling a command becomes a bug in the bug tracker (Phase 11).
         self.on_crash: Callable[[BaseException, str], Awaitable[Any]] | None = None
         if behavior is not None:
@@ -217,7 +233,7 @@ class Orchestrator:
             else:
                 memories = self.memory.context_for(text) if self.memory is not None else None
                 hint = self.behavior.llm_hint(style) if self.behavior is not None else None
-                understanding = await self.providers.understand(text, self.short_term.turns(), memories, hint)
+                understanding = await self._understand(text, memories, hint)
             names = ", ".join(i.name for i in understanding.intents)
             await self.bus.publish(
                 NovaEvent(
@@ -302,6 +318,11 @@ class Orchestrator:
             status=status,
             executed=any(o.executed for o in outcomes),
         )
+
+    async def _understand(self, text: str, memories: list[str] | None = None, hint: str | None = None) -> Understanding:
+        if self.multipc is not None and (remote := self.multipc.understand(self.providers.rules.clean(text))):
+            return remote
+        return await self.providers.understand(text, self.short_term.turns(), memories, hint)
 
     async def _finish(self, task_id: str, source: str, response: str, asked_before: Any, data: dict[str, Any]) -> None:
         """Publish the reply (and whether NOVA now waits for an answer to its own question) and close the task."""
@@ -390,16 +411,17 @@ class Orchestrator:
                                                                      "provider": "memory"})
         return CommandResult(task_id=task_id, intent=None, response=response, status="understood")
 
-    async def _expand(self, task_id: str, understanding: Understanding) -> tuple[Understanding, str | None, str | None]:
+    async def _expand(self, task_id: str, understanding: Understanding,
+                      repeats: bool = True) -> tuple[Understanding, str | None, str | None]:
         """A saved workflow becomes its steps; "dobara karo" becomes the last command again. Both then go through
         the normal plan, permission and verification like any other command."""
         requested: list[Intent] = []
         workflow = repeated = None
         for intent in understanding.intents:
-            if (intent.name == "repeat_last" and intent.entities.get("what") != "response" and repeated is None
+            if (repeats and intent.name == "repeat_last" and intent.entities.get("what") != "response" and repeated is None
                     and (last := self.short_term.last_command)):
                 repeated = last
-                again = await self.providers.understand(last, self.short_term.turns())
+                again = await self._understand(last)
                 await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=MEMORY,
                                                  message=f"Pichla kaam dobara: \"{last[:80]}\""))
                 requested += [i for i in (await self._route(again)).intents if i.name != "repeat_last"]
@@ -480,7 +502,7 @@ class Orchestrator:
         }.get(step.status, step.status)
         permission_status = {
             "approved": "approved_by_user", "rule": "approved_by_saved_rule", "denied": "denied", "timeout": "timeout",
-            "refused": "refused_by_nova",
+            "refused": "refused_by_nova", "remote": "approved_by_remote_user",
         }.get(step.permission or "", "required_pending" if step.status == "needs_permission" else "not_required")
         self.db.add_activity(
             task_id=task_id,
@@ -592,7 +614,7 @@ class Orchestrator:
         await self.set_state(NovaState.WORKING, task_id)
         await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
                                          message=f"{step.description}..."))
-        approved = step.permission in ("approved", "rule")
+        approved = is_approved(step)
         if step.intent.name == "read_page":
             page = await asyncio.to_thread(self.browser.page_text)
             if isinstance(page, ControlOutcome):
@@ -674,7 +696,7 @@ class Orchestrator:
         await self.set_state(NovaState.WORKING, task_id)
         await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
                                          message=f"{step.description}: {step.prepared.summary}"))
-        approved = step.permission in ("approved", "rule")
+        approved = is_approved(step)
         try:
             result, content = await asyncio.to_thread(self.files.run, step.intent, step.prepared, approved)
         except (ScopeError, OSError) as exc:  # e.g. the file was moved or locked after the plan was made
@@ -698,7 +720,7 @@ class Orchestrator:
             await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=step.agent,
                                              message=message))
 
-        approved = step.permission in ("approved", "rule")
+        approved = is_approved(step)
         try:
             result = await self.coding.run(step.intent, step.prepared, approved, progress)
         except (ScopeError, OSError) as exc:
@@ -717,7 +739,7 @@ class Orchestrator:
             await self.bus.publish(NovaEvent(type=EventType.AGENT_WORKING, task_id=task_id, agent=step.agent,
                                              message=message))
 
-        approved = step.permission in ("approved", "rule")
+        approved = is_approved(step)
         try:
             result = await agent.run(step.intent, step.prepared, approved, progress)
         except (ScopeError, OSError) as exc:
@@ -753,7 +775,7 @@ class Orchestrator:
         await self.set_state(NovaState.WORKING, task_id)
         await self.bus.publish(NovaEvent(type=EventType.AGENT_STARTED, task_id=task_id, agent=step.agent,
                                          message=f"{step.description}..."))
-        approved = step.permission in ("approved", "rule")
+        approved = is_approved(step)
         result = await asyncio.to_thread(self.computer.run, step.intent, approved)
         return await self._report(task_id, step, result)
 
@@ -829,12 +851,107 @@ class Orchestrator:
         except Exception:
             return None
 
+    # ------------------------------------------------------------------ Multi-PC: a paired PC asks this PC
+
+    async def plan_remote(self, text: str, origin: str, origin_id: str) -> dict[str, Any]:
+        """Work out (here, with this PC's own brain and apps) what a paired PC's command would do - nothing runs yet.
+        Each step is allowed, needs the sender's permission ("ask"), only answers ("reply"), or is refused."""
+        now = time.monotonic()
+        self._remote_plans = {k: v for k, v in self._remote_plans.items() if now - v[4] < REMOTE_PLAN_TTL_S}
+        task_id = uuid.uuid4().hex[:12]
+        await self.bus.publish(NovaEvent(type=EventType.REMOTE_TASK, task_id=task_id, agent="Multi-PC Agent",
+                                         message=f"{origin} ne kaha: \"{text[:120]}\" — plan bana raha hai",
+                                         data={"from": origin, "stage": "plan"}))
+        understanding = await self.providers.understand(text)  # no conversation context of this PC's user
+        understanding = await self._route(understanding)
+        understanding, workflow, _ = await self._expand(task_id, understanding, repeats=False)
+        plan = build_plan(understanding)
+        plan.workflow = workflow
+        for step in plan.steps:  # refused before any agent prepares it (no questions, nothing touched on this PC)
+            if step.intent.name not in REMOTE_ALLOWED:
+                step.status, step.permission, step.result = "denied", "refused", REMOTE_REFUSED
+        await self._prepare_steps(task_id, plan)
+        steps = []
+        for step in plan.steps:
+            if step.status in ("skipped", "denied"):  # the agent answered ("kaun si file?") or refused by itself
+                steps.append({"id": step.id, "description": step.description, "status": "reply" if step.status ==
+                              "skipped" else "refused", "result": step.result, "risk": step.risk})
+                continue
+            why = ("Ye kaam abhi mumkin nahi" if step.status == "unavailable"
+                   else remote_verdict(step.intent.name, step.risk))
+            if why:
+                step.status, step.permission, step.result = "denied", "refused", why
+            elif step.status == "needs_permission" and self.permissions is not None:
+                target = await self._target_for(step)
+                if isinstance(target, str):
+                    step.status, step.permission, step.result = "denied", "refused", target
+                else:
+                    item = self.permissions.make_item(step.id, step.intent.name, step.intent.entities,
+                                                      step.description, step.risk, target)
+                    step.risk, step.reasons, step.description = item.risk, item.reasons, item.description
+                    if (why := remote_verdict(step.intent.name, step.risk)) is not None:
+                        step.status, step.permission, step.result = "denied", "refused", why
+            elif step.status == "needs_permission":
+                step.status, step.permission, step.result = "denied", "refused", "Ijazat ka nizam nahi"
+            status = {"needs_permission": "ask", "denied": "refused"}.get(step.status, "ready")
+            steps.append({"id": step.id, "description": step.description, "status": status, "risk": step.risk,
+                          "reasons": step.reasons[:3], "result": step.result if status == "refused" else None})
+        for step in plan.steps:  # this PC's own record of what another PC was refused
+            if step.status == "denied":
+                self.db.add_activity(task_id=task_id, task_name=f"command:{step.intent.name}", agent="Multi-PC Agent",
+                                     action="remote_refused", permission_status="refused_by_nova",
+                                     execution_status="not_executed_denied", final_result=f"{origin}: {step.result}")
+        if all(s["status"] == "refused" for s in steps):
+            await self.bus.publish(NovaEvent(type=EventType.REMOTE_TASK, task_id=task_id, agent="Multi-PC Agent",
+                                             message=f"{origin} ka kaam mana kiya: {steps[0]['result']}",
+                                             data={"from": origin, "stage": "refused"}))
+        else:
+            self._remote_plans[plan.id] = (plan, origin_id, task_id, text, now)
+        return {"plan_id": plan.id, "steps": steps}
+
+    async def run_remote(self, plan_id: str, approved: bool, origin: str, origin_id: str) -> dict[str, Any]:
+        """Run exactly the plan made for that PC. `approved`: its user said yes to the steps that needed permission."""
+        entry = self._remote_plans.get(plan_id)
+        if entry is None or entry[1] != origin_id or time.monotonic() - entry[4] > REMOTE_PLAN_TTL_S:
+            return {"response": "Ye plan purana ho gaya — command dobara dein.", "executed": False,
+                    "verification": "not_applicable"}
+        del self._remote_plans[plan_id]  # a plan runs once
+        plan, _, task_id, text, _ = entry
+        for step in plan.steps:
+            if step.status == "needs_permission":
+                step.status, step.permission = ("ready", "remote") if approved else ("denied", "denied")
+        await self.bus.publish(NovaEvent(type=EventType.REMOTE_TASK, task_id=task_id, agent="Multi-PC Agent",
+                                         message=f"{origin} ka kaam shuru: \"{text[:120]}\"",
+                                         data={"from": origin, "stage": "run"}))
+        outcomes = []
+        for step in plan.steps:
+            outcome = await self._run_step(task_id, step, plan)
+            if self._may_retry(step, outcome):
+                outcome = await self._retry_step(task_id, step, plan, ask=False)
+            outcomes.append(outcome)
+        response = self._compose(plan, outcomes)
+        verifications = {o.verification for o in outcomes if o.executed}
+        verification = ("failed" if "failed" in verifications else "passed" if "passed" in verifications
+                        else "unverified" if "unverified" in verifications else "not_applicable")
+        self.db.add_conversation(task_id=task_id, source="remote", user_text=f"[{origin}] {text}",
+                                 detected_language=plan.steps[0].intent.language,
+                                 intent=",".join(s.intent.name for s in plan.steps), response=response,
+                                 status="understood")
+        await self.bus.publish(NovaEvent(type=EventType.REMOTE_TASK, task_id=task_id, agent="Multi-PC Agent",
+                                         message=f"{origin} ka kaam mukammal: {response[:160]}",
+                                         data={"from": origin, "stage": "done", "response": response}))
+        await self.bus.publish(NovaEvent(type=EventType.TASK_COMPLETED, task_id=task_id, agent=ORCHESTRATOR,
+                                         message="Task mukammal"))
+        await self.set_state(NovaState.COMPLETED, task_id)
+        await self.set_state(self.rest_state)
+        return {"response": response, "executed": any(o.executed for o in outcomes), "verification": verification}
+
     def _may_retry(self, step: PlanStep, outcome: AgentOutcome) -> bool:
         """Error handling (spec 32): only a safe, low-risk action that nobody had to approve is retried by itself."""
         return (outcome.verification == "failed" and step.intent.name in SAFE_RETRY and step.risk == "low"
                 and step.permission is None)
 
-    async def _retry_step(self, task_id: str, step: PlanStep, plan: Plan) -> AgentOutcome:
+    async def _retry_step(self, task_id: str, step: PlanStep, plan: Plan, ask: bool = True) -> AgentOutcome:
         await self.bus.publish(NovaEvent(type=EventType.RETRY, task_id=task_id, agent=ORCHESTRATOR,
                                          message=f"Verify nahi hua — ek dafa dobara koshish: {step.description}"))
         step.status, step.result = "ready", None
@@ -843,7 +960,7 @@ class Orchestrator:
             second.response += " (Pehli koshish verify nahi hui thi; dobara karne par ho gaya.)"
             return second
         step.status = "failed"
-        if self.short_term.pending is None:  # explain and ask - never a third try on its own
+        if ask and self.short_term.pending is None:  # explain and ask - never a third try on its own
             question = "Dobara koshish bhi kaam nahi aayi. Kya main ek dafa aur koshish karoon? (haan/nahi)"
             self.short_term.ask("retry", question, {"intents": [step.intent.model_dump()]}, ttl_s=180)
             second.response += f"\n{question}"

@@ -104,6 +104,7 @@ workflows behavior layer record routine energy solar notes
 admin allowed api bug bugs checks count crash database fix font handle integrity logs md models pending
 pillow pitch problem pull retest secrets self sqlite tables tasks token tools voice whisper could
 installation registered installed development
+battery beacon c category charge encrypted ip multi pcs port private public properties psk remote tls udp k qf xa tpw
 """.split())
 
 
@@ -119,7 +120,8 @@ def test_every_template_word_is_covered():
               "communication/whatsapp.py", "design/agent.py", "design/images.py", "memory/agent.py",
               "memory/facts.py", "memory/history.py", "memory/workflows.py", "memory/short_term.py",
               "behavior/layer.py", "behavior/style.py", "behavior/patterns.py", "behavior/estimator.py",
-              "behavior/signals.py", "admin/service.py", "admin/selftest.py", "admin/docs.py"]:
+              "behavior/signals.py", "admin/service.py", "admin/selftest.py", "admin/docs.py",
+              "multipc/agent.py", "multipc/service.py", "multipc/policy.py", "multipc/link.py"]:
         tree = ast.parse((root / f).read_text(encoding="utf-8"))
         # Docstrings are developer documentation, never spoken.
         skipped = {

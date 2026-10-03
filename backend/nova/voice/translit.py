@@ -78,7 +78,12 @@ LEXICON: dict[str, str] = {
     # nouns
     "kaam": "کام", "cheez": "چیز", "cheezein": "چیزیں", "baat": "بات", "baatein": "باتیں", "sawal": "سوال",
     "sawalon": "سوالوں", "jawab": "جواب", "madad": "مدد", "maloomat": "معلومات", "maloom": "معلوم",
-    "masla": "مسئلہ", "masail": "مسائل", "masroof": "مصروف","naam": "نام", "alfaaz": "الفاظ", "awaaz": "آواز", "zaban": "زبان",
+    "masla": "مسئلہ", "masail": "مسائل", "masroof": "مصروف",
+    # Multi-PC (Phase 13)
+    "beech": "بیچ", "darkhwast": "درخواست", "darkhwastein": "درخواستیں", "haal": "حال", "isi": "اسی", "jor": "جوڑ",
+    "jorein": "جوڑیں", "jorna": "جوڑنا", "jorne": "جوڑنے", "jur": "جڑ", "jura": "جڑا", "jure": "جڑے",
+    "karwane": "کروانے", "koshishein": "کوششیں", "li": "لی", "mana": "منع", "mumkin": "ممکن", "nizam": "نظام",
+    "pate": "پتے", "poochh": "پوچھ", "raabta": "رابطہ", "ruka": "رکا", "sabit": "ثابت","naam": "نام", "alfaaz": "الفاظ", "awaaz": "آواز", "zaban": "زبان",
     "tareeqa": "طریقہ", "wazahat": "وضاحت", "salam": "سلام", "maaf": "معاف", "shukriya": "شکریہ",
     "rabta": "رابطہ", "ghalti": "غلطی", "zindagi": "زندگی", "dost": "دوست", "ghar": "گھر", "dil": "دل",
     "saal": "سال", "ghanta": "گھنٹہ", "ghante": "گھنٹے", "farq": "فرق", "zaiqa": "ذائقہ", "chai": "چائے",

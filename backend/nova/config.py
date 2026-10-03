@@ -39,6 +39,13 @@ class Settings:
     # Installed NOVA (Phase 12): voice models ship read-only next to the program; user data lives in LocalAppData.
     models_dir_override: Path | None = None
     packaged: bool = False
+    # Multi-PC (Phase 13): encrypted link to paired PCs (TCP) and the "NOVA is here" beacon (UDP), only on Private
+    # networks. peer_loopback: a test mode where two NOVAs on ONE PC find each other on 127.0.0.1 (beacon_targets =
+    # the other instances' beacon ports). 0 = any free port (tests).
+    peer_port: int = 8770
+    beacon_port: int | None = 8771
+    peer_loopback: bool = False
+    beacon_targets: tuple[int, ...] = ()
 
     @property
     def db_path(self) -> Path:
@@ -78,4 +85,8 @@ def load_settings() -> Settings:
         self_test_on_startup=os.environ.get("NOVA_SELF_TEST", "1").lower() not in ("0", "false", "no"),
         models_dir_override=_path_env("NOVA_MODELS_DIR", None),
         packaged=packaged,
+        peer_port=int(os.environ.get("NOVA_PEER_PORT", "8770")),
+        beacon_port=int(os.environ.get("NOVA_BEACON_PORT", "8771")) or None,
+        peer_loopback=os.environ.get("NOVA_PEER_LOOPBACK", "0").lower() in ("1", "true", "yes"),
+        beacon_targets=tuple(int(p) for p in os.environ.get("NOVA_BEACON_TARGETS", "").split(",") if p.strip()),
     )

@@ -48,6 +48,8 @@ class EventType(str, Enum):
     ADMIN_DECISION = "ADMIN_DECISION"
     RETRY = "RETRY"
     SETUP_PROGRESS = "SETUP_PROGRESS"
+    PEERS_CHANGED = "PEERS_CHANGED"  # Multi-PC: paired/found PCs, pairing, network status changed
+    REMOTE_TASK = "REMOTE_TASK"  # Multi-PC: a paired PC asked this PC to do something
 
 
 class NovaState(str, Enum):

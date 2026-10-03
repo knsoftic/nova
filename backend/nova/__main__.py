@@ -14,7 +14,8 @@ from .config import load_settings
 # Native/heavy packages an installed NOVA must be able to load.
 RUNTIME_MODULES = ("nova.main", "numpy", "PIL", "faster_whisper", "ctranslate2", "onnxruntime", "piper", "playwright",
                    "mss", "uiautomation", "comtypes", "pycaw", "winrt.windows.media.ocr", "winrt.windows.devices.radios",
-                   "trafilatura", "pypdf", "docx", "openpyxl", "psutil", "httpx", "uvicorn", "fastapi")
+                   "trafilatura", "pypdf", "docx", "openpyxl", "psutil", "httpx", "uvicorn", "fastapi",
+                   "ssl")  # ssl: the Multi-PC link (TLS 1.3 with a pre-shared key)
 
 
 def check() -> int:

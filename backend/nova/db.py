@@ -166,6 +166,20 @@ CREATE TABLE IF NOT EXISTS test_runs (
     results_json TEXT NOT NULL
 );
 
+-- Multi-PC (Phase 13): PCs paired with this one. key_enc = the link key, encrypted with Windows DPAPI.
+-- remote_allowed = THIS PC lets that PC run tasks here (off until the user turns it on).
+CREATE TABLE IF NOT EXISTS peers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    host TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    key_enc TEXT NOT NULL,
+    remote_allowed INTEGER NOT NULL DEFAULT 0,
+    allows_us INTEGER,
+    paired_at TEXT NOT NULL,
+    last_seen TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_events(created_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_bugs_signature ON bugs(signature) WHERE signature IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_activity_task ON activity_log(task_id);
@@ -644,6 +658,34 @@ class Database:
 
     def decline_routine(self, key: str) -> None:
         self.set_setting("declined_routines", json.dumps(sorted(self.declined_routines() | {key}), ensure_ascii=False))
+
+    # Multi-PC: paired PCs
+    def save_peer(self, peer_id: str, name: str, host: str, port: int, key_enc: str) -> None:
+        """Pairing again (e.g. after the other PC reinstalled NOVA) replaces the key; the remote permission resets."""
+        self._execute(
+            "INSERT INTO peers(id, name, host, port, key_enc, remote_allowed, paired_at, last_seen) "
+            "VALUES (?, ?, ?, ?, ?, 0, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, host = excluded.host, "
+            "port = excluded.port, key_enc = excluded.key_enc, remote_allowed = 0, allows_us = NULL, "
+            "paired_at = excluded.paired_at, last_seen = excluded.last_seen",
+            (peer_id, name, host, port, key_enc, _now(), _now()))
+
+    def list_peers(self) -> list[dict[str, Any]]:
+        return self._query("SELECT * FROM peers ORDER BY name COLLATE NOCASE")
+
+    def get_peer(self, peer_id: str) -> dict[str, Any] | None:
+        rows = self._query("SELECT * FROM peers WHERE id = ?", (peer_id,))
+        return rows[0] if rows else None
+
+    def update_peer(self, peer_id: str, **fields: Any) -> bool:
+        allowed = {"name", "host", "port", "remote_allowed", "allows_us", "last_seen"}
+        fields = {k: v for k, v in fields.items() if k in allowed}
+        if not fields:
+            return False
+        sets = ", ".join(f"{k} = ?" for k in fields)
+        return self._execute(f"UPDATE peers SET {sets} WHERE id = ?", (*fields.values(), peer_id)).rowcount > 0
+
+    def delete_peer(self, peer_id: str) -> bool:
+        return self._execute("DELETE FROM peers WHERE id = ?", (peer_id,)).rowcount > 0
 
     # system profile (latest few kept for comparison)
     def save_system_profile(self, profile_json: str, keep: int = 5) -> None:

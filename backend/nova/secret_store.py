@@ -37,6 +37,18 @@ def _dpapi(data: bytes, encrypt: bool) -> bytes:
         kernel32.LocalFree(out.pbData)
 
 
+def protect(data: bytes) -> str:
+    """Encrypt bytes for this Windows user (e.g. a Multi-PC link key) -> text for the database."""
+    return base64.b64encode(_dpapi(data, encrypt=True)).decode("ascii")
+
+
+def unprotect(text: str) -> bytes | None:
+    try:
+        return _dpapi(base64.b64decode(text), encrypt=False)
+    except (OSError, ValueError):
+        return None  # e.g. database copied from another Windows account
+
+
 def set_secret(db: Database, name: str, value: str) -> None:
     if name not in KNOWN_SECRETS:
         raise KeyError(name)

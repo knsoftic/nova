@@ -1038,6 +1038,10 @@ class RuleBasedProvider(AIProvider):
     def configure_wake(self, assistant_name: str, wake_word: str) -> None:
         self._wake = build_wake_pattern(assistant_name, wake_word)
 
+    def clean(self, text: str) -> str:
+        """The command without the wake word and trailing punctuation."""
+        return normalize(text, self._wake)
+
     async def understand(self, text: str, context: list[ConversationTurn] | None = None,
                          memories: list[str] | None = None, style_hint: str | None = None) -> Understanding:
         """Splits compound commands ("Chrome kholo aur RAM batao") when every part is understood."""

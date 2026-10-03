@@ -13,6 +13,7 @@ import type {
   HistoryPeriod,
   HistoryRecord,
   LiveStats,
+  PcsStatus,
   MemoryFact,
   PermissionRequest,
   PermissionRule,
@@ -53,6 +54,15 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const api = {
+  pcs: () => request<PcsStatus>("/api/pcs"),
+  refreshPcs: () => request<PcsStatus>("/api/pcs/refresh", { method: "POST" }),
+  openPairing: () => request<{ code: string; expires_in: number }>("/api/pcs/pairing", { method: "POST" }),
+  closePairing: () => request<{ ok: boolean }>("/api/pcs/pairing", { method: "DELETE" }),
+  pairPc: (body: { code: string; peer_id?: string; host?: string; port?: number }) =>
+    request<{ id: string; name: string }>("/api/pcs/pair", json("POST", body)),
+  setRemoteAllowed: (id: string, remote_allowed: boolean) =>
+    request<{ ok: boolean }>(`/api/pcs/${encodeURIComponent(id)}`, json("PUT", { remote_allowed })),
+  unpairPc: (id: string) => request<{ ok: boolean }>(`/api/pcs/${encodeURIComponent(id)}`, { method: "DELETE" }),
   profile: () => request<{ scanning: boolean; profile: SystemProfile | null }>("/api/system/profile"),
   scan: () => request<{ scanned_at: string; apps: number; errors: string[] }>("/api/system/scan", { method: "POST" }),
   live: () => request<LiveStats>("/api/system/live"),

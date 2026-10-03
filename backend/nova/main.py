@@ -43,6 +43,7 @@ from .admin.docs import DocFile
 from .admin.selftest import SelfTest, build_checks
 from .admin.service import BUG_STATUSES, AdminError, AdminService
 from .known_folders import known_folder
+from .install import install_info, ollama_path
 from .memory import facts as memory_facts
 from .memory.agent import NAME as MEMORY_AGENT
 from .memory.agent import MemoryAgent
@@ -216,6 +217,8 @@ def create_app(
             discovery_kwargs["stats"] = stats
         discovery = DiscoveryService(db, bus, **discovery_kwargs)
         app.state.db = db
+        app.state.settings = settings
+        app.state.pull_task = None
         app.state.bus = bus
         app.state.providers = providers
         app.state.discovery = discovery
@@ -635,6 +638,62 @@ def create_app(
         app.state.memory.short_term.clear()
         await app.state.memory.changed("short_term")
         return {"ok": True}
+
+    # ------------------------------------------------------------------ installed NOVA (Phase 12): first-run setup
+
+    @app.get("/api/setup/status")
+    async def setup_status() -> dict[str, Any]:
+        st = await app.state.providers.status(refresh=True)
+        s = app.state.user_settings
+        return {
+            "install": install_info(settings),
+            "ollama": {"installed": ollama_path() is not None, "reachable": st["ollama"]["reachable"],
+                       "model": st["model"], "model_ready": st["model_ready"],
+                       "pulling": bool(app.state.pull_task and not app.state.pull_task.done())},
+            "setup_done": s.setup_done, "start_with_windows": s.start_with_windows, "startup_mode": s.startup_mode,
+            "continuous_listening": s.continuous_listening,
+        }
+
+    async def pull_model() -> None:
+        bus: EventBus = app.state.bus
+        last = -10
+        model = app.state.providers.ollama.model
+
+        async def progress(data: dict[str, Any]) -> None:
+            nonlocal last
+            total, done = data.get("total") or 0, data.get("completed") or 0
+            percent = int(done * 100 / total) if total else None
+            if percent is not None and percent - last < 5 and percent < 100:
+                return  # a line every 5% is enough
+            last = percent if percent is not None else last
+            await bus.publish(NovaEvent(type=EventType.SETUP_PROGRESS, agent="Setup",
+                                        message=f"AI model {model}: {data.get('status', '')}" +
+                                                (f" {percent}%" if percent is not None else ""),
+                                        data={"step": "model", "percent": percent, "status": data.get("status")}))
+
+        try:
+            ok = await app.state.providers.ollama.pull(progress)
+            message = f"AI model {model} tayyar" if ok else f"AI model {model} download mukammal nahi hua"
+        except (httpx.HTTPError, ValueError) as exc:
+            ok, message = False, f"AI model download nahi hua ({type(exc).__name__}: {str(exc)[:120]})"
+        app.state.db.add_activity(task_id="setup", task_name="setup_model_pull", agent="Setup", action="ollama_pull",
+                                  permission_status="user_initiated", execution_status="success" if ok else "failed",
+                                  verification_status="passed" if ok and (await app.state.providers.status(
+                                      refresh=True))["model_ready"] else "failed", final_result=message)
+        await bus.publish(NovaEvent(type=EventType.SETUP_PROGRESS, agent="Setup", message=message,
+                                    data={"step": "model", "done": True, "ok": ok}))
+
+    @app.post("/api/setup/pull-model")
+    async def setup_pull_model() -> dict[str, Any]:
+        """Download the AI model through Ollama - only on the user's click in the setup (it is ~2.5 GB)."""
+        if app.state.pull_task and not app.state.pull_task.done():
+            return {"started": False, "detail": "Download pehle se chal raha hai"}
+        if not (await app.state.providers.status(refresh=True))["ollama"]["reachable"]:
+            raise HTTPException(status_code=409, detail="Ollama nahi chal raha — pehle Ollama install/start karein")
+        app.state.pull_task = asyncio.create_task(pull_model())
+        app.state.background.add(app.state.pull_task)
+        app.state.pull_task.add_done_callback(app.state.background.discard)
+        return {"started": True}
 
     # ------------------------------------------------------------------ admin (Phase 11): tests, bugs, approvals
 

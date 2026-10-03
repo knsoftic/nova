@@ -1,20 +1,41 @@
-import { app, BrowserWindow, ipcMain, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, session, shell, Tray } from "electron";
 import type { ChildProcess } from "node:child_process";
 import path from "node:path";
-import { BACKEND_URL, ensureBackend } from "./backend";
+import { BACKEND_URL, backendSettings, ensureBackend, installedDataDir } from "./backend";
 
 const devServerUrl = process.env.NOVA_DEV_SERVER_URL;
+// Started by Windows at login ("start with Windows"): silent mode stays in the tray.
+const launchedAtLogin = process.argv.includes("--startup");
+// Tests/automation can make the window's X really quit instead of hiding to the tray.
+const quitOnClose = process.env.NOVA_QUIT_ON_CLOSE === "1";
 let backendProcess: ChildProcess | null = null;
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let quitting = false;
+let trayHintShown = false;
 
-function createWindow(): void {
+if (app.isPackaged) {
+  // Everything NOVA keeps lives under %LOCALAPPDATA%\NOVA (the uninstaller can remove it in one go).
+  app.setPath("userData", path.join(path.dirname(installedDataDir()), "ui"));
+}
+
+function showWindow(): void {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function createWindow(visible: boolean): void {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 880,
     minWidth: 1024,
     minHeight: 680,
+    show: visible,
     backgroundColor: "#05070d",
     title: "NOVA",
+    icon: path.join(__dirname, "..", "build-resources", "tray@2x.png"),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -23,6 +44,8 @@ function createWindow(): void {
       sandbox: true,
       // NOVA speaks replies to voice commands without a click in between.
       autoplayPolicy: "no-user-gesture-required",
+      // In the tray (hidden window) the microphone still has to hear the wake word.
+      backgroundThrottling: false,
     },
   });
 
@@ -41,9 +64,50 @@ function createWindow(): void {
   } else {
     void mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
   }
+  // X hides NOVA to the tray (it keeps listening for the wake word); "Band karein" in the tray quits.
+  mainWindow.on("close", (event) => {
+    if (quitting || quitOnClose || !tray) return;
+    event.preventDefault();
+    mainWindow?.hide();
+    if (!trayHintShown) {
+      trayHintShown = true;
+      tray.displayBalloon({
+        iconType: "info",
+        title: "NOVA tray mein chal raha hai",
+        content: "Wapas kholne ke liye tray icon par click karein. Band karne ke liye right-click → Band karein.",
+      });
+    }
+  });
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+}
+
+function createTray(): void {
+  const icon = nativeImage.createFromPath(path.join(__dirname, "..", "build-resources", "tray.png"));
+  tray = new Tray(icon);
+  tray.setToolTip("NOVA");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "NOVA kholo", click: showWindow },
+      { type: "separator" },
+      {
+        label: "Band karein",
+        click: () => {
+          quitting = true;
+          app.quit();
+        },
+      },
+    ]),
+  );
+  tray.on("click", showWindow);
+}
+
+/** Windows login: register NOVA (installed only - a development copy must not start itself). */
+function applyStartup(openAtLogin: boolean): { applied: boolean; reason?: string } {
+  if (!app.isPackaged) return { applied: false, reason: "dev" };
+  app.setLoginItemSettings({ openAtLogin, name: "NOVA", path: process.execPath, args: ["--startup"] });
+  return { applied: app.getLoginItemSettings({ path: process.execPath, args: ["--startup"] }).openAtLogin === openAtLogin };
 }
 
 function isAppUrl(url: string | undefined): boolean {
@@ -73,19 +137,12 @@ function stopBackend(): void {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
+  app.on("second-instance", showWindow);
 
   // NOVA needs an answer (permission): bring its window forward even if another app is in front.
   ipcMain.handle("nova:attention", () => {
     if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+    showWindow();
     mainWindow.flashFrame(true);
     setTimeout(() => mainWindow?.flashFrame(false), 3000);
   });
@@ -95,17 +152,36 @@ if (!app.requestSingleInstanceLock()) {
     platform: process.platform,
     backendUrl: BACKEND_URL,
     backendManaged: backendProcess !== null,
+    packaged: app.isPackaged,
+    launchedAtLogin,
   }));
+
+  ipcMain.handle("nova:set-startup", (_e, openAtLogin: unknown) => applyStartup(openAtLogin === true));
+  ipcMain.handle("nova:open-folder", (_e, which: unknown) => {
+    const target = which === "program" ? path.dirname(process.execPath) : app.isPackaged ? installedDataDir() : null;
+    return target ? shell.openPath(target) : "dev";
+  });
 
   app.whenReady().then(async () => {
     configurePermissions();
-    backendProcess = await ensureBackend(app.getAppPath());
-    createWindow();
+    backendProcess = await ensureBackend(app.getAppPath(), app.isPackaged);
+    const settings = await backendSettings();
+    // Keep Windows in step with the setting (it may have been changed while NOVA was closed).
+    if (settings && typeof settings.start_with_windows === "boolean") applyStartup(settings.start_with_windows);
+    createTray();
+    const silent = launchedAtLogin && settings?.startup_mode === "silent";
+    createWindow(!silent);
+    if (silent) {
+      tray?.displayBalloon({ iconType: "info", title: "NOVA online hai", content: "Background mein \"Hey NOVA\" ka intezar." });
+    }
     app.on("activate", () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      if (BrowserWindow.getAllWindows().length === 0) createWindow(true);
     });
   });
 
+  app.on("before-quit", () => {
+    quitting = true;
+  });
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
   });

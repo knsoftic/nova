@@ -17,8 +17,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+import httpx
+
 CheckFn = Callable[[], Any]  # returns (status, detail), or an awaitable of it
 TIMEOUT_S = 90.0
+LOCAL_AI_TIMEOUT_S = 120.0
 
 
 @dataclass
@@ -28,6 +31,7 @@ class Check:
     name: str  # Roman Urdu, shown in the Admin panel
     fn: CheckFn
     quick: bool = True
+    timeout: float = TIMEOUT_S
 
 
 class SelfTest:
@@ -48,11 +52,11 @@ class SelfTest:
             try:
                 out = check.fn()
                 if asyncio.iscoroutine(out):
-                    status, detail = await asyncio.wait_for(out, TIMEOUT_S)
+                    status, detail = await asyncio.wait_for(out, check.timeout)
                 else:
                     status, detail = out  # type: ignore[misc]
             except asyncio.TimeoutError:
-                status, detail = "fail", f"{int(TIMEOUT_S)}s mein jawab nahi aaya"
+                status, detail = "fail", f"{int(check.timeout)}s mein jawab nahi aaya"
             except Exception as exc:  # a broken part must not stop the other checks
                 status, detail = "fail", f"{type(exc).__name__}: {str(exc)[:160]}"
             results.append({"id": check.id, "phase": check.phase, "name": check.name, "status": status,
@@ -123,7 +127,10 @@ def build_checks(app: Any) -> list[Check]:
         if not await s.providers.ollama.is_available():
             return "warn", "model available nahi"
         started = time.perf_counter()
-        u = await s.providers.ollama.understand("Chrome kholo")
+        try:  # the first answer also loads the model into memory - slow on a cold PC, but not broken
+            u = await s.providers.ollama.understand("Chrome kholo", timeout=LOCAL_AI_TIMEOUT_S)
+        except httpx.TimeoutException:
+            return "warn", f"{int(LOCAL_AI_TIMEOUT_S)}s mein jawab nahi aaya (model load ho raha tha ya PC masroof hai)"
         took = time.perf_counter() - started
         if u.intents[0].name != "open_app":
             return "fail", f"\"Chrome kholo\" → {u.intents[0].name}"
@@ -224,6 +231,8 @@ def build_checks(app: Any) -> list[Check]:
         from .docs import parse_tasks
 
         logs = s.admin.logs
+        if logs.path is None:
+            return "info", "installed NOVA — LOGS.md development ka hissa hai, yahan nahi"
         if not logs.available:
             return "warn", "LOGS.md nahi mili — approvals aur khulasa wahan nahi likhe jayenge"
         if not os.access(logs.path, os.W_OK):
@@ -237,13 +246,28 @@ def build_checks(app: Any) -> list[Check]:
         leaked = [w for w in ("hunter2", "sk-ABCDEF1234567890", "abcdef123456") if w in (out or "")]
         return ("fail", "chhupaya nahi: " + ", ".join(leaked)) if leaked else ("pass", "passwords/keys chhup gaye")
 
+    def install() -> tuple[str, str]:
+        from ..install import install_info
+
+        info = install_info(s.settings)
+        kind = "installed" if info["packaged"] else "development"
+        missing = [n for n, ok in info["voice_models"].items() if not ok]
+        if s.user_settings.start_with_windows and info["packaged"] and not info["startup_registered"]:
+            return "warn", "Settings mein 'Windows ke sath start' on hai lekin Windows mein NOVA registered nahi"
+        if missing and info["packaged"]:
+            return "fail", "program ke sath voice models nahi: " + ", ".join(missing)
+        start = "Windows ke sath start" if info["startup_registered"] else "khud start nahi"
+        return "pass", f"{kind} · Python {info['python'].split()[0]} · {start}"
+
     return [
+        Check("install", "12", "Installation aur Windows startup", thread(install)),
         Check("database", "1", "Database (SQLite) theek hai", thread(database)),
         Check("data_dir", "1", "Data folder mein likh sakte hain", thread(data_dir)),
         Check("profile", "2", "System profile maujood hai", profile),
         Check("rules_brain", "4", "AI brain (rules) sahi samajhta hai", rules_brain),
         Check("local_ai_ready", "4", "Local AI (Ollama) tayyar hai", local_ai_ready),
-        Check("local_ai_answer", "4", "Local AI command samajhta hai", local_ai_answer, quick=False),
+        Check("local_ai_answer", "4", "Local AI command samajhta hai", local_ai_answer, quick=False,
+              timeout=LOCAL_AI_TIMEOUT_S + 30),
         Check("voice_models", "5", "Awaaz ke models maujood", thread(voice_models)),
         Check("voice_speak", "5", "Urdu awaaz ban sakti hai", thread(voice_speak), quick=False),
         Check("desktop", "6", "Windows ki list parh sakte hain", thread(desktop)),

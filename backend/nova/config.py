@@ -36,6 +36,9 @@ class Settings:
     readme_path: Path | None = None
     self_test_on_startup: bool = True
     self_test_delay_s: float = 25.0  # let the system scan and the models load first
+    # Installed NOVA (Phase 12): voice models ship read-only next to the program; user data lives in LocalAppData.
+    models_dir_override: Path | None = None
+    packaged: bool = False
 
     @property
     def db_path(self) -> Path:
@@ -43,13 +46,22 @@ class Settings:
 
     @property
     def models_dir(self) -> Path:
-        return self.data_dir / "models"
+        return self.models_dir_override or self.data_dir / "models"
+
+
+def _path_env(name: str, default: Path | None) -> Path | None:
+    """An empty value switches the path off (installed NOVA has no LOGS.md/README.md)."""
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return Path(value) if value.strip() else None
 
 
 def load_settings() -> Settings:
     extra_origins = tuple(
         o.strip() for o in os.environ.get("NOVA_EXTRA_ORIGINS", "").split(",") if o.strip()
     )
+    packaged = os.environ.get("NOVA_PACKAGED", "0").lower() in ("1", "true", "yes")
     return Settings(
         # Bind to loopback only by default; the personal version must not be exposed to the network.
         host=os.environ.get("NOVA_HOST", "127.0.0.1"),
@@ -60,7 +72,10 @@ def load_settings() -> Settings:
         stt_model=os.environ.get("NOVA_STT_MODEL", "small"),
         discovery_on_startup=os.environ.get("NOVA_DISCOVERY_ON_STARTUP", "1").lower() not in ("0", "false", "no"),
         allowed_origins=DEFAULT_ALLOWED_ORIGINS + extra_origins,
-        logs_path=Path(os.environ.get("NOVA_LOGS_PATH", PROJECT_ROOT / "LOGS.md")),
-        readme_path=Path(os.environ.get("NOVA_README_PATH", PROJECT_ROOT / "README.md")),
+        # The development record lives in the repository; an installed NOVA has none unless pointed at one.
+        logs_path=_path_env("NOVA_LOGS_PATH", None if packaged else PROJECT_ROOT / "LOGS.md"),
+        readme_path=_path_env("NOVA_README_PATH", None if packaged else PROJECT_ROOT / "README.md"),
         self_test_on_startup=os.environ.get("NOVA_SELF_TEST", "1").lower() not in ("0", "false", "no"),
+        models_dir_override=_path_env("NOVA_MODELS_DIR", None),
+        packaged=packaged,
     )

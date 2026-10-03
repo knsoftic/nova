@@ -47,6 +47,7 @@ class EventType(str, Enum):
     BUG_LOGGED = "BUG_LOGGED"
     ADMIN_DECISION = "ADMIN_DECISION"
     RETRY = "RETRY"
+    SETUP_PROGRESS = "SETUP_PROGRESS"
 
 
 class NovaState(str, Enum):

@@ -733,3 +733,62 @@ Complete
 
 Admin Approval:
 Approved (2026-10-02, admin ne chat mein approve kiya)
+
+Git:
+- Phase 11 commit `9d8be7b`, `main` mein merge `724fe8b`.
+
+---
+
+### Task: Phase 12 — Windows EXE (installer, Windows ke sath start, tray, uninstall)
+
+Status: Complete (branch `phase-12-windows-exe`, approval ke baad `main` mein merge)
+
+Admin ke faisle (is phase ke shuru mein): **sab andar (offline)** installer — app, apna Python aur packages, awaaz ke models; Ollama aur AI model alag (un ka apna installer). Windows ke sath start **pehli dafa pooche** (Silent ya Active, baad mein Settings se badle). Window ka X → **tray mein chhup jaye**, tray se "Band karein". Is PC par alag test folder mein **install + uninstall** test ki ijazat.
+
+Kaam:
+- **Installer:** `npm run dist` (desktop/) se ek file `NOVA-Setup-0.12.0.exe` (~790 MB): Electron app + **NOVA ka apna Python** (tested `.venv` se copy — tests/pip/dev tools nahi) + backend + Whisper aur Urdu awaaz ke models. Internet ke baghair install. Build ke waqt `python -m nova --check` (22 zaroori modules) se runtime pakka kiya jata hai.
+- **Install:** sirf is user ke liye (admin rights nahi), folder chun sakte hain, Desktop + Start menu shortcut, Apps list mein "NOVA (KN Softic)". Program `…\Programs\NOVA` mein, data alag `%LOCALAPPDATA%\NOVA\data` mein (update par data rehta hai). Development copy pehle ki tarah `data/` istemal karti hai.
+- **Pehli dafa setup (wizard):** Salam → Windows start (haan/nahi, Silent ya Active) → Local AI (Ollama install/chal raha/model; "Ollama download page kholo" aur model download **sirf click par**, progress bar) → Awaaz (models maujood) → Tayyar. "Abhi nahi" se chhor sakte hain; sab Settings mein baad mein.
+- **Windows ke sath start:** Settings/wizard se on/off → Windows "Run" entry (`NOVA.exe --startup`). **Silent:** sirf tray icon + balloon "Hey NOVA ka intezar" (wake word ke liye mic on). **Active:** window khulti hai aur NOVA bolta hai "Assalam-o-Alaikum. NOVA online hai."
+- **Tray:** X dabane par NOVA tray mein (pehli dafa balloon), backend aur sunna chalta rehta hai; tray click → wapas, menu → "NOVA kholo" / "Band karein". Doosri dafa kholne par wahi window aage aati hai.
+- **Uninstall:** pehle NOVA ka apna backend band, program + shortcuts + Apps entry + Windows start entry khatam; "NOVA ka data bhi mitayein?" (default Nahi — dobara install par yaadein wapas).
+- **Settings → "NOVA ke baare mein":** version, installed/development, program/data/models folder, Python, Windows start registered ya nahi (installed mein folder kholne ke buttons).
+- **Self-test:** naya check "Installation aur Windows startup" (models gum = nakaam; start on magar registered nahi = warn). Installed NOVA mein LOGS.md nahi hota — us check ka "info".
+- App ka naya icon (orb + N), version 0.12.0.
+
+Test:
+- Backend automated tests: 611/611 pass (10 naye) — naye: installed/development configuration, awaaz ke models ki pehchan, setup status, AI model download sirf maangne par (progress 10/40/70/100, activity row), nakaam download aur Ollama band (409), installation ka self-test (pass/fail/warn), runtime build ke filters, `--check`, bana hua runtime khud chalta hai, sust local AI = warn (bug nahi).
+- Frontend: 20/20 tests (1 naya — wizard ka double-click), typecheck aur build successful (`scripts/check_all.py` — sab THEEK).
+- **Is PC par asli install test** (alag folder `%TEMP%\nova-install-test`, admin ki ijazat se):
+  - Installer bana (787 MB), chupchaap install ~6 minute (1.49 GB, 9953 files), Desktop/Start menu shortcut aur Apps entry bani.
+  - Installed NOVA ne apne Python se backend chalaya (developer ka Python nahi), data `%LOCALAPPDATA%\NOVA\data`, models andar se, Ollama + qwen3:4b tayyar; "RAM batao" sahi.
+  - Poora self-test installed NOVA par: 18 theek; local AI pehli dafa (thanda model) 45s mein jawab nahi — is par fix (neeche).
+  - Windows start on → Run entry `"…\NOVA.exe" --startup`; off → entry khatam.
+  - `--startup` + Silent → window nahi, sirf tray; Active → window + awaaz "Assalam-o-Alaikum. NOVA online hai." (NOVA_SPEAK 2.3s).
+  - X → window chhupi, NOVA aur backend chalte rahe (30s tak har 5s check), tray mein hote hue "RAM batao" ka jawab aaya.
+  - Uninstall (38s): folder, shortcuts, Apps entry aur Windows start entry khatam, data rakha gaya (default Nahi), koi NOVA process baqi nahi.
+  - **Fixes ke baad naya installer, dusra install test:** install (330s) ke foran baad installer ki copy aur `nova-desktop-updater` folder khatam; pichle test ka data wapas mila (setup ho chuka, history); backend 39s mein install folder ke Python se; self-test "Installation" theek, local AI ne "Chrome kholo" sahi samjha (45.1s — ab warn, nakaam/bug nahi); uninstall (39s) phir saaf, data rakha gaya.
+  - Test ke baad saaf kiya: test folder, `%LOCALAPPDATA%\NOVA` (sirf test ka data) — PC par NOVA ka kuch baqi nahi.
+  - Setup wizard aur "NOVA ke baare mein" browser preview mein alag (test) backend par — asli settings ko haath nahi lagaya.
+
+Bugs jo test ke dauran mile aur fix kiye gaye:
+- **Uninstall ke baad ~787 MB baqi:** electron-builder installer ki poori copy `%LOCALAPPDATA%\nova-desktop-updater` mein rakhta hai (auto-update ke liye) — NOVA mein auto-update nahi, is liye ab install ke foran baad aur uninstall par mita di jati hai.
+- **Wizard mein double-click:** "Aage" aur "Shuru karein" ek hi jagah hain — tez double-click se step chhoot kar setup khatam ho jata tha; ab step badalne ke 0.4s tak doosra click nahi ginta (test).
+- **Self-test ka local AI check:** thanda model pehli dafa load hone mein 45s se zyada le sakta hai → "nakaam" aur bug ban jata tha; ab 120s tak intezar, phir bhi na aaye to "warn" (bug nahi) (test).
+- Pehla icon dhundla/safed dhabba tha — dobara banaya.
+
+Maloom hadood (limitations):
+- Installer code-signed nahi — Windows SmartScreen "unknown publisher" keh sakta hai (*More info → Run anyway*).
+- Ollama aur AI model installer mein nahi (faisle ke mutabiq); wizard batata hai aur model click par download karta hai.
+- Auto-update nahi — naya version dobara install karna hoga (data rehta hai).
+- Windows ke sath start sirf installed NOVA mein; development copy mein ye setting sirf save hoti hai.
+- Installer bara hai (~790 MB) kyun ke awaaz ke models aur Python andar hain.
+
+Verification:
+- Install/uninstall ke baad files, shortcuts, registry (Apps + Run) aur processes check kiye; runtime ka `--check`; self-test ka install check.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-03, admin ne chat mein approve kiya)

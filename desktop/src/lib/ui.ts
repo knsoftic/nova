@@ -47,6 +47,14 @@ export function lifecycleIndex(stage: string): number {
   return Math.max(0, LIFECYCLE.findIndex((s) => s.id === stage));
 }
 
+/** Setup wizard (Phase 12): "Aage" and "Shuru karein" sit in the same spot, so a double-click must not skip a step
+ * or finish the setup. Forward moves count only after the step has been on screen this long. */
+export const STEP_GUARD_MS = 400;
+
+export function stepSettled(changedAt: number, now: number): boolean {
+  return now - changedAt >= STEP_GUARD_MS;
+}
+
 export const CHECK_TONE: Record<string, string> = {
   pass: "text-emerald-300",
   info: "text-sky-300",

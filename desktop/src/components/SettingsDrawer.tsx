@@ -7,6 +7,7 @@ import type {
   FileRoot,
   NovaState,
   PermissionRule,
+  SetupStatus,
   UserSettings,
   VoiceStatus,
   WebStatus,
@@ -453,7 +454,48 @@ function WebSettings({
   );
 }
 
-const REPLY_STYLES: { value: UserSettings["reply_style"]; label: string; hint: string }[] = [
+/** Which NOVA this is (installed or development), where it keeps data, and whether Windows starts it. */
+function AboutInstall({ open }: { open: boolean }) {
+  const [status, setStatus] = useState<SetupStatus | null>(null);
+  useEffect(() => {
+    if (open) api.setupStatus().then(setStatus).catch(() => setStatus(null));
+  }, [open]);
+  if (!status) return null;
+  const i = status.install;
+  const rows: [string, string][] = [
+    ["Version", `${i.version} (${i.packaged ? "installed" : "development copy"})`],
+    ["Program", i.program_dir],
+    ["Data (yaadein, history...)", i.data_dir],
+    ["Voice models", i.models_dir],
+    ["Python", i.python],
+    ["Windows ke sath start", i.startup_registered ? "registered" : "nahi"],
+  ];
+  return (
+    <section className="flex flex-col gap-2 border-t border-white/10 pt-4">
+      <h3 className="text-xs font-medium text-slate-300">NOVA ke baare mein</h3>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+        {rows.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-slate-500">{k}</dt>
+            <dd className="break-all font-mono text-[11px] text-slate-300">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {i.packaged && window.nova?.openFolder && (
+        <div className="flex gap-3 text-xs">
+          <button type="button" className="text-sky-300 hover:text-sky-200" onClick={() => void window.nova?.openFolder?.("data")}>
+            Data folder kholo
+          </button>
+          <button type="button" className="text-sky-300 hover:text-sky-200" onClick={() => void window.nova?.openFolder?.("program")}>
+            Program folder kholo
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+const REPLY_STYLES:{ value: UserSettings["reply_style"]; label: string; hint: string }[] = [
   { value: "auto", label: "Khud adapt (tajweez)", hint: "Aam tor par normal; jaldi/pareshani mein chhote, uljhan mein misaal ke sath." },
   { value: "short", label: "Hamesha chhote", hint: "Mukhtasar jawab; verify ka nishan (✓) phir bhi rehta hai." },
   { value: "detailed", label: "Hamesha tafseel se", hint: "Poori wazahat ke sath." },
@@ -743,7 +785,15 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
               </span>
             </label>
             <fieldset className="flex flex-col gap-2">
-              <legend className="mb-1 text-xs font-medium text-slate-300">Windows startup mode</legend>
+              <legend className="mb-1 text-xs font-medium text-slate-300">Windows startup</legend>
+              <label className="flex items-center gap-2 text-sm text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={draft.start_with_windows}
+                  onChange={(e) => set("start_with_windows", e.target.checked)}
+                />
+                Windows ke sath NOVA start ho
+              </label>
               {(
                 [
                   ["active", "Active — window khule aur salam kare"],
@@ -760,7 +810,9 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
                   {label}
                 </label>
               ))}
-              <span className="text-xs text-slate-500">Windows ke sath auto-start Phase 12 (installer) mein lagega.</span>
+              <span className="text-xs text-slate-500">
+                Silent ke liye "Continuous listening" on rakhein. Windows ke sath start sirf installed NOVA mein lagta hai.
+              </span>
             </fieldset>
 
             <VoiceSettings draft={draft} set={set} errors={errors} open={open} />
@@ -828,6 +880,8 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
         <Contacts open={open} />
 
         <PermissionRules open={open} />
+
+        <AboutInstall open={open} />
 
         <section className="flex flex-col gap-2 border-t border-white/10 pt-4">
           <h3 className="text-xs font-medium text-slate-300">Avatar states (admin preview)</h3>

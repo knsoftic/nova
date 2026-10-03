@@ -11,6 +11,8 @@ import { MIC_LABEL, MicControl } from "./components/MicControl";
 import { NovaCore } from "./components/NovaCore";
 import { PermissionDialog } from "./components/PermissionDialog";
 import { SettingsDrawer } from "./components/SettingsDrawer";
+import { SetupWizard } from "./components/SetupWizard";
+import { api } from "./lib/api";
 import { StatusBar } from "./components/StatusBar";
 import { SystemProfileView } from "./components/SystemProfileView";
 import type { NovaState } from "./lib/types";
@@ -139,6 +141,24 @@ export default function App() {
   }, []);
 
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
+
+  // Installed NOVA: keep Windows' "start at login" in step with the setting (the desktop app owns the registry).
+  const startWithWindows = nova.settings?.start_with_windows;
+  useEffect(() => {
+    if (startWithWindows !== undefined) void window.nova?.setStartup?.(startWithWindows);
+  }, [startWithWindows]);
+
+  // Active startup mode: when Windows started NOVA, greet out loud once.
+  const greeted = useRef(false);
+  const startupMode = nova.settings?.startup_mode;
+  useEffect(() => {
+    if (greeted.current || nova.connection !== "connected" || startupMode !== "active") return;
+    greeted.current = true;
+    void window.nova?.getInfo().then((info) => {
+      if (info.launchedAtLogin) void api.speak("Assalam-o-Alaikum. NOVA online hai.").catch(() => undefined);
+    });
+  }, [nova.connection, startupMode]);
+  const [setupClosed, setSetupClosed] = useState(false);
 
   const { clearAdminAlert } = nova;
   useEffect(() => {
@@ -271,6 +291,9 @@ export default function App() {
           />
         }
       />
+      {nova.connection === "connected" && nova.settings && !nova.settings.setup_done && !setupClosed && (
+        <SetupWizard settings={nova.settings} progress={nova.setupProgress} onDone={() => setSetupClosed(true)} />
+      )}
       {nova.permissions.length > 0 && <PermissionDialog key={nova.permissions[0].id} request={nova.permissions[0]} />}
       <SettingsDrawer
         open={settingsOpen}

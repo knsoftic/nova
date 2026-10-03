@@ -1,8 +1,9 @@
 {
   "name": "nova-desktop",
-  "version": "0.1.0",
+  "version": "0.12.0",
   "private": true,
   "description": "NOVA - Personal Autonomous AI Desktop System (KN Softic)",
+  "author": "KN Softic",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "concurrently -k -n vite,electron \"npm:dev:renderer\" \"npm:dev:electron\"",
@@ -10,8 +11,51 @@
     "dev:electron": "tsc -p tsconfig.electron.json && wait-on tcp:127.0.0.1:5173 && cross-env NOVA_DEV_SERVER_URL=http://localhost:5173 electron .",
     "build": "tsc -p tsconfig.json --noEmit && vite build && tsc -p tsconfig.electron.json",
     "start": "npm run build && electron .",
+    "runtime": "..\\backend\\.venv\\Scripts\\python.exe ..\\backend\\scripts\\build_runtime.py",
+    "dist": "npm run build && npm run runtime && electron-builder --win nsis --x64",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit"
+  },
+  "build": {
+    "appId": "com.knsoftic.nova",
+    "productName": "NOVA",
+    "copyright": "KN Softic",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "release",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "build-resources/tray.png",
+      "build-resources/tray@2x.png",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "build/runtime/python", "to": "python" },
+      { "from": "build/runtime/backend", "to": "backend" },
+      { "from": "build/runtime/models", "to": "models" }
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build-resources/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NOVA",
+      "uninstallDisplayName": "NOVA (KN Softic)",
+      "installerIcon": "build-resources/icon.ico",
+      "uninstallerIcon": "build-resources/icon.ico",
+      "include": "build-resources/installer.nsh",
+      "artifactName": "NOVA-Setup-${version}.exe",
+      "deleteAppDataOnUninstall": false
+    }
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -22,6 +66,7 @@
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",

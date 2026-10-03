@@ -9,6 +9,7 @@ import type {
   NovaState,
   PermissionRequest,
   PlanStepSummary,
+  SetupProgress,
   ServerMessage,
   UserSettings,
 } from "./types";
@@ -42,6 +43,8 @@ export function useNova() {
   // Bumped on self-test runs, bugs and admin decisions; adminAlert = something for the admin to look at.
   const [adminRevision, setAdminRevision] = useState(0);
   const [adminAlert, setAdminAlert] = useState(false);
+  // First-run setup: progress of the AI model download (Ollama pull).
+  const [setupProgress, setSetupProgress] = useState<SetupProgress | null>(null);
   // NOVA's latest estimate of how the user is communicating (only an estimate; null = nothing to show).
   const [estimate, setEstimate] = useState<BehaviorEstimate | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
@@ -105,6 +108,10 @@ export function useNova() {
         }
       }
       if (msg.type === "TASK_COMPLETED" || msg.type === "TASK_FAILED") setMemoryRevision((n) => n + 1);
+      if (msg.type === "SETUP_PROGRESS") {
+        const d = msg.data as { percent?: number | null; done?: boolean; ok?: boolean };
+        setSetupProgress({ percent: d.percent ?? null, message: msg.message ?? "", done: d.done, ok: d.ok });
+      }
       if (msg.type === "SELF_TEST" || msg.type === "BUG_LOGGED" || msg.type === "ADMIN_DECISION") {
         setAdminRevision((n) => n + 1);
         const d = msg.data as { failed?: number; warned?: number; bug?: { status?: string } };
@@ -269,6 +276,7 @@ export function useNova() {
     estimate,
     adminRevision,
     adminAlert,
+    setupProgress,
     clearAdminAlert,
     settings,
     aiStatus,

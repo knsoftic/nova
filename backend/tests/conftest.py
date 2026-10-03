@@ -71,6 +71,7 @@ class FakeOllama:
         self.reachable = reachable
         self.reply = None  # callable(user_text) -> dict | str (raw content) ; raise to simulate errors
         self.chat_requests = []
+        self.pull_ok = True
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if not self.reachable:
@@ -82,6 +83,14 @@ class FakeOllama:
             return httpx.Response(200, json={"models": [{"name": m} for m in self.models]})
         if path == "/api/generate":
             return httpx.Response(200, json={"done": True})
+        if path == "/api/pull":  # model download: progress lines, then success (the model then exists)
+            model = json.loads(request.content)["model"]
+            lines = [{"status": "pulling manifest"}] + [
+                {"status": "downloading", "total": 1000, "completed": done} for done in (100, 400, 700, 1000)]
+            lines.append({"status": "success"} if self.pull_ok else {"error": "disk full"})
+            if self.pull_ok and model not in self.models:
+                self.models.append(model)
+            return httpx.Response(200, content="\n".join(json.dumps(x) for x in lines).encode())
         if path == "/api/chat":
             body = json.loads(request.content)
             self.chat_requests.append(body)

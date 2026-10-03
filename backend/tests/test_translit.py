@@ -103,6 +103,7 @@ cnic com conversation deleting forgetting github manager memories notion office 
 workflows behavior layer record routine energy solar notes
 admin allowed api bug bugs checks count crash database fix font handle integrity logs md models pending
 pillow pitch problem pull retest secrets self sqlite tables tasks token tools voice whisper could
+installation registered installed development
 """.split())
 
 

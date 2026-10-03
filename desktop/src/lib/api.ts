@@ -16,6 +16,7 @@ import type {
   MemoryFact,
   PermissionRequest,
   PermissionRule,
+  SetupStatus,
   ShortTermMemory,
   SystemProfile,
   UserSettings,
@@ -76,6 +77,8 @@ export const api = {
   runSelfTest: (scope = "full") => request<TestRun>("/api/admin/selftest", json("POST", { scope })),
   lastSelfTest: () => request<TestRun | null>("/api/admin/selftest/last"),
   adminSummary: () => request<DaySummary>("/api/admin/summary"),
+  setupStatus: () => request<SetupStatus>("/api/setup/status"),
+  pullModel: () => request<{ started: boolean; detail?: string }>("/api/setup/pull-model", { method: "POST" }),
   pendingPermissions: () => request<PermissionRequest[]>("/api/permissions/pending"),
   decidePermission: (id: string, approved: boolean, remember: boolean) =>
     request<{ ok: boolean }>(`/api/permissions/${encodeURIComponent(id)}/decision`, json("POST", { approved, remember })),

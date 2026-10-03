@@ -44,7 +44,8 @@ export type EventType =
   | "SELF_TEST"
   | "BUG_LOGGED"
   | "ADMIN_DECISION"
-  | "RETRY";
+  | "RETRY"
+  | "SETUP_PROGRESS";
 
 export interface SelfTestResult {
   id: string;
@@ -113,6 +114,10 @@ export interface UserSettings {
   wake_word: string;
   continuous_listening: boolean;
   startup_mode: "silent" | "active";
+  /** Start NOVA when Windows starts (installed NOVA only; applied by the desktop app). */
+  start_with_windows: boolean;
+  /** The first-run setup was completed or skipped. */
+  setup_done: boolean;
   ai_mode: AiMode;
   ai_model: string;
   stt_language: "ur" | "hi" | "en" | "auto";
@@ -424,9 +429,50 @@ export interface VoiceStatus {
 declare global {
   interface Window {
     nova?: {
-      getInfo: () => Promise<{ appVersion: string; platform: string; backendUrl: string; backendManaged: boolean }>;
+      getInfo: () => Promise<{
+        appVersion: string;
+        platform: string;
+        backendUrl: string;
+        backendManaged: boolean;
+        /** An installed NOVA (not a development copy). */
+        packaged?: boolean;
+        /** Windows started NOVA at login. */
+        launchedAtLogin?: boolean;
+      }>;
       /** Bring the NOVA window to the front (e.g. when it needs the user's permission). */
       attention: () => Promise<void>;
+      /** Register/unregister "start with Windows" (installed NOVA only). */
+      setStartup?: (openAtLogin: boolean) => Promise<{ applied: boolean; reason?: string }>;
+      /** Open NOVA's data or program folder in Explorer. */
+      openFolder?: (which: "data" | "program") => Promise<string>;
     };
   }
+}
+
+/** First-run setup and "about this installation" (Phase 12). */
+export interface SetupStatus {
+  install: {
+    version: string;
+    packaged: boolean;
+    program_dir: string;
+    data_dir: string;
+    models_dir: string;
+    python: string;
+    startup_registered: boolean;
+    startup_command: string | null;
+    voice_models: { whisper: boolean; piper: boolean };
+    logs_md: boolean;
+  };
+  ollama: { installed: boolean; reachable: boolean; model: string; model_ready: boolean; pulling: boolean };
+  setup_done: boolean;
+  start_with_windows: boolean;
+  startup_mode: "silent" | "active";
+  continuous_listening: boolean;
+}
+
+export interface SetupProgress {
+  percent: number | null;
+  message: string;
+  done?: boolean;
+  ok?: boolean;
 }

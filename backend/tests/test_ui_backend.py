@@ -14,7 +14,8 @@ def test_settings_defaults(client):
                  "stt_language": "ur", "tts_voice": "ur_PK-fasih-medium", "speak_responses": "voice_only",
                  "search_engine": "google", "browser_channel": "chrome", "project_folders": ["C:\\xampp\\htdocs"],
                  "history_days": 90, "reply_style": "auto", "emotion_awareness": True, "voice_signals": True,
-                 "show_estimate": True, "learn_patterns": True, "suggest_routines": True}
+                 "show_estimate": True, "learn_patterns": True, "suggest_routines": True,
+                 "start_with_windows": False, "setup_done": False}
 
 
 def test_settings_partial_update_persists_and_logs(client):

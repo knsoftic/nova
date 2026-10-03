@@ -441,6 +441,25 @@ class OllamaProvider(AIProvider):
             r.raise_for_status()
         await self.understand("Assalam-o-Alaikum", timeout=180.0)
 
+    async def pull(self, on_progress: Any) -> bool:
+        """Download the configured model through Ollama (only when the user asked, in the setup). `on_progress` gets
+        Ollama's progress lines ({"status", "total", "completed"}). True when Ollama reports success."""
+        ok = False
+        async with httpx.AsyncClient(base_url=self.base_url, transport=self._transport,
+                                     timeout=httpx.Timeout(30.0, read=None)) as client:
+            async with client.stream("POST", "/api/pull", json={"model": self.model, "stream": True}) as r:
+                r.raise_for_status()
+                async for line in r.aiter_lines():
+                    if not line.strip():
+                        continue
+                    data = json.loads(line)
+                    if data.get("error"):
+                        raise ValueError(str(data["error"])[:200])
+                    await on_progress(data)
+                    ok = ok or data.get("status") == "success"
+        self._status = None  # the model list changed
+        return ok
+
     async def detect_intent(self, text: str) -> Intent:
         return (await self.understand(text)).intents[0]
 

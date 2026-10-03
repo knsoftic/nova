@@ -22,7 +22,10 @@ class UserSettings(BaseModel):
     assistant_name: str = Field(default="NOVA", min_length=1, max_length=24)
     wake_word: str = Field(default="Hey NOVA", min_length=2, max_length=40)
     continuous_listening: bool = False  # takes effect when voice arrives (Phase 5)
-    startup_mode: Literal["silent", "active"] = "active"  # takes effect with Windows startup (Phase 12)
+    # Windows login (Phase 12): silent = in the tray, waiting for the wake word; active = window + spoken greeting.
+    startup_mode: Literal["silent", "active"] = "active"
+    start_with_windows: bool = False  # asked in the first-run setup; applied by the desktop app (installed NOVA)
+    setup_done: bool = False  # the first-run setup was completed or skipped
     ai_mode: Literal["hybrid", "llm", "rules"] = "hybrid"
     ai_model: str = Field(default="qwen3:4b", min_length=1, max_length=80, pattern=r"^[A-Za-z0-9._:/\-]+$")
     stt_language: Literal["ur", "hi", "en", "auto"] = "ur"
@@ -82,6 +85,8 @@ class UserSettingsUpdate(BaseModel):
     wake_word: str | None = None
     continuous_listening: bool | None = None
     startup_mode: Literal["silent", "active"] | None = None
+    start_with_windows: bool | None = None
+    setup_done: bool | None = None
     ai_mode: Literal["hybrid", "llm", "rules"] | None = None
     ai_model: str | None = None
     stt_language: Literal["ur", "hi", "en", "auto"] | None = None

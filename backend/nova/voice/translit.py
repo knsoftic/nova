@@ -78,7 +78,7 @@ LEXICON: dict[str, str] = {
     # nouns
     "kaam": "کام", "cheez": "چیز", "cheezein": "چیزیں", "baat": "بات", "baatein": "باتیں", "sawal": "سوال",
     "sawalon": "سوالوں", "jawab": "جواب", "madad": "مدد", "maloomat": "معلومات", "maloom": "معلوم",
-    "masla": "مسئلہ", "masail": "مسائل", "naam": "نام", "alfaaz": "الفاظ", "awaaz": "آواز", "zaban": "زبان",
+    "masla": "مسئلہ", "masail": "مسائل", "masroof": "مصروف","naam": "نام", "alfaaz": "الفاظ", "awaaz": "آواز", "zaban": "زبان",
     "tareeqa": "طریقہ", "wazahat": "وضاحت", "salam": "سلام", "maaf": "معاف", "shukriya": "شکریہ",
     "rabta": "رابطہ", "ghalti": "غلطی", "zindagi": "زندگی", "dost": "دوست", "ghar": "گھر", "dil": "دل",
     "saal": "سال", "ghanta": "گھنٹہ", "ghante": "گھنٹے", "farq": "فرق", "zaiqa": "ذائقہ", "chai": "چائے",

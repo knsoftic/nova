@@ -6,9 +6,10 @@ import time
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
+import httpx
 import pytest
 
-from conftest import FakeDesktop, build_client
+from conftest import FakeDesktop, FakeOllama, build_client
 from nova.admin import docs
 
 LOGS = """# NOVA Development Logs
@@ -131,6 +132,22 @@ def test_self_test_checks_the_parts_and_records_the_run(env):
     assert events(c, "SELF_TEST")[-1].message.startswith("Self-test (startup)")
     phase = c.post("/api/admin/features/8C/test").json()
     assert {r["phase"] for r in phase["results"]} == {"8C"} and phase["scope"] == "8C"
+
+
+def test_a_slow_local_ai_is_a_warning_not_a_failure(tmp_path):
+    ollama = FakeOllama(models=["qwen3:4b"])
+    ollama.reply = lambda text: {"intents": [{"name": "open_app", "confidence": 0.9, "entities": {"app": "chrome"}}],
+                                 "answer": ""}
+    with build_client(tmp_path, ollama) as c:
+        result = {r["id"]: r for r in c.post("/api/admin/selftest", json={"scope": "4"}).json()["results"]}
+        assert result["local_ai_answer"]["status"] == "pass"
+
+        def cold(text):  # the first answer on a cold PC also loads the model
+            raise httpx.ReadTimeout("timed out")
+        ollama.reply = cold
+        result = {r["id"]: r for r in c.post("/api/admin/selftest", json={"scope": "4"}).json()["results"]}
+        assert result["local_ai_answer"]["status"] == "warn" and "120s" in result["local_ai_answer"]["detail"]
+        assert c.get("/api/admin/bugs").json() == []  # a warning is not a bug
 
 
 def test_a_failing_check_becomes_a_bug_once(env):

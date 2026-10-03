@@ -10,6 +10,8 @@ import {
   estimateText,
   LIFECYCLE,
   lifecycleIndex,
+  stepSettled,
+  STEP_GUARD_MS,
   formatBytes,
   formatDuration,
   linkParts,
@@ -202,5 +204,13 @@ describe("admin lifecycle", () => {
     expect(lifecycleIndex("verified")).toBe(2);
     expect(lifecycleIndex("problem")).toBe(0);
     expect(lifecycleIndex("whatever")).toBe(0);
+  });
+});
+
+describe("setup wizard", () => {
+  it("ignores the second click of a double-click right after a step change", () => {
+    expect(stepSettled(1000, 1000 + 120)).toBe(false); // second click of a double-click
+    expect(stepSettled(1000, 1000 + STEP_GUARD_MS)).toBe(true);
+    expect(stepSettled(0, 5000)).toBe(true); // the first step: no change yet, the page has been open for a while
   });
 });

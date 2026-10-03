@@ -14,6 +14,9 @@ __pycache__/
 desktop/node_modules/
 desktop/dist/
 desktop/dist-electron/
+# installer build (Phase 12): bundled runtime/models and the built installer
+desktop/build/
+desktop/release/
 
 # env / secrets
 .env

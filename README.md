@@ -2,7 +2,7 @@
 
 KN Softic · Windows · local-first
 
-Current status: **Phase 11 (Testing & Logs)**. NOVA listens (push-to-talk or wake word), understands
+Current status: **Phase 12 (Windows EXE)**. NOVA listens (push-to-talk or wake word), understands
 Urdu / Roman Urdu / Hindi / English with a local LLM plus fast rules, plans multi-step requests, and replies in
 an offline Urdu voice. It opens apps, arranges windows, reads the screen and takes screenshots (verified
 afterwards). Risky actions — typing, clicking, pasting, closing apps — run only after the user says yes
@@ -16,7 +16,9 @@ simple designs. It remembers what the user asks it to (never silently), keeps a 
 for a chosen number of days, and learns workflows such as "work start karo". It estimates how the user is
 communicating (hurried, frustrated, confused - always shown as an estimate), adapts its tone, and learns which
 apps the user opens together to suggest workflows. An Admin panel runs self-tests, tracks bugs and records the
-administrator's approvals in LOGS.md. See [LOGS.md](LOGS.md) for development history and approval status.
+administrator's approvals in LOGS.md. It installs from one offline setup file (NOVA-Setup.exe) on any personal
+Windows PC, can start with Windows (silent or active) and lives in the tray. See [LOGS.md](LOGS.md) for
+development history and approval status.
 
 ## Voice (offline)
 
@@ -176,6 +178,32 @@ Everything here is local; the estimate is never stored, and every part can be sw
 
 (from `backend/`)
 
+## Installer (Windows EXE)
+
+Build the offline installer (from `desktop/`, with the backend `.venv` and the voice models in `data/models`):
+
+```bash
+npm run dist
+```
+
+Output: `desktop/release/NOVA-Setup-<version>.exe`. Inside: the app, a private Python runtime with all packages
+(copied from the tested `.venv` - no internet needed, `python -m nova --check` verifies it) and the voice models.
+Ollama and its AI model stay separate (their own installer); the first-run setup shows what is missing and downloads
+the model only when you click.
+
+- **Install:** per user, no administrator rights; folder `%LOCALAPPDATA%\Programs\NOVA` (changeable), desktop and
+  Start-menu shortcuts. The installer is not code-signed, so Windows SmartScreen may say "unknown publisher" -
+  *More info → Run anyway*.
+- **Data:** `%LOCALAPPDATA%\NOVA\data` (database, browser profile, screenshots) - separate from the program, so an
+  update keeps it. A development copy keeps using `data/` in the repository.
+- **First run:** setup wizard - start with Windows (Silent: tray, waits for the wake word; Active: window and
+  "Assalam-o-Alaikum. NOVA online hai."), local AI status and model download, voice check. *Abhi nahi* skips it;
+  everything is in ⚙ Settings later (Windows startup, *NOVA ke baare mein*).
+- **Tray:** the window's X hides NOVA to the tray (it keeps listening if continuous listening is on); tray menu →
+  *Band karein* quits.
+- **Uninstall:** Windows Settings → Apps → *NOVA (KN Softic)*, or the Start-menu uninstaller. It removes the program
+  and the "start with Windows" entry, stops NOVA's backend first, and asks whether to delete the data (default: keep).
+
 ## Layout
 
 ```
@@ -194,6 +222,7 @@ nova/
 │   │   ├── memory/         Memory Agent: short-term memory, facts, history search/retention, workflows
 │   │   ├── behavior/       Behavior Layer: estimate (words, context, voice), tone, habits, routine suggestions
 │   │   ├── admin/          self-test, bug tracking, approvals, LOGS.md/README.md upkeep
+│   │   ├── install.py      installed NOVA: paths, Windows startup registration, Ollama/model status
 │   │   ├── files/          allowed folders, search, documents, Recycle Bin, verified file operations + undo
 │   │   ├── coding/         Coding Agent: projects, allowed commands, error parsing, checked code edits
 │   │   ├── browser/        Browser Agent + Playwright controller (NOVA's own Chrome profile)
@@ -210,7 +239,8 @@ nova/
 │   │   └── redaction.py    secret scrubbing before logging
 │   └── tests/
 ├── desktop/            Electron + React + TypeScript + Tailwind
-│   ├── electron/           main process, preload, backend launcher
+│   ├── electron/           main process (tray, startup, silent/active), preload, backend launcher
+│   ├── build-resources/    icons, NSIS uninstaller additions (installer.nsh)
 │   └── src/                Command Center UI
 ├── data/               local database (created at runtime, git-ignored)
 └── LOGS.md             human-readable development log (Roman Urdu)
@@ -283,6 +313,25 @@ Environment variables (backend):
 | `NOVA_ASSISTANT_NAME` | `NOVA` | Assistant name |
 | `NOVA_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama server |
 | `NOVA_DISCOVERY_ON_STARTUP` | `1` | Rescan the system in the background on every start |
+
+## Admin manual test (Phase 12, approved)
+
+1. Installer: `desktop/release/NOVA-Setup-0.12.0.exe` chalayein (SmartScreen aaye to *More info → Run anyway*).
+   Folder chun sakte hain; Desktop aur Start menu par NOVA ka shortcut.
+   (Pehle development wala NOVA band kar dein, warna dono ek hi port use karenge.)
+2. **Pehli dafa:** NOVA khule → setup wizard: Windows ke sath start (Silent/Active), AI model ka haal (Ollama is PC
+   par hai), awaaz ✓ → *Shuru karein*. Settings → **NOVA ke baare mein**: "installed", data folder
+   `%LOCALAPPDATA%\NOVA\data`, "Windows ke sath start: registered".
+3. Kuch commands (Chrome kholo, RAM batao, mic se awaaz). Admin → *Poora test chalayein* → "Installation aur
+   Windows startup" theek.
+4. **Tray:** window ka X → NOVA tray mein (balloon message); tray icon click → wapas; right-click → *Band karein*.
+5. **Active start:** Settings → Windows startup → Active; PC sign out/in (ya restart) → NOVA khud khule aur bole
+   "Assalam-o-Alaikum. NOVA online hai."
+6. **Silent start:** Silent + Continuous listening on; sign out/in → sirf tray icon (balloon "Hey NOVA ka intezar");
+   "Hey NOVA, RAM batao" → jawab.
+7. **Uninstall:** Settings → Apps → NOVA (KN Softic) → Uninstall → "data bhi mitayein?" → Nahi (data rahe). Start
+   menu/desktop shortcut aur Windows startup entry khatam. Dobara install karein to purani yaadein wapas.
+8. Sab theek ho to approve karein (Admin tab ya chat), warna problem batayein.
 
 ## Admin manual test (Phase 11, approved)
 

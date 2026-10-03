@@ -199,8 +199,10 @@ the model only when you click.
 - **Data:** `%LOCALAPPDATA%\NOVA\data` (database, browser profile, screenshots) - separate from the program, so an
   update keeps it. A development copy keeps using `data/` in the repository.
 - **First run:** setup wizard - start with Windows (Silent: tray, waits for the wake word; Active: window and
-  "Assalam-o-Alaikum. NOVA online hai."), local AI status and model download, voice check. *Abhi nahi* skips it;
-  everything is in ⚙ Settings later (Windows startup, *NOVA ke baare mein*).
+  "Assalam-o-Alaikum. NOVA online hai."), microphone always on for the wake word, local AI status and model download,
+  voice check. Starting with Windows and the always-on microphone are **on by default** (0.13.1); *Abhi nahi* keeps
+  the defaults. Everything can be changed in ⚙ Settings later (Windows startup, continuous listening, *NOVA ke baare
+  mein*). Settings saved by an older version get both switched on once when updating.
 - **Tray:** the window's X hides NOVA to the tray (it keeps listening if continuous listening is on); tray menu →
   *Band karein* quits.
 - **Uninstall:** Windows Settings → Apps → *NOVA (KN Softic)*, or the Start-menu uninstaller. It removes the program
@@ -344,6 +346,17 @@ Environment variables (backend):
 | `NOVA_BEACON_PORT` | `8771` | Multi-PC beacon (UDP); `0` = off |
 | `NOVA_PEER_LOOPBACK` | `0` | Test mode: two NOVAs on one PC pair over 127.0.0.1 |
 | `NOVA_BEACON_TARGETS` | | Test mode: the other instances' beacon ports, e.g. `8781` |
+
+## Admin manual test (Phase 13B, approved)
+
+1. Installer: `desktop/release/NOVA-Setup-0.13.1.exe` chalayein (purane NOVA ke upar; data rehta hai).
+2. **Naya install (ya doosra PC):** setup wizard → "Windows start hone par" mein *Windows ke sath start* aur
+   **Mic hamesha on** pehle se ✓ → *Shuru karein*. Window khulte hi mic on ("Mic: On · Hey NOVA") — "Hey NOVA, RAM
+   batao" → jawab.
+3. **Pehle se laga NOVA (update):** update ke baad pehli dafa khulte hi mic on aur Settings → Windows startup ✓.
+4. PC restart (ya sign out/in) → NOVA khud khule, "Assalam-o-Alaikum. NOVA online hai." kahe aur mic on ho.
+5. Settings → Continuous listening off → NOVA band karke dobara kholein → mic off hi rahe (aap ki marzi yaad rehti hai).
+6. Sab theek ho to approve karein, warna problem batayein.
 
 ## Admin manual test (Phase 13, approved)
 

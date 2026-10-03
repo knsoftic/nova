@@ -1,3 +1,3 @@
 """NOVA backend - Personal Autonomous AI Desktop System (KN Softic)."""
 
-__version__ = "0.13.0"
+__version__ = "0.13.1"

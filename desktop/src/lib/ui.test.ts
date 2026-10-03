@@ -11,6 +11,7 @@ import {
   LIFECYCLE,
   lifecycleIndex,
   stepSettled,
+  listensAfterSetup,
   pairingTimeLeft,
   pcExamples,
   STEP_GUARD_MS,
@@ -210,6 +211,13 @@ describe("admin lifecycle", () => {
 });
 
 describe("setup wizard", () => {
+  it("keeps the mic listening when chosen, and always for a silent start", () => {
+    expect(listensAfterSetup(true, true, "active")).toBe(true);
+    expect(listensAfterSetup(false, true, "active")).toBe(false);
+    expect(listensAfterSetup(false, true, "silent")).toBe(true); // in the tray NOVA is only reached by voice
+    expect(listensAfterSetup(false, false, "silent")).toBe(false);
+  });
+
   it("ignores the second click of a double-click right after a step change", () => {
     expect(stepSettled(1000, 1000 + 120)).toBe(false); // second click of a double-click
     expect(stepSettled(1000, 1000 + STEP_GUARD_MS)).toBe(true);

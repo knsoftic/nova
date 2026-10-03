@@ -9,14 +9,39 @@ from nova.ai.rule_based import RuleBasedProvider
 
 def test_settings_defaults(client):
     s = client.get("/api/settings").json()
-    assert s == {"assistant_name": "NOVA", "wake_word": "Hey NOVA", "continuous_listening": False,
+    assert s == {"assistant_name": "NOVA", "wake_word": "Hey NOVA", "continuous_listening": True,
                  "startup_mode": "active", "ai_mode": "hybrid", "ai_model": "qwen3:4b",
                  "stt_language": "ur", "tts_voice": "ur_PK-fasih-medium", "speak_responses": "voice_only",
                  "search_engine": "google", "browser_channel": "chrome", "project_folders": ["C:\\xampp\\htdocs"],
                  "history_days": 90, "reply_style": "auto", "emotion_awareness": True, "voice_signals": True,
                  "show_estimate": True, "learn_patterns": True, "suggest_routines": True,
-                 "start_with_windows": False, "setup_done": False, "multi_pc": False,
-                 "pc_name": ""}
+                 "start_with_windows": True, "setup_done": False, "multi_pc": False,
+                 "pc_name": "", "settings_version": 2}
+
+
+def test_mic_and_windows_start_are_switched_on_once_for_older_settings(tmp_path):
+    """0.13.1 (admin's request): mic listening for the wake word and start with Windows. Settings saved before get
+    them once; turning them off afterwards is respected."""
+    import json
+
+    from conftest import build_client
+    from nova.db import Database
+    from nova.user_settings import SETTINGS_KEY
+
+    db = Database(tmp_path / "nova.db")
+    db.set_setting(SETTINGS_KEY, json.dumps({"assistant_name": "Zara", "wake_word": "Suno Zara",
+                                             "continuous_listening": False, "start_with_windows": False,
+                                             "setup_done": True}))
+    db.close()
+    with build_client(tmp_path) as c:
+        s = c.get("/api/settings").json()
+        assert s["continuous_listening"] and s["start_with_windows"] and s["settings_version"] == 2
+        assert s["assistant_name"] == "Zara" and s["setup_done"]  # nothing else changes
+        c.put("/api/settings", json={"continuous_listening": False, "settings_version": 1})
+        assert c.get("/api/settings").json()["settings_version"] == 2  # not something the UI can change
+    with build_client(tmp_path) as c:
+        s = c.get("/api/settings").json()
+        assert s["continuous_listening"] is False and s["start_with_windows"] is True
 
 
 def test_settings_partial_update_persists_and_logs(client):

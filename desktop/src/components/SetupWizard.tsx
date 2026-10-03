@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api";
 import type { SetupProgress, SetupStatus, UserSettings } from "../lib/types";
-import { stepSettled } from "../lib/ui";
+import { listensAfterSetup, stepSettled } from "../lib/ui";
 
 const OLLAMA_DOWNLOAD = "https://ollama.com/download";
 const STEPS = ["Salam", "Windows start", "AI model", "Awaaz", "Tayyar"];
@@ -33,7 +33,8 @@ export function SetupWizard({
   const [step, setStep] = useState(0);
   const stepAt = useRef(0);
   const [status, setStatus] = useState<SetupStatus | null>(null);
-  const [startWithWindows, setStartWithWindows] = useState(true);
+  const [startWithWindows, setStartWithWindows] = useState(settings.start_with_windows);
+  const [micOn, setMicOn] = useState(settings.continuous_listening);
   const [mode, setMode] = useState<UserSettings["startup_mode"]>(settings.startup_mode);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -61,8 +62,7 @@ export function SetupWizard({
       if (!skip) {
         patch.start_with_windows = startWithWindows;
         patch.startup_mode = mode;
-        // Silent start waits for the wake word: the microphone has to listen continuously.
-        if (startWithWindows && mode === "silent") patch.continuous_listening = true;
+        patch.continuous_listening = listensAfterSetup(micOn, startWithWindows, mode);
       }
       await api.updateSettings(patch);
       if (!skip) await window.nova?.setStartup?.(startWithWindows);
@@ -140,6 +140,22 @@ export function SetupWizard({
                 </label>
               </div>
             )}
+            <label className="flex items-start gap-2 text-sm text-slate-200">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={listensAfterSetup(micOn, startWithWindows, mode)}
+                disabled={startWithWindows && mode === "silent"}
+                onChange={(e) => setMicOn(e.target.checked)}
+              />
+              <span className="flex flex-col">
+                <span>Mic hamesha on — "{settings.wake_word}" kehne par sune</span>
+                <span className="text-xs text-slate-500">
+                  Sirf "{settings.wake_word}" ke baad wali baat command banti hai; baqi na save hoti hai na dikhai jati hai.
+                  Mic button se kabhi bhi band kar sakte hain.
+                </span>
+              </span>
+            </label>
             {!packaged && (
               <p className="text-xs text-amber-300">Ye development copy hai — Windows ke sath start sirf installed NOVA mein lagta hai.</p>
             )}
@@ -208,6 +224,11 @@ export function SetupWizard({
             <h2 className="text-base font-semibold text-slate-100">Tayyar!</h2>
             <ul className="flex flex-col gap-1">
               <Check ok>{startWithWindows ? `Windows ke sath start: ${mode === "silent" ? "Silent" : "Active"}` : "Windows ke sath khud start nahi"}</Check>
+              <Check ok>
+                {listensAfterSetup(micOn, startWithWindows, mode)
+                  ? `Mic on — "${settings.wake_word}" kahein`
+                  : "Mic button se (khud nahi sunega)"}
+              </Check>
               <Check ok={!!ollama?.model_ready}>{ollama?.model_ready ? "Local AI tayyar" : "Local AI baad mein (Settings → AI brain)"}</Check>
               <Check ok={!!voice?.whisper && !!voice?.piper}>Awaaz</Check>
             </ul>

@@ -63,7 +63,8 @@ def test_setup_status_and_settings(tmp_path, monkeypatch):
     monkeypatch.setattr("nova.main.ollama_path", lambda: None)
     with build_client(tmp_path) as c:
         status = c.get("/api/setup/status").json()
-        assert status["setup_done"] is False and status["start_with_windows"] is False
+        assert status["setup_done"] is False and status["start_with_windows"] is True  # 0.13.1: on by default
+        assert status["continuous_listening"] is True
         assert status["ollama"] == {"installed": False, "reachable": True, "model": "qwen3:4b", "model_ready": False,
                                     "pulling": False}
         assert status["install"]["packaged"] is False

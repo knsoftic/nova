@@ -15,7 +15,8 @@ def test_settings_defaults(client):
                  "search_engine": "google", "browser_channel": "chrome", "project_folders": ["C:\\xampp\\htdocs"],
                  "history_days": 90, "reply_style": "auto", "emotion_awareness": True, "voice_signals": True,
                  "show_estimate": True, "learn_patterns": True, "suggest_routines": True,
-                 "start_with_windows": False, "setup_done": False}
+                 "start_with_windows": False, "setup_done": False, "multi_pc": False,
+                 "pc_name": ""}
 
 
 def test_settings_partial_update_persists_and_logs(client):

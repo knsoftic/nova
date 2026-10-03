@@ -112,6 +112,10 @@ CAPABILITIES: dict[str, Capability] = {
     "thanks": Capability("Orchestrator", "respond", "low", None, "Shukriya ka jawab"),
     "set_reply_style": Capability("Behavior Layer", "set_reply_style", "low", None, "Jawab ka andaz badalna"),
     "show_patterns": Capability("Behavior Layer", "show_patterns", "low", None, "Aadatein dikhana"),
+    # Multi-PC (Phase 13): the other PC decides what it will do; anything that needs permission there is raised to
+    # medium when prepared (and always asked, never remembered). Never produced by the AI model.
+    "remote_command": Capability("Multi-PC Agent", "remote_command", "low", None, "Doosre PC par kaam"),
+    "pc_status": Capability("Multi-PC Agent", "pc_status", "low", None, "PCs ka haal dekhna"),
 }
 
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from conftest import FakeOllama, build_client
-from nova import install
+from nova import __version__, install
 from nova.config import PROJECT_ROOT, load_settings
 
 BACKEND = Path(__file__).resolve().parent.parent
@@ -47,7 +47,7 @@ def test_install_info_finds_the_voice_models(tmp_path):
     settings.packaged, settings.data_dir, settings.logs_path = True, tmp_path / "data", None
     settings.models_dir = tmp_path / "models"
     info = install.install_info(settings)
-    assert info["voice_models"] == {"whisper": False, "piper": False} and info["version"] == "0.12.0"
+    assert info["voice_models"] == {"whisper": False, "piper": False} and info["version"] == __version__
     (tmp_path / "models" / "whisper" / "models--x" / "snapshots" / "abc").mkdir(parents=True)
     (tmp_path / "models" / "whisper" / "models--x" / "snapshots" / "abc" / "model.bin").write_bytes(b"x")
     (tmp_path / "models" / "piper").mkdir(parents=True)
@@ -156,7 +156,7 @@ def test_build_runtime_leaves_out_tests_and_dev_tools(tmp_path):
 def test_runtime_check_command():
     result = subprocess.run([sys.executable, "-m", "nova", "--check"], cwd=BACKEND, capture_output=True, text=True,
                             timeout=300)
-    assert result.returncode == 0 and "OK: 22 modules" in result.stdout
+    assert result.returncode == 0 and "OK: 23 modules" in result.stdout
 
 
 @pytest.mark.skipif(not (PROJECT_ROOT / "desktop" / "build" / "runtime" / "python" / "python.exe").exists(),

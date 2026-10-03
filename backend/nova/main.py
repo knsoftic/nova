@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import httpx
+import psutil
 from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,6 +51,7 @@ from .memory.agent import MemoryAgent
 from .memory.history import PERIODS
 from .memory.short_term import ShortTermMemory
 from .memory.workflows import MAX_STEPS, StepResolver, numbered, workflow_key
+from .multipc import LinkError, MultiPcAgent, MultiPcService
 from .research import ResearchAgent
 from .secret_store import KNOWN_SECRETS, delete_secret, get_secret, masked, set_secret
 from .permissions import PermissionEngine
@@ -167,6 +169,17 @@ class RoutineRequest(BaseModel):
     key: str = Field(min_length=3, max_length=800)
 
 
+class PairRequest(BaseModel):
+    code: str = Field(min_length=12, max_length=20)
+    peer_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{16}$")  # a PC found on the network ...
+    host: str | None = Field(default=None, max_length=64)  # ... or its address typed by hand
+    port: int = Field(default=8770, ge=1, le=65535)
+
+
+class PeerUpdateRequest(BaseModel):
+    remote_allowed: bool
+
+
 class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=600)
 
@@ -193,6 +206,7 @@ def create_app(
     windows_settings: WindowsSettings | None = None,
     comm_overrides: dict[str, Any] | None = None,
     design_overrides: dict[str, Any] | None = None,
+    multipc_overrides: dict[str, Any] | None = None,
 ) -> FastAPI:
     """`scanner`/`stats`/`ollama_transport`/`stt`/`tts` replace real collectors, Ollama and voice models (tests).
     `known_folders`/`file_overrides`/`coding_overrides` keep tests away from real folders, the Recycle Bin
@@ -325,6 +339,11 @@ def create_app(
                                  resolve_app=resolve_app)
         app.state.behavior = behavior
         app.state.windows_settings = windows_settings or WindowsSettings()
+        # Multi-PC (Phase 13): off until the user turns it on; only on Private networks.
+        multipc = MultiPcService(db, bus, lambda: app.state.user_settings, __version__, peer_port=settings.peer_port,
+                                 beacon_port=settings.beacon_port, loopback=settings.peer_loopback,
+                                 beacon_targets=settings.beacon_targets, **(multipc_overrides or {}))
+        app.state.multipc = multipc
         app.state.orchestrator = Orchestrator(
             bus, db, providers, assistant_name, discovery, computer, permissions,
             browser=BrowserAgent(browser, engine=lambda: app.state.user_settings.search_engine),
@@ -336,7 +355,22 @@ def create_app(
             design=design,
             memory=memory,
             behavior=behavior,
+            multipc=MultiPcAgent(multipc),
         )
+
+        async def status_info() -> dict[str, Any]:  # "Office PC ka haal": a paired PC with "Remote kaam" on asks
+            live = await discovery.live()
+            battery = await asyncio.to_thread(psutil.sensors_battery)
+            disk = next((d for d in live.drives if d.mountpoint.upper().startswith("C:")), None)
+            return {"cpu_percent": live.cpu_percent, "ram_free": live.ram_available_bytes,
+                    "ram_total": live.ram_total_bytes, "disk_free": disk.free_bytes if disk else None,
+                    "disk_total": disk.total_bytes if disk else None,
+                    "battery": battery.percent if battery else None,
+                    "plugged": bool(battery.power_plugged) if battery else None}
+
+        multipc.status_info = status_info
+        multipc.plan = lambda peer, text: app.state.orchestrator.plan_remote(text, peer["name"], peer["id"])
+        multipc.run = lambda peer, plan_id, ok: app.state.orchestrator.run_remote(plan_id, ok, peer["name"], peer["id"])
         app.state.orchestrator.apply_settings(user_settings.assistant_name, user_settings.wake_word)
         app.state.user_settings = user_settings
         app.state.orchestrator.purge_history(force=True)  # history older than the chosen number of days
@@ -357,6 +391,7 @@ def create_app(
         voice.apply_settings(user_settings)
         voice.start_listener()
         app.state.voice = voice
+        await multipc.start()
         await bus.publish(
             NovaEvent(type=EventType.SYSTEM_READY, agent="Orchestrator", message=f"{assistant_name} online hai")
         )
@@ -378,6 +413,7 @@ def create_app(
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
+            await multipc.shutdown()
             await voice.shutdown()
             await asyncio.to_thread(browser.shutdown)
             db.close()
@@ -437,6 +473,10 @@ def create_app(
         changed = sorted(k for k, v in update.model_dump(exclude_none=True).items())
         if "history_days" in changed:  # a shorter period applies right away
             orchestrator().purge_history(force=True)
+        if {"multi_pc", "pc_name"} & set(changed):  # start/stop the link, or announce the new name
+            task = asyncio.create_task(app.state.multipc.apply(refresh_network=True))
+            app.state.background.add(task)
+            task.add_done_callback(app.state.background.discard)
         if {"ai_mode", "ai_model"} & set(changed):
             app.state.providers.configure(mode=new.ai_mode, model=new.ai_model)
             task = asyncio.create_task(_prepare_ai(app.state.providers, app.state.bus))
@@ -694,6 +734,65 @@ def create_app(
         app.state.background.add(app.state.pull_task)
         app.state.pull_task.add_done_callback(app.state.background.discard)
         return {"started": True}
+
+    # ------------------------------------------------------------------ Multi-PC (Phase 13)
+
+    def multipc() -> MultiPcService:
+        return app.state.multipc
+
+    def link_refused(exc: LinkError) -> HTTPException:
+        return HTTPException(status_code=409, detail=str(exc))
+
+    @app.get("/api/pcs")
+    async def pcs() -> dict[str, Any]:
+        return multipc().status()
+
+    @app.post("/api/pcs/refresh")
+    async def pcs_refresh() -> dict[str, Any]:
+        await multipc().ping_all()
+        return multipc().status()
+
+    @app.post("/api/pcs/pairing")
+    async def pcs_open_pairing() -> dict[str, Any]:
+        """This PC waits to be joined: a one-time code (shown here, typed on the other PC), 5 minutes."""
+        try:
+            return await multipc().open_pairing()
+        except LinkError as exc:
+            raise link_refused(exc) from exc
+
+    @app.delete("/api/pcs/pairing")
+    async def pcs_close_pairing() -> dict[str, Any]:
+        await multipc().close_pairing()
+        return {"ok": True}
+
+    @app.post("/api/pcs/pair")
+    async def pcs_pair(body: PairRequest) -> dict[str, Any]:
+        service = multipc()
+        if body.peer_id:
+            seen = service.seen.get(body.peer_id)
+            if seen is None:
+                raise HTTPException(status_code=404, detail="Ye PC ab network par nazar nahi aa raha — Refresh karein")
+            host, port = seen.host, seen.port
+        elif body.host:
+            host, port = body.host.strip(), body.port
+        else:
+            raise HTTPException(status_code=422, detail="Kaun sa PC? List se chunein ya pata (IP) likhein")
+        try:
+            return await service.pair(body.code, host, port)
+        except LinkError as exc:
+            raise link_refused(exc) from exc
+
+    @app.put("/api/pcs/{peer_id}")
+    async def pcs_update(peer_id: str, body: PeerUpdateRequest) -> dict[str, Any]:
+        if not await multipc().set_remote_allowed(peer_id, body.remote_allowed):
+            raise HTTPException(status_code=404, detail="Ye PC jura hua nahi")
+        return {"ok": True}
+
+    @app.delete("/api/pcs/{peer_id}")
+    async def pcs_unpair(peer_id: str) -> dict[str, Any]:
+        if not await multipc().unpair(peer_id):
+            raise HTTPException(status_code=404, detail="Ye PC jura hua nahi")
+        return {"ok": True}
 
     # ------------------------------------------------------------------ admin (Phase 11): tests, bugs, approvals
 

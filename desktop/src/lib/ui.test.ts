@@ -11,6 +11,8 @@ import {
   LIFECYCLE,
   lifecycleIndex,
   stepSettled,
+  pairingTimeLeft,
+  pcExamples,
   STEP_GUARD_MS,
   formatBytes,
   formatDuration,
@@ -212,5 +214,17 @@ describe("setup wizard", () => {
     expect(stepSettled(1000, 1000 + 120)).toBe(false); // second click of a double-click
     expect(stepSettled(1000, 1000 + STEP_GUARD_MS)).toBe(true);
     expect(stepSettled(0, 5000)).toBe(true); // the first step: no change yet, the page has been open for a while
+  });
+});
+
+describe("multi-PC", () => {
+  it("counts the joining code down and never below zero", () => {
+    expect(pairingTimeLeft(300, 1000, 1000)).toBe(300);
+    expect(pairingTimeLeft(300, 1000, 61_500)).toBe(240);
+    expect(pairingTimeLeft(10, 0, 60_000)).toBe(0);
+  });
+
+  it("gives example commands with the PC's name", () => {
+    expect(pcExamples("Office PC")).toEqual(["Office PC par Chrome kholo", "Office PC ka haal batao", "mere PCs dikhao"]);
   });
 });

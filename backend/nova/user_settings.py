@@ -44,6 +44,17 @@ class UserSettings(BaseModel):
     show_estimate: bool = True  # show the estimate ("Andaza: ...") in the UI
     learn_patterns: bool = True  # remember which apps/websites/projects are opened and when
     suggest_routines: bool = True  # offer a workflow when the same things are opened together on several days
+    # Multi-PC (Phase 13): off until the user turns it on; the name other PCs see ("" = the Windows computer name).
+    multi_pc: bool = False
+    pc_name: str = Field(default="", max_length=40)
+
+    @field_validator("pc_name")
+    @classmethod
+    def _clean_pc_name(cls, value: str) -> str:
+        value = " ".join(value.split())
+        if value and not all(ch.isalnum() or ch in " .-_'" for ch in value):
+            raise ValueError("PC ke naam mein sirf haroof, numbers, space, '.', '-', '_' aur ' allowed hain")
+        return value
 
     @field_validator("project_folders")
     @classmethod
@@ -102,6 +113,8 @@ class UserSettingsUpdate(BaseModel):
     show_estimate: bool | None = None
     learn_patterns: bool | None = None
     suggest_routines: bool | None = None
+    multi_pc: bool | None = None
+    pc_name: str | None = None
 
 
 def load_user_settings(db: Database, default_name: str = "NOVA") -> UserSettings:

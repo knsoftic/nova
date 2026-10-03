@@ -22,6 +22,8 @@ const MAX_MESSAGES = 100;
 const RESULT_HOLD_MS = 1600;
 
 let messageCounter = 0;
+
+const isQuiet = (e: NovaEvent) => e.type === "PEERS_CHANGED" && Boolean((e.data as { quiet?: boolean }).quiet);
 const nextId = () => `${Date.now()}-${++messageCounter}`;
 
 export function useNova() {
@@ -43,6 +45,8 @@ export function useNova() {
   // Bumped on self-test runs, bugs and admin decisions; adminAlert = something for the admin to look at.
   const [adminRevision, setAdminRevision] = useState(0);
   const [adminAlert, setAdminAlert] = useState(false);
+  // Bumped when paired/found PCs or the Multi-PC status change (the PCs tab refetches).
+  const [pcsRevision, setPcsRevision] = useState(0);
   // First-run setup: progress of the AI model download (Ollama pull).
   const [setupProgress, setSetupProgress] = useState<SetupProgress | null>(null);
   // NOVA's latest estimate of how the user is communicating (only an estimate; null = nothing to show).
@@ -87,7 +91,7 @@ export function useNova() {
           .pendingPermissions()
           .then((reqs) => setPermissions(reqs.map((r) => ({ ...r, received_at: Date.now() }))))
           .catch(() => undefined);
-        setEvents(msg.data.history.filter((e) => e.type !== "STATE_CHANGED").reverse());
+        setEvents(msg.data.history.filter((e) => e.type !== "STATE_CHANGED" && !isQuiet(e)).reverse());
         return;
       }
       if (msg.type === "pong" || msg.type === "ERROR") return;
@@ -96,6 +100,9 @@ export function useNova() {
         applyState(msg.data.state as NovaState);
         return;
       }
+      if (msg.type === "PEERS_CHANGED" || msg.type === "REMOTE_TASK") setPcsRevision((n) => n + 1);
+      // Routine Multi-PC refreshes (a PC came online) only update the PCs tab, not the activity feed.
+      if (isQuiet(msg)) return;
       setEvents((prev) => [msg, ...prev].slice(0, MAX_EVENTS));
       if (msg.type === "DISCOVERY_STARTED") setScanning(true);
       if (msg.type === "MEMORY_CHANGED") {
@@ -272,6 +279,7 @@ export function useNova() {
     profileRevision,
     activityRevision,
     memoryRevision,
+    pcsRevision,
     voiceFollowUp,
     estimate,
     adminRevision,

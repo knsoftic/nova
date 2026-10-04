@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field, ValidationError
 from . import __version__
 from .ai.manager import ProviderManager
 from .ai.ollama import OllamaProvider
+from .ai.openai_provider import OpenAIProvider
 from .agents.file_agent import FileAgent
 from .agents.settings_agent import SettingsAgent
 from .coding import CodingAgent, Tools, find_tools
@@ -56,6 +57,7 @@ from .research import ResearchAgent
 from .secret_store import KNOWN_SECRETS, delete_secret, get_secret, masked, set_secret
 from .permissions import PermissionEngine
 from .voice import SpeechToText, TextToSpeech, VoiceService, VoiceSession
+from .voice.openai_stt import CloudFirstSTT
 from .user_settings import (
     UserSettings,
     UserSettingsUpdate,
@@ -96,13 +98,22 @@ async def _background_scan(discovery: DiscoveryService) -> None:
 
 
 async def _prepare_ai(providers: ProviderManager, bus: EventBus) -> None:
-    """Report whether the local model is usable and load it into memory so the first command is fast."""
+    """Report whether the language model is usable and load the local one into memory so the first command is fast."""
     if providers.mode == "rules":
         await bus.publish(NovaEvent(type=EventType.AI_STATUS, agent="Orchestrator",
                                     message="AI mode: sirf rules (local model istemal nahi ho raha)",
                                     data=await providers.status(refresh=True)))
         return
     status = await providers.status(refresh=True)
+    if providers.llm.wants_openai:  # OpenAI answers; the local model (if installed) is the fallback
+        fallback = "local fallback tayyar" if status["local_ready"] else "local fallback nahi (sirf rules)"
+        await bus.publish(NovaEvent(type=EventType.AI_STATUS, agent="Orchestrator",
+                                    message=f"AI: OpenAI {status['model']} ({providers.mode}) — {fallback}",
+                                    data=status))
+        if status["local_ready"]:
+            with contextlib.suppress(httpx.HTTPError):
+                await providers.ollama.warm_up()
+        return
     if not status["model_ready"]:
         reason = "Ollama nahi chal raha" if not status["ollama"]["reachable"] else f"model {status['model']} install nahi"
         await bus.publish(NovaEvent(type=EventType.AI_STATUS, agent="Orchestrator",
@@ -207,6 +218,7 @@ def create_app(
     comm_overrides: dict[str, Any] | None = None,
     design_overrides: dict[str, Any] | None = None,
     multipc_overrides: dict[str, Any] | None = None,
+    openai_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     """`scanner`/`stats`/`ollama_transport`/`stt`/`tts` replace real collectors, Ollama and voice models (tests).
     `known_folders`/`file_overrides`/`coding_overrides` keep tests away from real folders, the Recycle Bin
@@ -223,6 +235,10 @@ def create_app(
             mode=user_settings.ai_mode,
             ollama=OllamaProvider(model=user_settings.ai_model, base_url=settings.ollama_url,
                                   transport=ollama_transport),
+            # Optional cloud brain (Phase 13C): only with a saved key; the key is read from the encrypted store.
+            openai=OpenAIProvider(key=lambda: get_secret(db, "openai_api_key"),
+                                  model=lambda: app.state.user_settings.openai_model, transport=openai_transport),
+            llm_choice=lambda: app.state.user_settings.llm_provider,
         )
         discovery_kwargs: dict[str, Any] = {}
         if scanner:
@@ -246,7 +262,7 @@ def create_app(
         )
         app.state.browser = browser
         research = ResearchAgent(
-            providers.ollama,
+            providers.llm,
             brave_key=lambda: get_secret(db, "brave_api_key"),
             reports_dir=lambda: settings.reports_dir or known_folder("documents") / "NOVA" / "Research",
             transport=web_transport,
@@ -275,7 +291,7 @@ def create_app(
                       **file_kwargs)
         coding_kwargs: dict[str, Any] = {"window_titles": window_titles}
         coding_kwargs.update({k: v for k, v in (coding_overrides or {}).items() if k != "tools"})
-        coding = CodingAgent(scope, ops, providers.ollama.complete_json, providers.ollama.is_available, tools,
+        coding = CodingAgent(scope, ops, providers.llm.complete_json, providers.llm.is_available, tools,
                              **coding_kwargs)
         files = FileAgent(ops, scope, projects=coding.find)
 
@@ -289,7 +305,7 @@ def create_app(
         app.state.mailer = comm.get("mailer") or Mailer()
         communication = CommunicationAgent(
             db, app.state.whatsapp, app.state.mailer,
-            providers.ollama.complete_json, providers.ollama.is_available,
+            providers.llm.complete_json, providers.llm.is_available,
             resolve_file=files.resolve_target,
         )
         design_kwargs: dict[str, Any] = {"code_exe": lambda: tools().code, "window_titles": window_titles}
@@ -383,7 +399,10 @@ def create_app(
         voice = VoiceService(
             bus,
             app.state.orchestrator,
-            stt or SpeechToText(settings.models_dir / "whisper", settings.stt_model, user_settings.stt_language),
+            stt or CloudFirstSTT(
+                SpeechToText(settings.models_dir / "whisper", settings.stt_model, user_settings.stt_language),
+                key=lambda: get_secret(db, "openai_api_key"), engine=lambda: app.state.user_settings.stt_engine,
+                model=lambda: app.state.user_settings.openai_stt_model),
             tts or TextToSpeech(settings.models_dir / "piper", user_settings.tts_voice),
             settings=lambda: app.state.user_settings,
             permissions=permissions,
@@ -477,7 +496,7 @@ def create_app(
             task = asyncio.create_task(app.state.multipc.apply(refresh_network=True))
             app.state.background.add(task)
             task.add_done_callback(app.state.background.discard)
-        if {"ai_mode", "ai_model"} & set(changed):
+        if {"ai_mode", "ai_model", "llm_provider", "openai_model"} & set(changed):
             app.state.providers.configure(mode=new.ai_mode, model=new.ai_model)
             task = asyncio.create_task(_prepare_ai(app.state.providers, app.state.bus))
             app.state.background.add(task)
@@ -897,7 +916,35 @@ def create_app(
         app.state.db.add_activity(task_id="settings", task_name="set_secret", agent="Orchestrator",
                                   action="set_secret", permission_status="user_initiated", execution_status="success",
                                   final_result=f"{name} save hui (encrypted)")
+        if name == "openai_api_key":
+            await secret_changed()
         return {"ok": True, "masked": masked(body.value.strip())}
+
+    async def secret_changed() -> None:
+        """A new/removed OpenAI key switches the brain and the voice engine: tell the UI (never the key)."""
+        task = asyncio.create_task(_prepare_ai(app.state.providers, app.state.bus))
+        app.state.background.add(task)
+        task.add_done_callback(app.state.background.discard)
+
+    @app.get("/api/openai/status")
+    async def openai_status() -> dict[str, Any]:
+        providers: ProviderManager = app.state.providers
+        key = get_secret(app.state.db, "openai_api_key")
+        stt = app.state.voice.stt
+        return {
+            "configured": bool(key), "key_masked": masked(key),  # never the key itself
+            "llm_active": providers.llm.name, "llm_model": providers.openai.model,
+            "stt_active": getattr(stt, "engine", "local"), "stt_model": getattr(stt, "cloud_model", None),
+            "llm_error": providers.openai.last_error, "stt_error": getattr(stt, "cloud_error", None),
+        }
+
+    @app.post("/api/openai/test")
+    async def openai_test() -> dict[str, Any]:
+        ok, message = await app.state.providers.openai.check()
+        app.state.db.add_activity(task_id="settings", task_name="openai_test", agent="Orchestrator",
+                                  action="openai_test", permission_status="user_initiated",
+                                  execution_status="success" if ok else "failed", final_result=message)
+        return {"ok": ok, "message": message}
 
     @app.delete("/api/secrets/{name}")
     async def remove_secret(name: str) -> dict[str, Any]:
@@ -907,6 +954,8 @@ def create_app(
         app.state.db.add_activity(task_id="settings", task_name="delete_secret", agent="Orchestrator",
                                   action="delete_secret", permission_status="user_initiated",
                                   execution_status="success", final_result=f"{name} hataya")
+        if name == "openai_api_key":
+            await secret_changed()
         return {"ok": True}
 
     @app.get("/api/voice/status")

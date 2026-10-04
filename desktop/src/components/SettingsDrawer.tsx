@@ -6,6 +6,7 @@ import type {
   Contact,
   FileRoot,
   NovaState,
+  OpenAIStatus,
   PermissionRule,
   SetupStatus,
   UserSettings,
@@ -304,6 +305,183 @@ function VoiceSettings({
         </button>
         <span className="text-xs text-slate-500">{testing ?? "Abhi wali (save ki hui) awaaz se bolega."}</span>
       </div>
+    </fieldset>
+  );
+}
+
+/** OpenAI (optional): a write-only key, and where speech/understanding happen. Without a key everything stays local. */
+function OpenAISettings({
+  draft,
+  set,
+  errors,
+  open,
+}: {
+  draft: UserSettings;
+  set: <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => void;
+  errors: Record<string, string>;
+  open: boolean;
+}) {
+  const [status, setStatus] = useState<OpenAIStatus | null>(null);
+  const [key, setKey] = useState("");
+  const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.openaiStatus().then(setStatus).catch(() => setStatus(null));
+  useEffect(() => {
+    if (open) {
+      setKey("");
+      setNote(null);
+      void load();
+    }
+  }, [open]);
+
+  const saveKey = async () => {
+    if (!key.trim() || busy) return;
+    setBusy(true);
+    try {
+      const r = await api.setSecret("openai_api_key", key.trim());
+      setKey("");
+      const test = await api.openaiTest();
+      setNote({ text: `Key save ho gayi (${r.masked}) — ${test.message}`, ok: test.ok });
+      void load();
+    } catch {
+      setNote({ text: "Key save nahi hui — format check karein (sirf letters, numbers, - _ .).", ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeKey = async () => {
+    setBusy(true);
+    await api.deleteSecret("openai_api_key").catch(() => undefined);
+    setNote({ text: "Key hata di — awaaz aur AI ab sirf is PC par (local).", ok: true });
+    setBusy(false);
+    void load();
+  };
+
+  const test = async () => {
+    setBusy(true);
+    try {
+      const r = await api.openaiTest();
+      setNote({ text: r.message, ok: r.ok });
+    } catch {
+      setNote({ text: "Test nahi ho saka.", ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <fieldset className="flex flex-col gap-3 border-t border-white/10 pt-4">
+      <legend className="mb-1 text-xs font-medium text-slate-300">OpenAI (tez awaaz aur AI)</legend>
+      {status && (
+        <span className={`text-xs ${status.configured ? "text-emerald-300" : "text-slate-400"}`}>
+          {status.configured
+            ? `Key ${status.key_masked} · awaaz: ${status.stt_active === "openai" ? `OpenAI (${status.stt_model})` : "local Whisper"} · AI: ${status.llm_active === "openai" ? `OpenAI (${status.llm_model})` : "local"}`
+            : "Key nahi — awaaz aur AI is PC par (local) chal rahe hain."}
+        </span>
+      )}
+      {(status?.stt_error || status?.llm_error) && (
+        <span className="text-xs text-amber-300">
+          Aakhri masla: {status.stt_error || status.llm_error} — us waqt local se kaam hua.
+        </span>
+      )}
+      <Field
+        label="OpenAI API key"
+        hint="platform.openai.com → API keys. Encrypted save hoti hai, dobara dikhai nahi jati. Istemal ka kharcha aap ke OpenAI account par."
+      >
+        <div className="flex gap-2">
+          <input
+            type="password"
+            className={`${inputClass} min-w-0 flex-1`}
+            value={key}
+            placeholder={status?.configured ? "Nayi key se badlein" : "sk-... yahan paste karein"}
+            autoComplete="off"
+            spellCheck={false}
+            maxLength={200}
+            onChange={(e) => setKey(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault(); // not the settings form's submit
+                void saveKey();
+              }
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => void saveKey()}
+            disabled={!key.trim() || busy}
+            className="shrink-0 rounded-lg border border-sky-500/40 px-3 text-xs text-sky-200 hover:bg-sky-500/10 disabled:opacity-40"
+          >
+            Save key
+          </button>
+          {status?.configured && (
+            <>
+              <button
+                type="button"
+                onClick={() => void test()}
+                disabled={busy}
+                className="shrink-0 rounded-lg border border-white/10 px-3 text-xs text-slate-200 hover:bg-white/5 disabled:opacity-40"
+              >
+                Test
+              </button>
+              <button
+                type="button"
+                onClick={() => void removeKey()}
+                disabled={busy}
+                className="shrink-0 text-xs text-red-300 hover:text-red-200 disabled:opacity-40"
+              >
+                Hatao
+              </button>
+            </>
+          )}
+        </div>
+      </Field>
+      {note && <span className={`text-xs ${note.ok ? "text-emerald-300" : "text-red-300"}`}>{note.text}</span>}
+      <Field
+        label="Awaaz ko text kaun banaye"
+        hint="Auto: key ho to OpenAI (~1s), warna is PC ka Whisper (~3s). OpenAI na mile to khud local par aa jata hai."
+        error={errors.stt_engine}
+      >
+        <select
+          className={inputClass}
+          value={draft.stt_engine}
+          onChange={(e) => set("stt_engine", e.target.value as UserSettings["stt_engine"])}
+        >
+          <option value="auto">Auto (key ho to OpenAI)</option>
+          <option value="openai">OpenAI</option>
+          <option value="local">Sirf is PC par (Whisper)</option>
+        </select>
+      </Field>
+      <Field label="AI brain" hint="Mushkil jumle aur sawal. Seedhi commands hamesha foran (rules) se." error={errors.llm_provider}>
+        <select
+          className={inputClass}
+          value={draft.llm_provider}
+          onChange={(e) => set("llm_provider", e.target.value as UserSettings["llm_provider"])}
+        >
+          <option value="auto">Auto (key ho to OpenAI)</option>
+          <option value="openai">OpenAI</option>
+          <option value="ollama">Sirf is PC par (Ollama)</option>
+        </select>
+      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Chat model" error={errors.openai_model}>
+          <input className={inputClass} value={draft.openai_model} onChange={(e) => set("openai_model", e.target.value)} />
+        </Field>
+        <Field label="Awaaz model" error={errors.openai_stt_model}>
+          <input
+            className={inputClass}
+            value={draft.openai_stt_model}
+            onChange={(e) => set("openai_stt_model", e.target.value)}
+          />
+        </Field>
+      </div>
+      {status?.configured && draft.stt_engine !== "local" && (
+        <span className="text-[11px] text-amber-200/80">
+          Privacy: awaaz internet par OpenAI ko jati hai — "Mic hamesha on" mein har suni hui awaaz (jo "Hey NOVA" ke
+          baghair ho wo bhi). NOVA aisi baat na dikhata hai na save karta hai; OpenAI ki apni data policy lagu hoti hai.
+        </span>
+      )}
     </fieldset>
   );
 }
@@ -817,6 +995,7 @@ export function SettingsDrawer({ open, settings, aiStatus, onRefreshAi, onClose,
 
             <VoiceSettings draft={draft} set={set} errors={errors} open={open} />
 
+            <OpenAISettings draft={draft} set={set} errors={errors} open={open} />
             <WebSettings draft={draft} set={set} errors={errors} open={open} />
 
             <FileSettings draft={draft} set={set} errors={errors} open={open} />

@@ -208,6 +208,26 @@ the model only when you click.
 - **Uninstall:** Windows Settings → Apps → *NOVA (KN Softic)*, or the Start-menu uninstaller. It removes the program
   and the "start with Windows" entry, stops NOVA's backend first, and asks whether to delete the data (default: keep).
 
+## OpenAI (optional)
+
+Without an OpenAI key everything runs on the PC (Whisper for speech, rules + Ollama for understanding). With a key
+(⚙ Settings → *OpenAI*; stored encrypted with DPAPI, never shown again):
+
+- **Speech-to-text** goes to OpenAI first (`gpt-4o-mini-transcribe` by default, ~1 s instead of ~3 s on a laptop CPU),
+  with the local Whisper as the automatic fallback (no internet, wrong key, no credit).
+- **The brain** (hybrid/llm mode) uses OpenAI (`gpt-4o-mini` by default) for unclear sentences and questions; clear
+  commands still go through the instant local rules. The model's JSON is validated exactly like the local model's.
+  OpenAI failing → local Ollama (if installed) → rules.
+- Both are "Auto" by default (OpenAI when a key is saved) and can be set to OpenAI or local only; model names are
+  editable. *Test* checks the key.
+- **Privacy (admin's choice):** with OpenAI on, every utterance the microphone picks up goes to OpenAI - in
+  continuous listening also speech without the wake word (NOVA itself drops it without showing or storing it;
+  OpenAI's data policy applies). Usage is billed to the user's OpenAI account.
+
+Voice pipeline (0.13.2, local and cloud): speech that comes while NOVA is still understanding the previous utterance
+is queued instead of dropped; after a voice command the next one needs no "Hey NOVA" for 15 s (a conversation); an
+utterance ends after 0.6 s of silence; the UI says when it heard speech without the wake word (never the words).
+
 ## Multi-PC
 
 Off until turned on (NOVA → **PCs** tab → *Multi-PC on*), and only on a network Windows calls **Private** (home or
@@ -346,6 +366,20 @@ Environment variables (backend):
 | `NOVA_BEACON_PORT` | `8771` | Multi-PC beacon (UDP); `0` = off |
 | `NOVA_PEER_LOOPBACK` | `0` | Test mode: two NOVAs on one PC pair over 127.0.0.1 |
 | `NOVA_BEACON_TARGETS` | | Test mode: the other instances' beacon ports, e.g. `8781` |
+
+## Admin manual test (Phase 13C, approved)
+
+1. Installer: `desktop/release/NOVA-Setup-0.13.2.exe` chalayein (purane NOVA ke upar; data rehta hai).
+2. **Bina OpenAI:** "Hey NOVA, RAM batao" → jawab. Foran baad (15 second ke andar) "Chrome kholo" bina "Hey NOVA" →
+   Chrome khule. Mic ke paas: "Bolte rahein — agli command bina Hey NOVA ke bhi le lunga".
+3. "Hey NOVA" ke baghair koi aur baat → mic ke paas "Awaaz suni, lekin Hey NOVA nahi..." (aap ke alfaaz nahi dikhte).
+4. Jaldi jaldi do commands ("Hey NOVA, RAM batao" aur us ke foran baad "Hey NOVA, storage batao") → dono ka jawab.
+5. **OpenAI:** ⚙ Settings → OpenAI → apni API key paste → *Save key* → "Key theek". Status: "awaaz: OpenAI ... AI:
+   OpenAI ...". Upar AI label: "AI: OpenAI gpt-4o-mini (hybrid)".
+6. "Hey NOVA, Chrome kholo" → pehle se tez jawab; Live Activity mein "Suna: ..." Ek sawal: "chai aur coffee mein kya
+   farq hai" → OpenAI ka jawab.
+7. Internet band karke "Hey NOVA, RAM batao" → phir bhi jawab (local Whisper); Settings → OpenAI mein aakhri masla.
+8. Admin → *Poora test chalayein* → "OpenAI (awaaz + AI brain)" theek. Sab theek ho to approve karein.
 
 ## Admin manual test (Phase 13B, approved)
 

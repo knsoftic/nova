@@ -14,12 +14,14 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import httpx
 
 from .base import ConversationTurn, Understanding
+from .llm import LLMRouter
 from .ollama import OllamaProvider
+from .openai_provider import OpenAIError, OpenAIProvider
 from .rule_based import RuleBasedProvider
 
 log = logging.getLogger("nova.ai")
@@ -30,9 +32,13 @@ HYBRID_RULE_CONFIDENCE = 0.8
 
 
 class ProviderManager:
-    def __init__(self, mode: AIMode = "hybrid", ollama: OllamaProvider | None = None) -> None:
+    def __init__(self, mode: AIMode = "hybrid", ollama: OllamaProvider | None = None,
+                 openai: OpenAIProvider | None = None, llm_choice: Callable[[], str] | None = None) -> None:
         self.rules = RuleBasedProvider()
         self.ollama = ollama or OllamaProvider()
+        self.openai = openai or OpenAIProvider(key=lambda: None)
+        # The language model behind "llm"/"hybrid": OpenAI (when chosen and a key is saved) or local Ollama.
+        self.llm = LLMRouter(self.ollama, self.openai, llm_choice or (lambda: "auto"))
         self.mode: AIMode = mode if mode in AI_MODES else "hybrid"
         self.last_latency_ms: int | None = None
         self.last_provider: str | None = None
@@ -51,12 +57,19 @@ class ProviderManager:
 
     async def status(self, refresh: bool = False) -> dict[str, Any]:
         ollama = await self.ollama.status(refresh=refresh)
-        model_ready = ollama.reachable and self.ollama.model in ollama.models
+        local_ready = ollama.reachable and self.ollama.model in ollama.models
+        cloud = self.llm.wants_openai
+        model_ready = cloud or local_ready
         return {
             "mode": self.mode,
-            "model": self.ollama.model,
+            "model": self.llm.model,
             "model_ready": model_ready,
             "llm_in_use": self.mode != "rules" and model_ready,
+            "llm_provider": self.llm.name,
+            "local_model": self.ollama.model,
+            "local_ready": local_ready,
+            "openai": {"configured": self.openai.configured, "model": self.openai.model,
+                       "last_error": self.openai.last_error},
             "ollama": ollama.model_dump(),
             "last_provider": self.last_provider,
             "last_latency_ms": self.last_latency_ms,
@@ -80,14 +93,14 @@ class ProviderManager:
         ):
             return rules
 
-        if not await self.ollama.is_available():
+        if not await self.llm.is_available():
             rules.fallback_reason = "model_unavailable"
             return rules
         try:
-            return await self.ollama.understand(text, context, memories, style_hint=style_hint)
+            return await self.llm.understand(text, context, memories, style_hint)
         except httpx.TimeoutException:
             reason = "timeout"
-        except (httpx.HTTPError, json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
+        except (httpx.HTTPError, OpenAIError, json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
             log.warning("LLM understanding failed: %s", exc)
             reason = "invalid_output" if isinstance(exc, (json.JSONDecodeError, ValueError, KeyError, TypeError)) else "http_error"
         rules.fallback_reason = reason

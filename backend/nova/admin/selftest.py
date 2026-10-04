@@ -272,8 +272,19 @@ def build_checks(app: Any) -> list[Check]:
         online = sum(p["online"] for p in st["peers"])
         return "pass", f"{len(st['peers'])} PC jure, {online} online · port {st['this']['port']}"
 
+    async def openai() -> tuple[str, str]:
+        cloud = s.providers.openai
+        if not cloud.configured:
+            return "info", "OpenAI key save nahi (optional) — awaaz aur AI local chal rahe hain"
+        ok, message = await cloud.check()
+        if not ok:
+            return "fail", f"{message} — NOVA local Whisper/Ollama par chal raha hai"
+        stt = getattr(s.voice.stt, "engine", "local")
+        return "pass", f"{message} · brain {s.providers.llm.name} ({cloud.model}) · awaaz {stt}"
+
     return [
         Check("install", "12", "Installation aur Windows startup", thread(install)),
+        Check("openai", "13C", "OpenAI (awaaz + AI brain)", openai, quick=False),
         Check("database", "1", "Database (SQLite) theek hai", thread(database)),
         Check("data_dir", "1", "Data folder mein likh sakte hain", thread(data_dir)),
         Check("profile", "2", "System profile maujood hai", profile),

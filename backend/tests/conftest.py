@@ -606,7 +606,7 @@ def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDeskto
                  trash: FakeTrash | None = None, coding: FakeCoding | None = None, opened: list | None = None,
                  settings: FakeSettings | None = None, whatsapp: FakeWhatsApp | None = None,
                  mailer: FakeMailer | None = None, design: FakeDesign | None = None, logs_path=None, readme_path=None,
-                 multipc: dict | None = None):
+                 multipc: dict | None = None, openai_transport=None):
     """`multipc`: Settings fields for the Multi-PC link (e.g. loopback test mode on a free port)."""
     ollama = ollama or FakeOllama(models=[])  # reachable but no model: rules only, deterministic
     browser = browser or FakeBrowser()
@@ -628,7 +628,7 @@ def build_client(tmp_path, ollama: FakeOllama | None = None, desktop: FakeDeskto
                      coding_overrides=coding.overrides(),
                      windows_settings=settings or FakeSettings(),
                      comm_overrides={"whatsapp": whatsapp or FakeWhatsApp(), "mailer": mailer or FakeMailer()},
-                     design_overrides=(design or FakeDesign()).overrides())
+                     design_overrides=(design or FakeDesign()).overrides(), openai_transport=openai_transport)
     return TestClient(app)
 
 

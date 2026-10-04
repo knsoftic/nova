@@ -140,6 +140,22 @@ export interface UserSettings {
   multi_pc: boolean;
   /** The name other PCs see ("" = the Windows computer name). */
   pc_name: string;
+  /** OpenAI (Phase 13C, optional, needs a saved key): who turns speech into text / which model is the brain. */
+  stt_engine: "auto" | "openai" | "local";
+  llm_provider: "auto" | "openai" | "ollama";
+  openai_model: string;
+  openai_stt_model: string;
+}
+
+export interface OpenAIStatus {
+  configured: boolean;
+  key_masked: string | null;
+  llm_active: "openai" | "ollama";
+  llm_model: string;
+  stt_active: "openai" | "local";
+  stt_model: string | null;
+  llm_error: string | null;
+  stt_error: string | null;
 }
 
 /** NOVA's estimate of how the user is communicating - only an estimate, never stored. */
@@ -246,6 +262,8 @@ export interface AiStatus {
   model_ready: boolean;
   llm_in_use: boolean;
   ollama: { reachable: boolean; version: string | null; models: string[]; error: string | null };
+  /** Which model answers: OpenAI (with a key) or the local Ollama model. */
+  llm_provider?: "openai" | "ollama";
   last_provider: string | null;
   last_latency_ms: number | null;
 }

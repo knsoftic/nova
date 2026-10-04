@@ -28,10 +28,10 @@ def frame_rms(frame: bytes) -> float:
 @dataclass
 class SegmenterConfig:
     start_ms: int = 150  # loud audio needed to start a segment
-    end_silence_ms: int = 800  # silence that ends a segment
+    end_silence_ms: int = 600  # silence that ends a segment (shorter = a faster reply)
     max_ms: int = 15_000  # hard cap per utterance
     min_speech_ms: int = 300  # shorter blips (clicks, coughs) are dropped
-    pre_roll_ms: int = 300  # audio kept from before speech started, so first syllables are not cut
+    pre_roll_ms: int = 500  # audio kept from before speech started, so first syllables ("Hey") are not cut
     threshold_ratio: float = 3.0  # speech must be this many times louder than the noise floor
     min_rms: float = 250.0  # absolute floor (int16 scale) so near-silence never counts as speech
 

@@ -13,6 +13,7 @@ import type {
   HistoryPeriod,
   HistoryRecord,
   LiveStats,
+  OpenAIStatus,
   PcsStatus,
   MemoryFact,
   PermissionRequest,
@@ -54,6 +55,8 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 
 export const api = {
+  openaiStatus: () => request<OpenAIStatus>("/api/openai/status"),
+  openaiTest: () => request<{ ok: boolean; message: string }>("/api/openai/test", { method: "POST" }),
   pcs: () => request<PcsStatus>("/api/pcs"),
   refreshPcs: () => request<PcsStatus>("/api/pcs/refresh", { method: "POST" }),
   openPairing: () => request<{ code: string; expires_in: number }>("/api/pcs/pairing", { method: "POST" }),

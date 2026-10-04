@@ -16,7 +16,8 @@ def test_settings_defaults(client):
                  "history_days": 90, "reply_style": "auto", "emotion_awareness": True, "voice_signals": True,
                  "show_estimate": True, "learn_patterns": True, "suggest_routines": True,
                  "start_with_windows": True, "setup_done": False, "multi_pc": False,
-                 "pc_name": "", "settings_version": 2}
+                 "pc_name": "", "stt_engine": "auto", "llm_provider": "auto", "openai_model": "gpt-4o-mini",
+                 "openai_stt_model": "gpt-4o-mini-transcribe", "settings_version": 2}
 
 
 def test_mic_and_windows_start_are_switched_on_once_for_older_settings(tmp_path):

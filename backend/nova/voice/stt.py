@@ -36,6 +36,7 @@ class Transcript:
     latency_ms: int
     no_speech_prob: float
     avg_logprob: float
+    provider: str = "local"  # local (Whisper on this PC) | openai
 
     @property
     def usable(self) -> bool:
@@ -72,11 +73,18 @@ class SpeechToText:
                 raise FileNotFoundError(self.load_error)
             started = time.perf_counter()
             # local_files_only: never download at runtime; downloads need the user's permission.
+            # One thread per physical core: hyper-threads made it no faster (measured on a 6-core laptop CPU).
             self._model = WhisperModel(self.model_size, device="cpu", compute_type="int8",
-                                       cpu_threads=min(8, os.cpu_count() or 4),
+                                       cpu_threads=min(8, max(2, (os.cpu_count() or 4) // 2)),
                                        download_root=str(self.models_dir), local_files_only=True)
             self.load_error = None
             log.info("Whisper %s loaded in %.1fs", self.model_size, time.perf_counter() - started)
+
+    def warm_up(self) -> None:
+        """One throwaway pass after loading, so the user's first command is not the slow one."""
+        self.load()
+        noise = (np.random.default_rng(0).standard_normal(16_000) * 300).astype(np.int16).tobytes()
+        self.transcribe(noise)
 
     def transcribe(self, pcm16: bytes, sample_rate: int = 16_000) -> Transcript:
         self.load()

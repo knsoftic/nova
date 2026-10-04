@@ -116,11 +116,13 @@ describe("AI labels", () => {
     expect(aiLabel(status({}))).toEqual({ text: "AI: qwen3:4b (hybrid)", ok: true });
     expect(aiLabel(status({ mode: "rules" })).text).toBe("AI: sirf rules");
     expect(aiLabel(status({ model_ready: false }))).toEqual({ text: "AI: rules (model offline)", ok: false });
+    expect(aiLabel(status({ model: "gpt-4o-mini", llm_provider: "openai" })).text).toBe("AI: OpenAI gpt-4o-mini (hybrid)");
   });
 
   it("shortens provider names", () => {
     expect(providerLabel("ollama:qwen3:4b")).toBe("qwen3:4b");
     expect(providerLabel("rule_based")).toBe("rules");
+    expect(providerLabel("openai:gpt-4o-mini")).toBe("OpenAI gpt-4o-mini");
     expect(providerLabel(undefined)).toBeNull();
   });
 });

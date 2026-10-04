@@ -17,7 +17,9 @@ from .translit import _fallback, to_urdu_script
 # Includes Whisper's mishearings of "Hey" seen in testing ("کی", "حی"); the name itself must still match.
 GREETINGS = {"hey", "hi", "hay", "he", "ok", "okay", "ae", "ay", "oye", "hello", "ہے", "ہی", "ہائے", "ہائی",
              "ہیلو", "اے", "او", "اوکے", "هی", "کی", "حی", "ہیے", "हे", "है", "ए", "हाय", "हेलो", "की"}
-BUILTIN_NAME_FORMS = {"nova": {"nova", "noba", "nowa", "novaa", "نووا", "نوا", "نووہ", "نوعہ", "نووَا", "नोवा", "नोबा", "नोव"}}
+# Includes Whisper's mishearings of "NOVA" on cut-off speech seen in testing ("نبا", "نبہا", "نوبا").
+BUILTIN_NAME_FORMS = {"nova": {"nova", "noba", "nowa", "novaa", "نووا", "نوا", "نووہ", "نوعہ", "نووَا", "نبا", "نبہا",
+                               "نوبا", "नोवा", "नोबा", "नोव"}}
 
 # Split on separators, not on \w: Python's \w misses Devanagari vowel signs ("नोवा" would break apart).
 TOKEN = re.compile(r"[^\s,،.!?۔:;\-\"“”]+")
@@ -52,9 +54,15 @@ def lead_words(assistant_name: str, wake_word: str) -> set[str]:
     return GREETINGS | extra
 
 
+# Real words that look like the name to the fuzzy match ("نواب" = Nawab): never the wake word.
+NOT_THE_NAME = {"نواب", "نوابی", "نوابوں"}
+
+
 def _matches(token: str, forms: set[str]) -> bool:
     if token in forms:
         return True
+    if token in NOT_THE_NAME:
+        return False
     if len(token) < 3:
         return False
     # Fuzzy match against forms in the same script ("nowa" ~ "nova", "نووت" ~ "نووا").
@@ -67,9 +75,15 @@ def detect_wake(transcript: str, assistant_name: str = "NOVA", wake_word: str = 
     forms = name_forms(assistant_name, wake_word)
     leads = lead_words(assistant_name, wake_word)
     for i, (token, end) in enumerate(tokens[:MAX_WAKE_POSITION + 1]):
-        if _matches(_norm(token), forms):
+        # Whisper sometimes splits the name ("نو وا"): try the word alone, then joined with the next one.
+        candidates = [(_norm(token), end)]
+        if i + 1 < len(tokens):
+            candidates.append((_norm(token) + _norm(tokens[i + 1][0]), tokens[i + 1][1]))
+        for word, word_end in candidates:
+            if not _matches(word, forms):
+                continue
             # Everything before the name must be a greeting ("hey", "ہے"), otherwise it is just a mention.
             if all(_norm(t) in leads for t, _ in tokens[:i]):
-                command = transcript[end:].lstrip(" ,،.!?۔:;-")
+                command = transcript[word_end:].lstrip(" ,،.!?۔:;-")
                 return WakeResult(True, command.strip())
     return WakeResult(False, "")

@@ -14,7 +14,7 @@ from ctypes import wintypes
 from .db import Database
 
 PREFIX = "secret:"
-KNOWN_SECRETS = {"brave_api_key"}
+KNOWN_SECRETS = {"brave_api_key", "openai_api_key"}
 
 
 class _Blob(ctypes.Structure):

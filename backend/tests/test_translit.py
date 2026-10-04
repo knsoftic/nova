@@ -105,6 +105,7 @@ admin allowed api bug bugs checks count crash database fix font handle integrity
 pillow pitch problem pull retest secrets self sqlite tables tasks token tools voice whisper could
 installation registered installed development
 battery beacon c category charge encrypted ip multi pcs port private public properties psk remote tls udp k qf xa tpw
+openai bearer credit optional completion transcription understanding object reply
 """.split())
 
 
@@ -121,7 +122,8 @@ def test_every_template_word_is_covered():
               "memory/facts.py", "memory/history.py", "memory/workflows.py", "memory/short_term.py",
               "behavior/layer.py", "behavior/style.py", "behavior/patterns.py", "behavior/estimator.py",
               "behavior/signals.py", "admin/service.py", "admin/selftest.py", "admin/docs.py",
-              "multipc/agent.py", "multipc/service.py", "multipc/policy.py", "multipc/link.py"]:
+              "multipc/agent.py", "multipc/service.py", "multipc/policy.py", "multipc/link.py",
+              "ai/openai_provider.py", "ai/llm.py", "voice/openai_stt.py"]:
         tree = ast.parse((root / f).read_text(encoding="utf-8"))
         # Docstrings are developer documentation, never spoken.
         skipped = {

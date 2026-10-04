@@ -180,9 +180,13 @@ export default function App() {
         ? "Sun raha hoon..."
         : voice.phase === "processing"
           ? "Samajh raha hoon..."
-          : voice.mode === "continuous"
-            ? `"${wakeWord}" keh kar command dein. Doosri baatein na save hoti hain na dikhai jati hain.`
-            : "Bolein — khamosh hote hi command bhej di jayegi.";
+          : voice.hint === "follow_up"
+            ? `Bolte rahein — agli command bina "${wakeWord}" ke bhi le lunga.`
+            : voice.hint === "ignored"
+              ? `Awaaz suni, lekin "${wakeWord}" nahi — "${wakeWord}, Chrome kholo" jaisa kahein.`
+              : voice.mode === "continuous"
+                ? `"${wakeWord}" keh kar command dein. Doosri baatein na save hoti hain na dikhai jati hain.`
+                : "Bolein — khamosh hote hi command bhej di jayegi.";
   }
 
   const micLabel =

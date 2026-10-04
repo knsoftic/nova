@@ -50,6 +50,12 @@ class UserSettings(BaseModel):
     # Multi-PC (Phase 13): off until the user turns it on; the name other PCs see ("" = the Windows computer name).
     multi_pc: bool = False
     pc_name: str = Field(default="", max_length=40)
+    # OpenAI (Phase 13C, optional): used only with a saved API key. "auto" = OpenAI when a key is saved, else local.
+    stt_engine: Literal["auto", "openai", "local"] = "auto"  # who turns speech into text
+    llm_provider: Literal["auto", "openai", "ollama"] = "auto"  # the language model behind hybrid/llm mode
+    openai_model: str = Field(default="gpt-4o-mini", min_length=1, max_length=60, pattern=r"^[A-Za-z0-9._:\-]+$")
+    openai_stt_model: str = Field(default="gpt-4o-mini-transcribe", min_length=1, max_length=60,
+                                  pattern=r"^[A-Za-z0-9._:\-]+$")
     settings_version: int = SETTINGS_VERSION  # not user-editable: which one-time default changes were applied
 
     @field_validator("pc_name")
@@ -119,6 +125,10 @@ class UserSettingsUpdate(BaseModel):
     suggest_routines: bool | None = None
     multi_pc: bool | None = None
     pc_name: str | None = None
+    stt_engine: Literal["auto", "openai", "local"] | None = None
+    llm_provider: Literal["auto", "openai", "ollama"] | None = None
+    openai_model: str | None = None
+    openai_stt_model: str | None = None
 
 
 def load_user_settings(db: Database, default_name: str = "NOVA") -> UserSettings:

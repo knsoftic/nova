@@ -24,6 +24,9 @@ from nova.voice.wake import detect_wake
         ("नोवा, क्रोम खोलो", "क्रोम खोलो"),
         ("NOVA", ""),  # wake word only
         ("ہے نووا", ""),
+        # 0.13.2: Whisper on cut-off speech splits or garbles the name.
+        ("ہے نو وا، اسٹوریش چیک کرو۔", "اسٹوریش چیک کرو۔"),
+        ("ہی نبہا، میرا سسٹم چیک کرو۔", "میرا سسٹم چیک کرو۔"),
     ],
 )
 def test_wake_detected(transcript, command):
@@ -39,6 +42,8 @@ def test_wake_detected(transcript, command):
         "kal main ne nova ke baare mein suna",  # name mentioned mid-sentence, not addressed
         "Chrome kholo",
         "",
+        "main nau baje aaunga",  # "nau" + next word must not make a name
+        "نواب صاحب آ گئے",  # a real word close to the name is not the wake word
     ],
 )
 def test_wake_not_detected(transcript):

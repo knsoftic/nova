@@ -27,6 +27,7 @@ class FakeSTT:
         self.loaded = True
         self.load_error = None
         self.calls = 0
+        self.delay = 0.0  # seconds a transcription takes (to test speech arriving while NOVA is busy)
 
     def model_downloaded(self):
         return self.downloaded
@@ -36,6 +37,7 @@ class FakeSTT:
 
     def transcribe(self, pcm, sample_rate=16000):
         self.calls += 1
+        time.sleep(self.delay)
         text = self.queue.pop(0) if self.queue else ""
         return Transcript(text=text, language="ur", duration_s=len(pcm) / 32000, latency_ms=5,
                           no_speech_prob=0.0, avg_logprob=-0.2)
@@ -136,7 +138,7 @@ def test_continuous_ignores_speech_without_wake_word(voice_app):
     with client.websocket_connect("/ws/voice") as ws:
         ws.send_json({"type": "start", "mode": "continuous"})
         stream(ws, utterance())
-        receive_until(ws, "processing")
+        receive_until(ws, "ignored")  # the UI may say "Hey NOVA se shuru karein" - without the words
         wait_for(lambda: stt.calls == 1 and client.app.state.orchestrator.state.value == "LISTENING")
     # Privacy: nothing about the overheard sentence is shown or stored.
     assert client.get("/api/conversations").json() == []
@@ -248,3 +250,38 @@ def test_speaking_much_faster_than_usual_is_noticed_and_never_stored(voice_app):
     convo = client.get("/api/conversations").json()[0]
     assert set(convo) == {"id", "task_id", "created_at", "source", "user_text", "detected_language", "intent",
                           "response", "status"}
+
+
+def test_speech_while_nova_is_busy_is_queued_not_lost(voice_app):
+    """Phase 13C: speaking while the previous utterance is still being understood used to drop the new one."""
+    client, stt, _ = voice_app
+    stt.delay = 0.6
+    stt.queue = ["Hey NOVA, RAM check karo", "Hey NOVA, storage check karo"]
+    with client.websocket_connect("/ws/voice") as ws:
+        ws.send_json({"type": "start", "mode": "continuous"})
+        stream(ws, utterance())
+        receive_until(ws, "processing")  # the first one is being transcribed (slowly) ...
+        stream(ws, utterance())  # ... and the second is spoken meanwhile
+        wait_for(lambda: len(client.get("/api/conversations").json()) == 2, timeout=10)
+    texts = [c["user_text"] for c in client.get("/api/conversations").json()]
+    assert texts == ["storage check karo", "RAM check karo"] and stt.calls == 2
+
+
+def test_after_a_command_the_next_one_needs_no_wake_word(voice_app):
+    """A conversation: right after a voice command, "Hey NOVA" is not needed for the next one."""
+    client, stt, tts = voice_app
+    stt.queue = ["Hey NOVA, RAM check karo", "storage check karo"]
+    with client.websocket_connect("/ws/voice") as ws:
+        ws.send_json({"type": "start", "mode": "continuous"})
+        stream(ws, utterance())
+        msg = None
+        for _ in range(20):
+            msg = ws.receive_json()
+            if msg["type"] == "follow_up":
+                break
+        assert msg and msg["type"] == "follow_up" and msg["seconds"] == 15
+        wait_for(lambda: events(client, "NOVA_SPEAK"))  # NOVA spoke its reply (published once the mic is muted) ...
+        client.app.state.voice._muted_until = 0  # ... and it has finished playing
+        stream(ws, utterance())
+        wait_for(lambda: len(client.get("/api/conversations").json()) == 2)
+    assert client.get("/api/conversations").json()[0]["user_text"] == "storage check karo"

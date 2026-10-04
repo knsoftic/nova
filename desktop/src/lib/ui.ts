@@ -172,7 +172,8 @@ export function linkParts(text: string): { text: string; href?: string }[] {
 export function aiLabel(status: AiStatus | null): { text: string; ok: boolean } {
   if (!status) return { text: "AI: ...", ok: true };
   if (status.mode === "rules") return { text: "AI: sirf rules", ok: true };
-  if (status.model_ready) return { text: `AI: ${status.model} (${status.mode})`, ok: true };
+  if (status.model_ready)
+    return { text: `AI: ${status.llm_provider === "openai" ? "OpenAI " : ""}${status.model} (${status.mode})`, ok: true };
   return { text: "AI: rules (model offline)", ok: false };
 }
 
@@ -180,7 +181,7 @@ export function aiLabel(status: AiStatus | null): { text: string; ok: boolean } 
 export function providerLabel(provider: string | undefined): string | null {
   if (!provider) return null;
   if (provider === "rule_based") return "rules";
-  return provider.replace(/^ollama:/, "");
+  return provider.replace(/^ollama:/, "").replace(/^openai:/, "OpenAI ");
 }
 
 export function formatBytes(n: number | null | undefined): string {

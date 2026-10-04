@@ -893,3 +893,64 @@ Complete
 
 Admin Approval:
 Approved (2026-10-03, admin ne chat mein approve kiya)
+
+Git:
+- Phase 13B commit `2cd2f8b`, `main` mein merge `297204b`; GitHub (`knsoftic/nova`) par push.
+
+---
+
+## 2026-10-04
+
+### Task: Phase 13C — OpenAI (awaaz + AI brain) aur tez, bharosemand voice
+
+Status: Complete (branch `nova-openai-voice`, approval ke baad `main` mein merge)
+
+Admin ki shikayat: install ke baad "voice command nahi le raha, ya bohat late le raha hai — main bolun to wo pick kare." Phir: "is mein OpenAI ki API bhi laga do."
+
+Admin ke faisle: OpenAI **awaaz (speech-to-text) aur AI brain dono** ke liye, masla ho to khud local Whisper/Ollama par; "Mic hamesha on" mein **har awaaz OpenAI ko** jaye (sab se tez — privacy kam, ye UI mein likha hai).
+
+Tashkhees (installed NOVA ke data se — sirf waqt aur ginti, alfaaz nahi):
+- Local Whisper "small" is PC (Ryzen 5 PRO 5650U, AMD GPU — CUDA nahi) par ek jumle ko ~2.5–4 second leta hai; ek command 1.4s awaaz → 4.2s.
+- Jab tak ek jumla samjha ja raha tha, us dauran boli gayi baat **phenk di jati thi** — isi liye "le hi nahi raha".
+- Kate hue jumle par Whisper "Hey NOVA" ghalat sunta tha ("نو وا", "نبہا") — wake word miss.
+
+Kaam:
+- **OpenAI (optional, key ke saath):** ⚙ Settings → OpenAI: key (DPAPI encrypted, dobara nahi dikhti), *Test*, "Awaaz ko text kaun banaye" aur "AI brain" (Auto / OpenAI / sirf is PC par), model ke naam (default `gpt-4o-mini-transcribe`, `gpt-4o-mini`). Auto = key ho to OpenAI.
+  - Awaaz: pehle OpenAI (~1s), na mile (internet/key/credit) to usi waqt local Whisper.
+  - Brain: hybrid mein saaf commands pehle ki tarah foran rules se; mushkil jumle/sawal OpenAI se; OpenAI na chale to local Ollama, phir rules. OpenAI ka JSON bhi local model ki tarah sakhti se check — wo khatre ka faisla nahi kar sakta. Summaries/message drafts/code samjhana bhi isi brain se.
+  - Key kabhi log/jawab/events mein nahi (test). AI label: "AI: OpenAI gpt-4o-mini (hybrid)".
+- **Voice pipeline (local aur OpenAI dono):**
+  - Mashghool hone par nayi awaaz **line (queue) mein** — phenki nahi jati (3 tak).
+  - **Baat-cheet:** command ke baad 15 second tak agli command bina "Hey NOVA" — NOVA ke jawab bolna khatam karne ke baad se gine jate hain.
+  - Bolna khatam → 0.6s (pehle 0.8s); shuru ki 0.5s awaaz rakhi jati hai; har jumle ke dono taraf 0.3s khamoshi (Whisper ko "Hey NOVA" saaf sunta hai).
+  - Wake word: tukdon mein naam ("نو وا") aur aam ghalat-sune roop ("نبا", "نبہا"); "نواب" jaise asal alfaaz kabhi nahi.
+  - UI: "Awaaz suni, lekin Hey NOVA nahi — ..." aur "Bolte rahein — agli command bina Hey NOVA ke" (alfaaz kabhi nahi dikhte).
+  - Whisper load ke baad ek dafa garam (warm-up); threads physical cores ke barabar.
+- Self-test: naya "OpenAI (awaaz + AI brain)" (key nahi = info; ghalat = fail, NOVA local par). Version 0.13.2.
+
+Test:
+- Backend automated tests: 632/632 pass (naye: OpenAI brain aur key ka kabhi na dikhna, OpenAI fail → local Ollama, awaaz OpenAI → local fallback (429, local setting), OpenAI self-test, queue (busy mein boli baat), baat-cheet bina wake word, wake word ke naye roop aur "نواب"). Frontend: 23/23, typecheck, build — `scripts/check_all.py` sab THEEK.
+- **Asli local Whisper par live test** (alag test backend port 8766, NOVA ki apni Urdu awaaz bolne wali — asli settings/data ko haath nahi lagaya):
+  - Ek command: bolna khatam → jawab **3.0s**.
+  - Do commands jaldi jaldi: **dono** samjhi gayin, dono mein "Hey NOVA" pakda gaya (pehle doosri phenki jati thi / wake miss).
+  - Command ke baad bina "Hey NOVA": **2.6s** mein jawab.
+  - (Ek ghalat-suna jumla local Ollama ko gaya ~20s — OpenAI brain ke saath ~1s.)
+- OpenAI ki asli API test nahi ki (aap ki key zaroori; tests naqli OpenAI se) — admin test mein aap ki key se.
+- Installer `desktop/release/NOVA-Setup-0.13.2.exe` (787 MB, ~7 minute mein bana): us ke apne Python mein runtime check 23 modules theek, OpenAI wale naye hisse andar. Alag folder mein install test is dafa nahi kiya (aap ka installed NOVA chal raha tha — doosri copy port aur 'ek hi NOVA' lock par takrati); installer ka tareeqa 0.13.1 wala hi hai jis ka poora install test hua tha.
+
+Bugs jo mile aur fix kiye gaye:
+- Mashghool hone par boli gayi awaaz phenk di jati thi — ab queue (test).
+- Kate hue jumle par wake word miss — padding, pre-roll aur naye roop (test).
+- "نواب" se NOVA jaag jata tha (purani kami) — ab nahi (test).
+- Baat-cheet ki khidki lambe jawab ke dauran hi khatam ho jati — ab jawab ke baad se (test).
+
+Maloom hadood (limitations):
+- OpenAI on ho to awaaz internet par jati hai — "Mic hamesha on" mein har suni hui awaaz (admin ka faisla). NOVA aisi baat na dikhata hai na save karta hai; OpenAI ki data policy lagu. Kharcha aap ke OpenAI account par.
+- Bina OpenAI ke is PC par ek jumla ~2.5–3s (CPU ki had); mushkil jumle local Ollama par ~10–20s.
+- Baat-cheet ke 15 second mein aas paas ki baat (TV) bhi command ban sakti hai — khatre wale kaam phir bhi ijazat se.
+
+Admin Test:
+Complete
+
+Admin Approval:
+Approved (2026-10-04, admin ne chat mein approve kiya)
